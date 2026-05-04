@@ -1,0 +1,71 @@
+﻿Relay: Design Document
+agent-agent context passing, done right | v0.1 — May 2026
+
+
+1.1 What is Relay?
+Relay is a lightweight, open source middleware library for Python that solves one specific problem: making context pass reliably between AI agents in a multi-agent pipeline.
+Every multi-agent system today is held together with brittle custom scripts. Developers manually serialize a conversation history, dump it into the next agent's prompt, and pray nothing breaks. When it does break, there is no audit trail, no rollback, and no way to know which agent introduced the corrupted data.
+Relay replaces that guesswork with a thin, opinionated layer that handles context packaging, validation, snapshotting, and rollback automatically.
+
+
+1.2 The problem in one sentence
+One hallucinating agent silently corrupts the shared context, and every downstream agent inherits the damage.
+The root cause is that existing orchestration tools treat the context window as a mutable blob with no version control. Relay treats it like a ledger: append-only, signed at every step, and reversible.
+
+
+1.3 Architecture layers
+Relay has five layers. Each one is independently testable and replaceable.
+Layer
+	Name
+	Responsibility
+	1
+	Context broker
+	Normalises, timestamps, and cryptographically signs the context envelope before any agent touches it.
+	2
+	Slice packager
+	Cuts a minimal, read-only slice of context for each agent. Agents never see the full history.
+	3
+	Agent runner
+	Executes the agent call. Framework-agnostic: works with any LLM provider or local model.
+	4
+	Handoff validator
+	Runs between every handoff. Detects contradictions, diffs what changed, triggers rollback if needed.
+	5
+	Snapshot store
+	Persists every clean checkpoint as immutable JSON. The rollback target.
+	
+
+1.4 The context envelope
+Every time context moves between agents, it is wrapped in a signed envelope. The envelope is immutable after creation.
+{
+ "relay_version": "0.1.0",
+ "pipeline_id": "uuid-v4",
+ "step": 2,
+ "timestamp": "2026-05-04T10:22:00Z",
+ "token_budget_used": 1840,
+ "token_budget_total": 8000,
+ "payload": { ...agent output... },
+ "signature": "sha256:abc123..."
+}
+
+The signature covers the full payload. If any downstream process tampers with the envelope, validation fails immediately and the pipeline rolls back to the last clean snapshot.
+
+
+1.5 Rollback behaviour
+The validator runs after every agent completes. If it flags an issue, Relay does not attempt to repair the output. It rolls back silently to the last persisted snapshot and either retries the step or surfaces an error to the caller, depending on the pipeline configuration.
+This is the core design decision that separates Relay from a simple logging wrapper. Repair logic is speculative and usually makes things worse. Rollback is deterministic.
+
+
+1.6 What Relay is not
+* Not an agent framework. Relay does not manage prompts, personas, or tool use.
+* Not an LLM router. Use LiteLLM, LangChain, or direct SDK calls for that.
+* Not a full orchestration platform. Relay is the connective tissue, not the orchestrator.
+* Not opinionated about agent design. Bring your own agents.
+
+
+1.7 v0.1 scope
+The first version ships exactly three things and nothing else:
+* Context broker + envelope signing
+* Handoff validator with hallucination check and diff inspector
+* Snapshot store with rollback
+Everything else, including token budget enforcement, multi-provider support, and async pipelines, is post-v0.1. Scope creep is the number one way side projects die.
