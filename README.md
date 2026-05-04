@@ -2,7 +2,7 @@
 
 **Agent-agent context passing, done right.**
 
-Relay is a lightweight, open source Python middleware library for passing context reliably between AI agents in a multi-agent pipeline.
+Relay is a lightweight, open source Python middleware library for passing context reliably between AI agents in a multi-agent pipeline. Works with any LLM provider or framework — LangChain, OpenAI, Anthropic, LiteLLM, or your own agents.
 
 ---
 
@@ -18,27 +18,13 @@ Relay treats context like a ledger: append-only, signed at every step, and rever
 
 ## Features
 
-### v0.1 (Core)
 - **Context Broker** — Normalizes, timestamps, and cryptographically signs context envelopes
 - **Handoff Validator** — Detects contradictions and triggers rollback on corruption
-- **Snapshot Store** — Persists immutable checkpoints for rollback
-
-### Post-v0.1
-- **Slice Packager** — Cuts minimal context slices per agent (agents never see full history)
-- **Agent Runner** — Framework-agnostic execution for any LLM provider
-- **Token Budget Enforcement** — Pre-execution budget checking
-- **Multi-Provider Support** — ProviderRegistry with fallback chain
-- **Async Pipelines** — Async support for concurrent execution
+- **Snapshot Store** — Persists immutable checkpoints for automatic rollback
 
 ---
 
 ## Installation
-
-```bash
-pip install relay
-```
-
-Or install from source:
 
 ```bash
 git clone https://github.com/kridaydave/Relay.git
@@ -48,7 +34,22 @@ pip install -e .
 
 ---
 
-## Quick Start
+## The Aha Moment
+
+**Without Relay** (manual, error-prone):
+
+```python
+# Agent 1 produces output
+agent1_output = {"entities": ["Apple", "2024 revenue"], "summary": "Apple grew"}
+
+# Manual serialization — easy to lose data, corrupt context
+context = json.dumps(agent1_output)
+
+# Agent 2 receives corrupted context
+agent2_input = f"Given: {context}\nAnalyze this."
+```
+
+**With Relay** (automatic, verified):
 
 ```python
 from relay.pipeline import RelayPipeline
@@ -58,36 +59,39 @@ pipeline = RelayPipeline(
     token_budget=8000
 )
 
-# First agent
-result = pipeline.execute_step({"task": "analyze data"})
-if isinstance(result, Success):
-    envelope = result.value
+# Agent 1 — creates signed envelope
+result = pipeline.execute_step({"entities": ["Apple"], "revenue": "2024"})
+envelope1 = result.value  # signed, immutable
 
-# Second agent
-result = pipeline.execute_step({"analysis": "completed"})
+# Agent 2 — validator detects contradiction
+# If Agent 2 accidentally drops "entities", rollback triggers automatically
+result = pipeline.execute_step({"summary": "growth"})  # contradiction!
+```
+
+**What happens on contradiction:**
+
+```python
+# Validator detects: critical key "entities" disappeared
+# Relay automatically rolls back to last clean snapshot
+
+result = pipeline.rollback()
+restored_envelope = result.value
+# Now you have the clean envelope from step 1
 ```
 
 ---
 
-## Architecture
+## How It Works
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                     RelayPipeline                          │
-├─────────┬─────────┬─────────┬─────────┬─────────────────────┤
-│  Layer1 │  Layer2 │  Layer3 │  Layer4 │       Layer5        │
-│ Context │  Slice  │  Agent  │ Validator│     Snapshot       │
-│  Broker │ Packager│  Runner │          │       Store         │
-└─────────┴─────────┴─────────┴─────────┴─────────────────────┘
+Agent 1 → [Sign Envelope] → Agent 2 → [Validate] → Agent 3
+                              ↓
+                         [Snapshot]
+                              ↓
+                    [Rollback if dirty]
 ```
 
-| Layer | Component | Responsibility |
-|-------|-----------|----------------|
-| 1 | Context Broker | Normalizes, timestamps, signs envelopes |
-| 2 | Slice Packager | Cuts minimal context slices |
-| 3 | Agent Runner | Executes agent calls |
-| 4 | Handoff Validator | Detects contradictions, triggers rollback |
-| 5 | Snapshot Store | Persists checkpoints |
+Every handoff is signed and validated. If corruption is detected, Relay silently rolls back to the last clean checkpoint.
 
 ---
 
