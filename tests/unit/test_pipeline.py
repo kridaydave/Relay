@@ -9,193 +9,100 @@ import pytest
 
 from relay.pipeline import RelayPipeline
 from relay.types import Success, Failure
+from relay.envelope import ContextEnvelope, RELAY_VERSION
+
+
+@pytest.fixture
+def temp_storage():
+    temp_dir = tempfile.mkdtemp()
+    yield temp_dir
+    shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+@pytest.fixture
+def pipeline(temp_storage):
+    return RelayPipeline(
+        signing_secret="test-secret",
+        token_budget=8000,
+        storage_path=temp_storage
+    )
+
+
+def create_mock_envelope(step: int, pipeline_id: str, payload: dict, timestamp: datetime = None) -> ContextEnvelope:
+    if timestamp is None:
+        timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    return ContextEnvelope(
+        relay_version=RELAY_VERSION,
+        pipeline_id=pipeline_id,
+        step=step,
+        timestamp=timestamp,
+        token_budget_used=100 * step,
+        token_budget_total=8000,
+        payload=payload,
+        signature=f"sig{step}"
+    )
 
 
 class TestPipelineCreatesEnvelope:
-    def test_pipeline_creates_envelope_on_first_step(self):
-        temp_dir = tempfile.mkdtemp()
-        try:
-            pipeline = RelayPipeline(
-                signing_secret="test-secret",
-                token_budget=8000,
-                storage_path=temp_dir
-            )
+    def test_pipeline_creates_envelope_on_first_step(self, pipeline):
+        result = pipeline.execute_step({"data": "test-payload"})
 
-            result = pipeline.execute_step({"data": "test-payload"})
-
-            assert isinstance(result, Success)
-            assert result.value.step == 1
-            assert result.value.pipeline_id == pipeline._pipeline_id
-            assert result.value.payload == {"data": "test-payload"}
-        finally:
-            shutil.rmtree(temp_dir, ignore_errors=True)
+        assert isinstance(result, Success)
+        assert result.value.step == 1
+        assert result.value.pipeline_id == pipeline._pipeline_id
+        assert result.value.payload == {"data": "test-payload"}
 
 
 class TestPipelineCreatesNextEnvelope:
-    @patch("relay.context_broker.create_initial_envelope")
-    @patch("relay.context_broker.create_next_envelope")
+    @patch("relay.context_broker.ContextBroker.create_initial_envelope")
+    @patch("relay.context_broker.ContextBroker.create_next_envelope")
     def test_pipeline_creates_next_envelope_on_subsequent_step(
-        self, mock_next, mock_initial
+        self, mock_next, mock_initial, pipeline
     ):
-        from relay.envelope import ContextEnvelope, RELAY_VERSION
+        mock_initial.return_value = Success(create_mock_envelope(1, pipeline._pipeline_id, {"initial": "data"}))
+        mock_next.return_value = Success(create_mock_envelope(2, pipeline._pipeline_id, {"next": "data"}))
 
-        temp_dir = tempfile.mkdtemp()
-        try:
-            timestamp_1 = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        pipeline.execute_step({"initial": "data"})
+        result = pipeline.execute_step({"next": "data"})
 
-            def create_initial(pipeline_id, initial_payload, token_budget_total, secret):
-                return Success(ContextEnvelope(
-                    relay_version=RELAY_VERSION,
-                    pipeline_id=pipeline_id,
-                    step=1,
-                    timestamp=timestamp_1,
-                    token_budget_used=100,
-                    token_budget_total=token_budget_total,
-                    payload=initial_payload,
-                    signature="sig1"
-                ))
-
-            def create_next(previous_envelope, agent_output, secret):
-                timestamp_2 = datetime(2024, 1, 2, tzinfo=timezone.utc)
-                return Success(ContextEnvelope(
-                    relay_version=RELAY_VERSION,
-                    pipeline_id=previous_envelope.pipeline_id,
-                    step=previous_envelope.step + 1,
-                    timestamp=timestamp_2,
-                    token_budget_used=200,
-                    token_budget_total=previous_envelope.token_budget_total,
-                    payload=agent_output,
-                    signature="sig2"
-                ))
-
-            mock_initial.side_effect = create_initial
-            mock_next.side_effect = create_next
-
-            pipeline = RelayPipeline(
-                signing_secret="test-secret",
-                token_budget=8000,
-                storage_path=temp_dir
-            )
-
-            pipeline.execute_step({"initial": "data"})
-            result = pipeline.execute_step({"next": "data"})
-
-            assert isinstance(result, Success)
-            assert result.value.step == 2
-            assert result.value.payload == {"next": "data"}
-            mock_next.assert_called_once()
-        finally:
-            shutil.rmtree(temp_dir, ignore_errors=True)
+        assert isinstance(result, Success)
+        assert result.value.step == 2
+        assert result.value.payload == {"next": "data"}
+        mock_next.assert_called_once()
 
 
 class TestPipelineValidationAndSnapshot:
-    @patch("relay.context_broker.create_initial_envelope")
-    @patch("relay.context_broker.create_next_envelope")
+    @patch("relay.context_broker.ContextBroker.create_initial_envelope")
+    @patch("relay.context_broker.ContextBroker.create_next_envelope")
     def test_pipeline_validates_and_saves_snapshot_on_clean_handoff(
-        self, mock_next, mock_initial
+        self, mock_next, mock_initial, pipeline
     ):
-        from relay.envelope import ContextEnvelope, RELAY_VERSION
+        mock_initial.return_value = Success(create_mock_envelope(1, pipeline._pipeline_id, {"entities": ["entity1"]}))
+        mock_next.return_value = Success(create_mock_envelope(2, pipeline._pipeline_id, {"entities": ["entity1", "entity2"]}))
 
-        temp_dir = tempfile.mkdtemp()
-        try:
-            timestamp_1 = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        pipeline.execute_step({"entities": ["entity1"], "data": "initial"})
+        result = pipeline.execute_step({"entities": ["entity1", "entity2"], "data": "next"})
 
-            def create_initial(pipeline_id, initial_payload, token_budget_total, secret):
-                return Success(ContextEnvelope(
-                    relay_version=RELAY_VERSION,
-                    pipeline_id=pipeline_id,
-                    step=1,
-                    timestamp=timestamp_1,
-                    token_budget_used=100,
-                    token_budget_total=token_budget_total,
-                    payload=initial_payload,
-                    signature="sig1"
-                ))
-
-            def create_next(previous_envelope, agent_output, secret):
-                timestamp_2 = datetime(2024, 1, 2, tzinfo=timezone.utc)
-                return Success(ContextEnvelope(
-                    relay_version=RELAY_VERSION,
-                    pipeline_id=previous_envelope.pipeline_id,
-                    step=previous_envelope.step + 1,
-                    timestamp=timestamp_2,
-                    token_budget_used=200,
-                    token_budget_total=previous_envelope.token_budget_total,
-                    payload=agent_output,
-                    signature="sig2"
-                ))
-
-            mock_initial.side_effect = create_initial
-            mock_next.side_effect = create_next
-
-            pipeline = RelayPipeline(
-                signing_secret="test-secret",
-                token_budget=8000,
-                storage_path=temp_dir
-            )
-
-            pipeline.execute_step({"entities": ["entity1"], "data": "initial"})
-            result = pipeline.execute_step({"entities": ["entity1", "entity2"], "data": "next"})
-
-            assert isinstance(result, Success)
-            assert result.value.step == 2
-        finally:
-            shutil.rmtree(temp_dir, ignore_errors=True)
+        assert isinstance(result, Success)
+        assert result.value.step == 2
 
 
 class TestPipelineRollback:
-    @patch("relay.context_broker.create_initial_envelope")
-    @patch("relay.context_broker.create_next_envelope")
-    @patch("relay.pipeline.SnapshotStore")
+    @patch("relay.context_broker.ContextBroker.create_initial_envelope")
+    @patch("relay.context_broker.ContextBroker.create_next_envelope")
     def test_pipeline_triggers_rollback_on_contradiction(
-        self, mock_store_cls, mock_next, mock_initial
+        self, mock_next, mock_initial, pipeline
     ):
-        from relay.envelope import ContextEnvelope, RELAY_VERSION
+        # We need to mock the SnapshotStore because it's instantiated inside __post_init__
+        with patch.object(pipeline, '_snapshot_store') as mock_store:
+            mock_initial.return_value = Success(create_mock_envelope(1, pipeline._pipeline_id, {"entities": ["entity1"]}))
+            # Returning no entities to trigger contradiction
+            mock_next.return_value = Success(create_mock_envelope(2, pipeline._pipeline_id, {"data": "next"}))
 
-        temp_dir = tempfile.mkdtemp()
-        try:
-            timestamp_1 = datetime(2024, 1, 1, tzinfo=timezone.utc)
-
-            def create_initial(pipeline_id, initial_payload, token_budget_total, secret):
-                return Success(ContextEnvelope(
-                    relay_version=RELAY_VERSION,
-                    pipeline_id=pipeline_id,
-                    step=1,
-                    timestamp=timestamp_1,
-                    token_budget_used=100,
-                    token_budget_total=token_budget_total,
-                    payload=initial_payload,
-                    signature="sig1"
-                ))
-
-            def create_next(previous_envelope, agent_output, secret):
-                timestamp_2 = datetime(2024, 1, 2, tzinfo=timezone.utc)
-                return Success(ContextEnvelope(
-                    relay_version=RELAY_VERSION,
-                    pipeline_id=previous_envelope.pipeline_id,
-                    step=previous_envelope.step + 1,
-                    timestamp=timestamp_2,
-                    token_budget_used=200,
-                    token_budget_total=previous_envelope.token_budget_total,
-                    payload=agent_output,
-                    signature="sig2"
-                ))
-
-            mock_initial.side_effect = create_initial
-            mock_next.side_effect = create_next
-
-            mock_store = MagicMock()
             mock_store.save_snapshot.return_value = Success("snapshot-id")
             mock_store.load_snapshot.return_value = Failure(
                 reason="Snapshot not found",
                 code="SNAPSHOT_NOT_FOUND"
-            )
-            mock_store_cls.return_value = mock_store
-
-            pipeline = RelayPipeline(
-                signing_secret="test-secret",
-                token_budget=8000,
-                storage_path=temp_dir
             )
 
             pipeline.execute_step({"entities": ["entity1"], "data": "initial"})
@@ -203,68 +110,19 @@ class TestPipelineRollback:
 
             assert isinstance(result, Failure)
             assert "Snapshot not found" in result.reason
-        finally:
-            shutil.rmtree(temp_dir, ignore_errors=True)
 
-    @patch("relay.context_broker.create_initial_envelope")
-    @patch("relay.context_broker.create_next_envelope")
-    @patch("relay.pipeline.SnapshotStore")
+    @patch("relay.context_broker.ContextBroker.create_initial_envelope")
+    @patch("relay.context_broker.ContextBroker.create_next_envelope")
     def test_pipeline_rollback_restores_previous_envelope(
-        self, mock_store_cls, mock_next, mock_initial
+        self, mock_next, mock_initial, pipeline
     ):
-        from relay.envelope import ContextEnvelope, RELAY_VERSION
+        with patch.object(pipeline, '_snapshot_store') as mock_store:
+            env1 = create_mock_envelope(1, pipeline._pipeline_id, {"entities": ["entity1"], "data": "initial"})
+            mock_initial.return_value = Success(env1)
+            mock_next.return_value = Success(create_mock_envelope(2, pipeline._pipeline_id, {"data": "next"}))
 
-        temp_dir = tempfile.mkdtemp()
-        try:
-            timestamp_1 = datetime(2024, 1, 1, tzinfo=timezone.utc)
-            timestamp_2 = datetime(2024, 1, 2, tzinfo=timezone.utc)
-
-            def create_initial(pipeline_id, initial_payload, token_budget_total, secret):
-                return Success(ContextEnvelope(
-                    relay_version=RELAY_VERSION,
-                    pipeline_id=pipeline_id,
-                    step=1,
-                    timestamp=timestamp_1,
-                    token_budget_used=100,
-                    token_budget_total=token_budget_total,
-                    payload=initial_payload,
-                    signature="sig1"
-                ))
-
-            def create_next(previous_envelope, agent_output, secret):
-                return Success(ContextEnvelope(
-                    relay_version=RELAY_VERSION,
-                    pipeline_id=previous_envelope.pipeline_id,
-                    step=previous_envelope.step + 1,
-                    timestamp=timestamp_2,
-                    token_budget_used=200,
-                    token_budget_total=previous_envelope.token_budget_total,
-                    payload=agent_output,
-                    signature="sig2"
-                ))
-
-            mock_initial.side_effect = create_initial
-            mock_next.side_effect = create_next
-
-            mock_store = MagicMock()
             mock_store.save_snapshot.return_value = Success("snapshot-id")
-            mock_store.load_snapshot.return_value = Success(ContextEnvelope(
-                relay_version=RELAY_VERSION,
-                pipeline_id="test-pipeline",
-                step=1,
-                timestamp=timestamp_1,
-                token_budget_used=100,
-                token_budget_total=8000,
-                payload={"entities": ["entity1"], "data": "initial"},
-                signature="sig1"
-            ))
-            mock_store_cls.return_value = mock_store
-
-            pipeline = RelayPipeline(
-                signing_secret="test-secret",
-                token_budget=8000,
-                storage_path=temp_dir
-            )
+            mock_store.load_snapshot.return_value = Success(env1)
 
             pipeline.execute_step({"entities": ["entity1"], "data": "initial"})
             pipeline.execute_step({"data": "next"})
@@ -274,61 +132,22 @@ class TestPipelineRollback:
             assert isinstance(result, Success)
             assert result.value.step == 1
             assert result.value.payload == {"entities": ["entity1"], "data": "initial"}
-        finally:
-            shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 class TestPipelineGetCurrentEnvelope:
-    def test_pipeline_get_current_envelope_returns_none_initially(self):
-        temp_dir = tempfile.mkdtemp()
-        try:
-            pipeline = RelayPipeline(
-                signing_secret="test-secret",
-                token_budget=8000,
-                storage_path=temp_dir
-            )
+    def test_pipeline_get_current_envelope_returns_none_initially(self, pipeline):
+        result = pipeline.get_current_envelope()
+        assert result is None
 
-            result = pipeline.get_current_envelope()
-
-            assert result is None
-        finally:
-            shutil.rmtree(temp_dir, ignore_errors=True)
-
-    @patch("relay.context_broker.create_initial_envelope")
+    @patch("relay.context_broker.ContextBroker.create_initial_envelope")
     def test_pipeline_get_current_envelope_returns_current_after_step(
-        self, mock_initial
+        self, mock_initial, pipeline
     ):
-        from relay.envelope import ContextEnvelope, RELAY_VERSION
+        mock_initial.return_value = Success(create_mock_envelope(1, pipeline._pipeline_id, {"data": "test"}))
 
-        temp_dir = tempfile.mkdtemp()
-        try:
-            timestamp_1 = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        pipeline.execute_step({"data": "test"})
+        result = pipeline.get_current_envelope()
 
-            def create_initial(pipeline_id, initial_payload, token_budget_total, secret):
-                return Success(ContextEnvelope(
-                    relay_version=RELAY_VERSION,
-                    pipeline_id=pipeline_id,
-                    step=1,
-                    timestamp=timestamp_1,
-                    token_budget_used=100,
-                    token_budget_total=token_budget_total,
-                    payload=initial_payload,
-                    signature="sig1"
-                ))
-
-            mock_initial.side_effect = create_initial
-
-            pipeline = RelayPipeline(
-                signing_secret="test-secret",
-                token_budget=8000,
-                storage_path=temp_dir
-            )
-
-            pipeline.execute_step({"data": "test"})
-            result = pipeline.get_current_envelope()
-
-            assert result is not None
-            assert result.step == 1
-            assert result.payload == {"data": "test"}
-        finally:
-            shutil.rmtree(temp_dir, ignore_errors=True)
+        assert result is not None
+        assert result.step == 1
+        assert result.payload == {"data": "test"}

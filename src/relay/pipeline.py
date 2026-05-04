@@ -15,7 +15,7 @@ from relay.types import Failure, Result, Success
 from relay.validator import HandoffValidator, ValidationResult
 
 
-@dataclass(frozen=True)
+@dataclass
 class RelayPipeline:
     """Orchestrates the three core components.
 
@@ -34,13 +34,13 @@ class RelayPipeline:
     _previous_envelopes: list[ContextEnvelope] = field(default_factory=list, init=False, repr=False)
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, '_pipeline_id', uuid.uuid4().hex)
-        object.__setattr__(self, '_context_broker', ContextBroker(
+        self._pipeline_id = uuid.uuid4().hex
+        self._context_broker = ContextBroker(
             signing_secret=self.signing_secret,
             token_budget_total=self.token_budget
-        ))
-        object.__setattr__(self, '_handoff_validator', HandoffValidator())
-        object.__setattr__(self, '_snapshot_store', SnapshotStore(storage_path=self.storage_path))
+        )
+        self._handoff_validator = HandoffValidator()
+        self._snapshot_store = SnapshotStore(storage_path=self.storage_path)
 
     def execute_step(self, agent_output: dict[str, Any]) -> Result[ContextEnvelope]:
         """Execute a pipeline step with agent output."""
@@ -53,7 +53,7 @@ class RelayPipeline:
                 return envelope_result
 
             new_envelope = envelope_result.value
-            object.__setattr__(self, '_current_envelope', new_envelope)
+            self._current_envelope = new_envelope
             return Success(new_envelope)
 
         self._previous_envelopes.append(self._current_envelope)
@@ -82,7 +82,7 @@ class RelayPipeline:
         if isinstance(snapshot_result, Failure):
             return snapshot_result
 
-        object.__setattr__(self, '_current_envelope', new_envelope)
+        self._current_envelope = new_envelope
         return Success(new_envelope)
 
     def rollback(self) -> Result[ContextEnvelope]:
@@ -98,7 +98,7 @@ class RelayPipeline:
             return restore_result
 
         restored_envelope = restore_result.value
-        object.__setattr__(self, '_current_envelope', restored_envelope)
+        self._current_envelope = restored_envelope
         return Success(restored_envelope)
 
     def get_current_envelope(self) -> ContextEnvelope | None:
