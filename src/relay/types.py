@@ -18,6 +18,15 @@ class Success(Generic[T]):
 
 
 @dataclass(frozen=True)
+class RollbackSuccess(Success[T]):
+    """Represents a successful rollback operation.
+    
+    Carries the restored value (envelope) and the reason for the rollback.
+    """
+    reason: str
+
+
+@dataclass(frozen=True)
 class Failure:
     """Represents a failed operation with a reason and error code."""
     reason: str

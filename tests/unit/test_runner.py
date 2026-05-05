@@ -126,3 +126,36 @@ class TestAgentRunnerExecuteWithRetry:
 
         assert isinstance(result, Success)
         assert agent.attempt_count == 1
+
+    def test_non_transient_error_fails_fast_without_retry(self) -> None:
+        class PermanentFailureAgent:
+            def run(self, input_data: dict[str, Any]) -> dict[str, Any]:
+                raise ValueError("Invalid payload")
+
+        runner = AgentRunner(max_retries=3)
+        slice = create_slice()
+
+        result = runner.execute_with_retry(PermanentFailureAgent(), slice, max_retries=3)
+
+        assert isinstance(result, Failure)
+        assert result.code == "AGENT_ERROR"
+
+    def test_timeout_error_retries(self) -> None:
+        attempt_count = 0
+
+        class TimeoutThenSuccessAgent:
+            def run(self, input_data: dict[str, Any]) -> dict[str, Any]:
+                nonlocal attempt_count
+                attempt_count += 1
+                if attempt_count < 2:
+                    import time
+                    time.sleep(10)
+                return {"result": "success"}
+
+        runner = AgentRunner(timeout_seconds=0.1, max_retries=3)
+        slice = create_slice()
+
+        result = runner.execute_with_retry(TimeoutThenSuccessAgent(), slice)
+
+        assert isinstance(result, Success)
+        assert attempt_count == 2

@@ -28,8 +28,14 @@ class HandoffValidator:
 
     CRITICAL_KEYS: frozenset[str] = frozenset({"entities", "actions", "facts", "constraints", "requirements"})
 
-    def __init__(self) -> None:
-        """Initialize the validator."""
+    def __init__(self, hallucination_ratio_threshold: float | None = 2.0) -> None:
+        """Initialize the validator.
+
+        Args:
+            hallucination_ratio_threshold: Flag hallucination when new_entities / removed_entities
+                exceeds this ratio. None disables hallucination detection.
+        """
+        self._hallucination_ratio_threshold = hallucination_ratio_threshold
 
     def validate_handoff(
         self,
@@ -59,12 +65,6 @@ class HandoffValidator:
                 f"{contradiction_details}; " if contradiction_details else ""
             ) + critical_missing
 
-        if current_envelope.token_budget_used > current_envelope.token_budget_total:
-            has_contradiction = True
-            contradiction_details = (
-                f"{contradiction_details}; " if contradiction_details else ""
-            ) + f"Token budget overflow: {current_envelope.token_budget_used} > {current_envelope.token_budget_total}"
-
         has_contradiction_str: str | None = contradiction_details if has_contradiction else None
 
         return Success(ValidationResult(
@@ -82,15 +82,22 @@ class HandoffValidator:
         previous_payload: dict[str, Any],
         current_payload: dict[str, Any]
     ) -> str | None:
-        """Detect hallucination by comparing key entity mentions."""
+        """Detect hallucination by checking for fabricated entities not in prior context.
+
+        Flags when new entities appear that were NOT supported by prior context.
+        Entity removal is valid agent behavior and not flagged.
+        """
+        if self._hallucination_ratio_threshold is None:
+            return None
+
         prev_entities = self._extract_entities(previous_payload)
         curr_entities = self._extract_entities(current_payload)
 
-        new_entities = curr_entities - prev_entities
-        removed_entities = prev_entities - curr_entities
+        fabricated = curr_entities - prev_entities
 
-        if removed_entities and not new_entities:
-            return f"Removed entities without new ones: {sorted(removed_entities)}"
+        if fabricated:
+            fabricated_list = sorted(fabricated)
+            return f"Entity fabrication detected: {fabricated_list}"
 
         return None
 

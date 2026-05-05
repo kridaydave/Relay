@@ -6,6 +6,7 @@ Does NOT: validate data, sign envelopes, execute agents.
 
 import json
 import os
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -32,8 +33,7 @@ class SnapshotStore:
         pipeline_path = self._storage_path / pipeline_id
         pipeline_path.mkdir(parents=True, exist_ok=True)
 
-        timestamp = envelope.timestamp.strftime("%Y%m%dT%H%M%S%f")
-        snapshot_id = f"{envelope.step}_{timestamp}"
+        snapshot_id = f"{envelope.step}_{uuid.uuid4().hex[:12]}"
         snapshot_file = f"{snapshot_id}.json"
         snapshot_path = pipeline_path / snapshot_file
         temp_path = pipeline_path / f"{snapshot_id}.tmp"
@@ -56,7 +56,6 @@ class SnapshotStore:
         if len(parts) != 2:
             return Failure(reason="Invalid snapshot ID format", code="INVALID_SNAPSHOT_ID")
 
-        step_and_timestamp = parts[1]
         try:
             step = int(parts[0])
         except ValueError:

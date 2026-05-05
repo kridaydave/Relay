@@ -11,6 +11,15 @@ from typing import Any, Protocol, runtime_checkable
 from relay.slicer import ContextSlice
 from relay.types import Failure, Result, Success
 
+TRANSIENT_ERROR_CODES = frozenset({
+    "TIMEOUT",
+    "RATE_LIMIT",
+    "SERVICE_UNAVAILABLE",
+    "NETWORK_ERROR",
+    "AGENT_ERROR",
+    "NO_RESULT",
+})
+
 
 @runtime_checkable
 class Agent(Protocol):
@@ -55,6 +64,8 @@ class AgentRunner:
                 return result
 
             last_error = result
+            if isinstance(last_error, Failure) and last_error.code not in TRANSIENT_ERROR_CODES:
+                return last_error
             if attempt < max_retries - 1:
                 continue
 
