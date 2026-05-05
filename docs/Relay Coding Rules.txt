@@ -1,84 +1,198 @@
 ﻿Relay: Unbreakable Coding Rules
-v0.1 — May 2026
-These rules apply to every line of code written for Relay, whether by a human or an AI assistant. They are non-negotiable. When in doubt, refer back here before writing anything.
+v0.2 — May 2026
+These rules apply to every line of code written for Relay, whether by a human or an AI assistant.
+They are non-negotiable. When in doubt, refer back here before writing anything.
 
+Changes from v0.1: Added R15 (resource lifecycle), R16 (input validation), R17 (approximations),
+R18 (concurrency testing), R19 (docstring accuracy). Quick Reference updated to match.
+All v0.1 rules are unchanged.
 
+================================================================================
 Section A — Foundation rules
-Rule
-	Name & Description
-	R1
-	One file, one responsibility
-Every module does exactly one thing. context_broker.py signs envelopes. validator.py checks handoffs. snapshot.py persists state. If you are unsure which file a function belongs in, the function is probably doing too many things.
-	R2
-	No shared mutable state
-Agents never write to a shared object. The context envelope is read-only from the moment it is created. Use Python dataclasses with frozen=True or Pydantic models with model_config frozen=True. If you need to update state, create a new envelope.
-	R3
-	Type everything
-Every function must have full type annotations on parameters and return values. No bare Any. No missing return types. Use mypy --strict in CI. If mypy complains, fix the code, not the config.
-	R4
-	Errors are values, not surprises
-Use Result types (returns a value or an error object) instead of raising exceptions for expected failure cases. Only raise exceptions for programmer errors and truly unrecoverable states. Never swallow an exception with a bare except pass.
-	
+================================================================================
 
+R1 — One file, one responsibility
+Every module does exactly one thing. context_broker.py signs envelopes. validator.py checks
+handoffs. snapshot.py persists state. If you are unsure which file a function belongs in,
+the function is probably doing too many things.
+
+R2 — No shared mutable state
+Agents never write to a shared object. The context envelope is read-only from the moment it
+is created. Use Python dataclasses with frozen=True or Pydantic models with
+model_config frozen=True. If you need to update state, create a new envelope.
+
+R3 — Type everything
+Every function must have full type annotations on parameters and return values. No bare Any.
+No missing return types. Use mypy --strict in CI. If mypy complains, fix the code, not
+the config.
+
+R4 — Errors are values, not surprises
+Use Result types (returns a value or an error object) instead of raising exceptions for
+expected failure cases. Only raise exceptions for programmer errors and truly unrecoverable
+states. Never swallow an exception with a bare except pass.
+
+R15 — Every resource has an owner and a cleanup path  [NEW]
+Any object that acquires an external resource — thread pool, file handle, socket,
+subprocess — must implement either __del__, __exit__, or an explicit close() method,
+and that cleanup must be called. No executor or handle is created without a corresponding
+teardown. If you cannot point to exactly where cleanup happens before opening a PR,
+the code does not ship.
+
+  BAD:  executor = ThreadPoolExecutor(max_workers=4)  # never shut down
+  GOOD: with ThreadPoolExecutor(max_workers=4) as executor: ...
+
+R16 — Validate at the boundary, trust internally  [NEW]
+Any value entering the system from outside — agent output, user input, config file,
+external API response — must be validated and sanitized before it touches internal data
+structures. Once a value has crossed the boundary and been validated, internal functions
+may trust it without re-checking. Never validate the same value twice. Never skip
+validation at the edge. If a value is used in a string that becomes an identifier, path,
+or query, it must be sanitized for injection at the point it enters.
+
+  BAD:  create_slice(agent_id=raw_input)   # agent_id used in slice_id unchecked
+  GOOD: create_slice(agent_id=validate_agent_id(raw_input))
+
+R17 — Approximations and heuristics must be labelled and benchmarked  [NEW]
+If a function estimates, detects, scores, or approximates something rather than computing
+it exactly, the docstring must say so explicitly using the word "approximates" or
+"estimates". The function must also have at least one test that measures its output against
+a known ground-truth case, and the test must assert a specific tolerance or accuracy
+threshold — not just "it runs without error". If you cannot write a test that would catch
+a completely wrong answer, the heuristic is not ready to ship.
+
+  BAD:  len(json.dumps(value)) // 4  # undocumented token estimate with no test
+  GOOD: estimate_tokens(value)  # docstring: "Approximates token count to within 20%
+                                #  of tiktoken. See test_slicer.py::test_token_estimate."
+
+================================================================================
 Section B — Testing rules
-Rule
-	Name & Description
-	R5
-	Every public function has a test
-No exceptions. If a function is public and has no test, it does not exist from a quality standpoint. Tests live in tests/ mirroring the src/ structure. Use pytest. Coverage must stay above 80%.
-	R6
-	Tests are readable sentences
-Test names must describe behaviour, not implementation. GOOD: test_validator_rolls_back_on_contradiction. BAD: test_validator_1. If you cannot write a plain-English description of what a test checks, the test is not ready.
-	R7
-	No network calls in unit tests
-Unit tests must run offline. Mock all LLM calls, HTTP requests, and file I/O in unit tests. Integration tests that hit real APIs live in tests/integration/ and are opt-in only.
-	
+================================================================================
 
+R5 — Every public function has a test
+No exceptions. If a function is public and has no test, it does not exist from a quality
+standpoint. Tests live in tests/ mirroring the src/ structure. Use pytest. Coverage must
+stay above 80%.
+
+R6 — Tests are readable sentences
+Test names must describe behaviour, not implementation.
+  GOOD: test_validator_rolls_back_on_contradiction
+  BAD:  test_validator_1
+If you cannot write a plain-English description of what a test checks, the test is not ready.
+
+R7 — No network calls in unit tests
+Unit tests must run offline. Mock all LLM calls, HTTP requests, and file I/O in unit tests.
+Integration tests that hit real APIs live in tests/integration/ and are opt-in only.
+
+R18 — Concurrent code must be tested concurrently  [NEW]
+Any function that touches shared state and will be called from async or threaded contexts
+must have at least one test that invokes it from two or more concurrent callers
+simultaneously. A passing single-threaded test is not evidence of thread safety. Use
+asyncio.gather() for async paths and threading.Thread for sync paths. The test must assert
+that final state is consistent, not merely that no exception was raised.
+
+  Example: test_async_pipeline_concurrent_steps calls execute_step_async from two
+  coroutines simultaneously and asserts _current_envelope matches only one deterministic
+  outcome, not a corrupted blend of both.
+
+================================================================================
 Section C — AI-assisted coding rules
-Rule
-	Name & Description
-	R8
-	Never paste AI output directly
-Every AI-generated code block must be read line by line before it enters the codebase. You are responsible for understanding every line you commit, regardless of who or what wrote it. If you do not understand a line, do not commit it.
-	R9
-	AI writes implementations, humans write interfaces
-Design the function signatures, type contracts, and error behaviours yourself before asking AI to fill in the body. AI is excellent at implementation details. It is unreliable at API design. Never let it decide what a public function should look like.
-	R10
-	Ask AI to break its own output
-After AI generates a function, ask it: what inputs would make this function fail or behave unexpectedly? Use those answers to write edge case tests before the code ships. This is the single highest-leverage use of AI in a dev workflow.
-	R11
-	One task per AI prompt
-Give AI one clearly scoped task at a time. Do not ask it to write a module, its tests, and its documentation in one prompt. The output quality degrades dramatically. Scope each prompt to a single function or a single test file.
-	
+================================================================================
 
+R8 — Never paste AI output directly
+Every AI-generated code block must be read line by line before it enters the codebase.
+You are responsible for understanding every line you commit, regardless of who or what
+wrote it. If you do not understand a line, do not commit it.
+
+R9 — AI writes implementations, humans write interfaces
+Design the function signatures, type contracts, and error behaviours yourself before asking
+AI to fill in the body. AI is excellent at implementation details. It is unreliable at API
+design. Never let it decide what a public function should look like.
+
+R10 — Ask AI to break its own output
+After AI generates a function, ask it: what inputs would make this function fail or behave
+unexpectedly? Use those answers to write edge case tests before the code ships. This is the
+single highest-leverage use of AI in a dev workflow.
+
+R11 — One task per AI prompt
+Give AI one clearly scoped task at a time. Do not ask it to write a module, its tests, and
+its documentation in one prompt. The output quality degrades dramatically. Scope each prompt
+to a single function or a single test file.
+
+================================================================================
 Section D — Commit and review rules
-Rule
-	Name & Description
-	R12
-	Commits are atomic and describable
-Every commit must do exactly one thing and its message must say what and why, not how. GOOD: fix: rollback triggered on empty diff instead of contradiction. BAD: fixed stuff. If you cannot write a one-sentence commit message, split the commit.
-	R13
-	No commented-out code
-Dead code is not a safety net, it is noise. If code is not needed, delete it. Git history is the safety net. Commented-out code in a PR is grounds for rejection.
-	R14
-	Documentation is code
-Every public function needs a one-line docstring explaining what it does, not how. Every module needs a three-line module docstring: what it does, what it owns, what it does not do. Write these before writing the implementation.
-	
+================================================================================
 
+R12 — Commits are atomic and describable
+Every commit must do exactly one thing and its message must say what and why, not how.
+  GOOD: fix: rollback triggered on empty diff instead of contradiction
+  BAD:  fixed stuff
+If you cannot write a one-sentence commit message, split the commit.
+
+R13 — No commented-out code
+Dead code is not a safety net, it is noise. If code is not needed, delete it. Git history
+is the safety net. Commented-out code in a PR is grounds for rejection.
+
+R14 — Documentation is code
+Every public function needs a one-line docstring explaining what it does, not how. Every
+module needs a three-line module docstring: what it does, what it owns, what it does not do.
+Write these before writing the implementation.
+
+R19 — A PR that changes behaviour must update the docstring  [NEW]
+If a PR changes what a function or module does — its inputs, outputs, side effects, or
+failure modes — the docstring changes in the same commit. A docstring that no longer
+describes the function it is attached to is a lie in the codebase and is treated the same
+as commented-out code: grounds for PR rejection. Reviewers must check that every modified
+function's docstring still matches its implementation.
+
+================================================================================
 Quick Reference
+================================================================================
+
 Before writing any code, ask:
-* Which layer does this belong to?
-* Does this module already exist?
-* What is the type signature?
-* What is the test for the happy path?
-* What is the test for the failure path?
+  * Which layer does this belong to?
+  * Does this module already exist?
+  * What is the type signature?
+  * What is the test for the happy path?
+  * What is the test for the failure path?
+  * If this function owns a resource, where exactly does cleanup happen?       [NEW]
+  * Is this value coming from outside the system? If so, where is it validated? [NEW]
+  * If this function approximates something, does the docstring say so?         [NEW]
+
 Before committing, check:
-* mypy passes with no errors
-* All new public functions have tests
-* No commented-out code
-* Commit message follows the format
+  * mypy passes with no errors
+  * All new public functions have tests
+  * No commented-out code
+  * Commit message follows the format
+  * If behaviour changed, is the docstring still accurate?                      [NEW]
+  * If this touches shared/async state, is there a concurrent test?             [NEW]
+
 When using AI, remember:
-* You designed the interface, AI filled the body
-* You read every line before committing
-* You asked AI how to break its own output
-* You wrote the tests yourself
+  * You designed the interface, AI filled the body
+  * You read every line before committing
+  * You asked AI how to break its own output
+  * You wrote the tests yourself
+  * If AI produced a heuristic or estimate, you benchmarked it against ground truth [NEW]
+
+================================================================================
+Rule index
+================================================================================
+
+R1   One file, one responsibility
+R2   No shared mutable state
+R3   Type everything
+R4   Errors are values, not surprises
+R5   Every public function has a test
+R6   Tests are readable sentences
+R7   No network calls in unit tests
+R8   Never paste AI output directly
+R9   AI writes implementations, humans write interfaces
+R10  Ask AI to break its own output
+R11  One task per AI prompt
+R12  Commits are atomic and describable
+R13  No commented-out code
+R14  Documentation is code
+R15  Every resource has an owner and a cleanup path           [NEW in v0.2]
+R16  Validate at the boundary, trust internally              [NEW in v0.2]
+R17  Approximations and heuristics must be labelled          [NEW in v0.2]
+R18  Concurrent code must be tested concurrently             [NEW in v0.2]
+R19  A PR that changes behaviour must update the docstring   [NEW in v0.2]
