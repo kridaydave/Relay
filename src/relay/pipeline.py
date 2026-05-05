@@ -10,7 +10,7 @@ from relay.core_pipeline import CoreRelayPipeline
 from relay.snapshot import SnapshotStore
 
 
-@dataclass(frozen=True)
+@dataclass
 class RelayPipeline(CoreRelayPipeline):
     """Orchestrates the three core components.
 

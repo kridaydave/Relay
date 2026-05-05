@@ -15,7 +15,7 @@ from relay.types import Failure, Result, Success, RollbackSuccess
 from relay.validator import HandoffValidator, ValidationResult
 
 
-@dataclass(frozen=True)
+@dataclass
 class CoreRelayPipeline:
     """Base class for pipeline orchestration.
 
@@ -35,14 +35,13 @@ class CoreRelayPipeline:
     _snapshot_ids: dict[str, str] = field(default_factory=dict, init=False, repr=False)
 
     def __post_init__(self) -> None:
-        SnapshotStore = __import__("relay.pipeline", fromlist=["SnapshotStore"]).SnapshotStore
-        object.__setattr__(self, '_pipeline_id', uuid.uuid4().hex)
-        object.__setattr__(self, '_context_broker', ContextBroker(
+        self._pipeline_id = uuid.uuid4().hex
+        self._context_broker = ContextBroker(
             signing_secret=self.signing_secret,
             token_budget_total=self.token_budget
-        ))
-        object.__setattr__(self, '_handoff_validator', HandoffValidator())
-        object.__setattr__(self, '_snapshot_store', SnapshotStore(storage_path=self.storage_path))
+        )
+        self._handoff_validator = HandoffValidator()
+        self._snapshot_store = SnapshotStore(storage_path=self.storage_path)
 
     def execute_step(self, agent_output: dict[str, Any]) -> Result[ContextEnvelope]:
         """Execute a pipeline step with agent output."""
@@ -55,7 +54,7 @@ class CoreRelayPipeline:
                 return envelope_result
 
             new_envelope = envelope_result.value
-            object.__setattr__(self, '_current_envelope', new_envelope)
+            self._current_envelope = new_envelope
             return Success(new_envelope)
 
         envelope_result = self._context_broker.create_next_envelope(
@@ -95,8 +94,7 @@ class CoreRelayPipeline:
             oldest_step = self._previous_envelopes[0].step
             self._snapshot_ids.pop(oldest_step, None)
 
-        self._previous_envelopes.pop()
-        object.__setattr__(self, '_current_envelope', new_envelope)
+        self._current_envelope = new_envelope
         return Success(new_envelope)
 
     def _rollback_to_previous(
@@ -127,7 +125,7 @@ class CoreRelayPipeline:
             return restore_result
 
         restored_envelope = restore_result.value
-        object.__setattr__(self, '_current_envelope', restored_envelope)
+        self._current_envelope = restored_envelope
         return RollbackSuccess(value=restored_envelope, reason=reason)
 
     def rollback(self) -> Result[ContextEnvelope]:
@@ -146,7 +144,7 @@ class CoreRelayPipeline:
 
         self._previous_envelopes.pop()
         restored_envelope = restore_result.value
-        object.__setattr__(self, '_current_envelope', restored_envelope)
+        self._current_envelope = restored_envelope
         return RollbackSuccess(value=restored_envelope, reason="Manual rollback")
 
     def get_current_envelope(self) -> ContextEnvelope | None:
