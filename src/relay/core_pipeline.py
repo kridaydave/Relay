@@ -32,6 +32,7 @@ class CoreRelayPipeline:
     _snapshot_store: SnapshotStore = field(init=False, repr=False)
     _current_envelope: ContextEnvelope | None = field(default=None, init=False, repr=False)
     _previous_envelopes: list[ContextEnvelope] = field(default_factory=list, init=False, repr=False)
+    _snapshot_ids: dict[str, str] = field(default_factory=dict, init=False, repr=False)
 
     def __post_init__(self) -> None:
         SnapshotStore = __import__("relay.pipeline", fromlist=["SnapshotStore"]).SnapshotStore
@@ -68,6 +69,11 @@ class CoreRelayPipeline:
 
         self._previous_envelopes.append(self._current_envelope)
 
+        current_snapshot_result = self._snapshot_store.save_snapshot(self._current_envelope)
+        if isinstance(current_snapshot_result, Failure):
+            return current_snapshot_result
+        self._snapshot_ids[self._current_envelope.step] = current_snapshot_result.value
+
         validation_result = self._handoff_validator.validate_handoff(
             previous_envelope=self._current_envelope,
             current_envelope=new_envelope
@@ -82,6 +88,12 @@ class CoreRelayPipeline:
         snapshot_result = self._snapshot_store.save_snapshot(new_envelope)
         if isinstance(snapshot_result, Failure):
             return snapshot_result
+
+        snapshot_id = snapshot_result.value
+        self._snapshot_ids[new_envelope.step] = snapshot_id
+        if self._previous_envelopes:
+            oldest_step = self._previous_envelopes[0].step
+            self._snapshot_ids.pop(oldest_step, None)
 
         self._previous_envelopes.pop()
         object.__setattr__(self, '_current_envelope', new_envelope)
@@ -106,9 +118,11 @@ class CoreRelayPipeline:
             return Failure(reason="No previous envelope to rollback to", code="NO_ROLLBACK_AVAILABLE")
 
         previous_envelope = self._previous_envelopes[-1]
-        restore_result = self._snapshot_store.load_snapshot(
-            f"{previous_envelope.step}_{previous_envelope.timestamp.strftime('%Y%m%dT%H%M%S%f')}"
-        )
+        snapshot_id = self._snapshot_ids.get(previous_envelope.step)
+        if snapshot_id is None:
+            return Failure(reason="No snapshot registered for step", code="NO_SNAPSHOT_REGISTERED")
+
+        restore_result = self._snapshot_store.load_snapshot(snapshot_id)
         if isinstance(restore_result, Failure):
             return restore_result
 
@@ -122,9 +136,11 @@ class CoreRelayPipeline:
             return Failure(reason="No previous envelope to rollback to", code="NO_ROLLBACK_AVAILABLE")
 
         previous_envelope = self._previous_envelopes[-1]
-        restore_result = self._snapshot_store.load_snapshot(
-            f"{previous_envelope.step}_{previous_envelope.timestamp.strftime('%Y%m%dT%H%M%S%f')}"
-        )
+        snapshot_id = self._snapshot_ids.get(previous_envelope.step)
+        if snapshot_id is None:
+            return Failure(reason="No snapshot registered for step", code="NO_SNAPSHOT_REGISTERED")
+
+        restore_result = self._snapshot_store.load_snapshot(snapshot_id)
         if isinstance(restore_result, Failure):
             return restore_result
 
