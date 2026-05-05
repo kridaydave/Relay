@@ -7,8 +7,8 @@ from unittest.mock import patch
 import pytest
 
 from relay.envelope import (
-    ContextEnvelope,
     RELAY_VERSION,
+    ContextEnvelope,
     create_initial_envelope,
     create_next_envelope,
     verify_signature,
@@ -35,7 +35,7 @@ class TestCreateInitialEnvelope:
         result = create_initial_envelope(
             pipeline_id="pipeline-123",
             initial_payload={"data": "test"},
-            secret="test-secret"
+            secret="test-secret",
         )
 
         assert result.value.relay_version == RELAY_VERSION
@@ -47,18 +47,14 @@ class TestCreateInitialEnvelope:
 
     def test_create_initial_envelope_fails_on_empty_pipeline_id(self):
         result = create_initial_envelope(
-            pipeline_id="",
-            initial_payload={"data": "test"}
+            pipeline_id="", initial_payload={"data": "test"}
         )
 
         assert result.reason == "pipeline_id cannot be empty"
         assert result.code == "INVALID_PIPELINE_ID"
 
     def test_create_initial_envelope_fails_on_empty_payload(self):
-        result = create_initial_envelope(
-            pipeline_id="pipeline-123",
-            initial_payload={}
-        )
+        result = create_initial_envelope(pipeline_id="pipeline-123", initial_payload={})
 
         assert result.reason == "initial_payload cannot be empty"
         assert result.code == "INVALID_PAYLOAD"
@@ -77,13 +73,13 @@ class TestCreateNextEnvelope:
             token_budget_used=100,
             token_budget_total=8000,
             payload={"data": "initial"},
-            signature="sig1"
+            signature="sig1",
         )
 
         result = create_next_envelope(
             previous_envelope=initial_envelope,
             agent_output={"result": "output"},
-            secret="test-secret"
+            secret="test-secret",
         )
 
         assert result.value.step == 2
@@ -100,13 +96,13 @@ class TestCreateNextEnvelope:
             token_budget_used=100,
             token_budget_total=8000,
             payload={"data": "initial"},
-            signature="sig1"
+            signature="sig1",
         )
 
         result = create_next_envelope(
             previous_envelope=initial_envelope,
             agent_output={"result": "output"},
-            secret="test-secret"
+            secret="test-secret",
         )
 
         assert result.value.token_budget_used > 100
@@ -123,13 +119,13 @@ class TestCreateNextEnvelope:
             token_budget_used=7500,
             token_budget_total=8000,
             payload={"data": "initial"},
-            signature="sig1"
+            signature="sig1",
         )
 
         result = create_next_envelope(
             previous_envelope=initial_envelope,
             agent_output={"huge": "payload" * 1000},
-            secret="test-secret"
+            secret="test-secret",
         )
 
         assert result.code == "TOKEN_BUDGET_EXCEEDED"
@@ -144,13 +140,11 @@ class TestCreateNextEnvelope:
             token_budget_used=100,
             token_budget_total=8000,
             payload={"data": "initial"},
-            signature="sig1"
+            signature="sig1",
         )
 
         result = create_next_envelope(
-            previous_envelope=initial_envelope,
-            agent_output={},
-            secret="test-secret"
+            previous_envelope=initial_envelope, agent_output={}, secret="test-secret"
         )
 
         assert result.reason == "agent_output cannot be empty"
@@ -165,7 +159,7 @@ class TestVerifySignature:
         envelope = create_initial_envelope(
             pipeline_id="pipeline-123",
             initial_payload={"data": "test"},
-            secret="test-secret"
+            secret="test-secret",
         ).value
 
         assert verify_signature(envelope, "test-secret") is True
@@ -179,7 +173,40 @@ class TestVerifySignature:
             token_budget_used=100,
             token_budget_total=8000,
             payload={"data": "test"},
-            signature="invalid-signature"
+            signature="invalid-signature",
         )
 
         assert verify_signature(envelope, "test-secret") is False
+
+    def test_verify_signature_fails_on_tampered_budget(self):
+        original = create_initial_envelope(
+            pipeline_id="pipeline-123",
+            initial_payload={"data": "test"},
+            secret="test-secret",
+        ).value
+
+        tampered = ContextEnvelope(
+            relay_version=original.relay_version,
+            pipeline_id=original.pipeline_id,
+            step=original.step,
+            timestamp=original.timestamp,
+            token_budget_used=original.token_budget_used,
+            token_budget_total=999999,  # tampered
+            payload=original.payload,
+            signature=original.signature,
+        )
+        assert verify_signature(tampered, "test-secret") is False
+
+
+class TestTokenEstimation:
+    def test_token_estimate_accuracy(self):
+        from relay.envelope import _estimate_tokens
+
+        # Ground truth: '{"data": "test"}' is about 6 tokens in GPT-4.
+        payload = {"data": "test"}
+        estimate = _estimate_tokens(payload)
+        ground_truth = 6
+        tolerance = 0.30
+        assert (
+            (1 - tolerance) * ground_truth <= estimate <= (1 + tolerance) * ground_truth
+        )

@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from relay.envelope import ContextEnvelope, RELAY_VERSION, create_initial_envelope
+from relay.envelope import RELAY_VERSION, ContextEnvelope, create_initial_envelope
 from relay.snapshot import SnapshotStore
 from relay.types import Failure, Success
 
@@ -35,7 +35,7 @@ class TestSnapshotStore:
             token_budget_used=100,
             token_budget_total=8000,
             payload=payload,
-            signature="test-signature"
+            signature="test-signature",
         )
 
     def test_snapshot_saves_envelope_returns_snapshot_id(self):
@@ -44,7 +44,7 @@ class TestSnapshotStore:
         result = self.store.save_snapshot(envelope)
 
         assert isinstance(result, Success)
-        assert result.value.startswith("1_")
+        assert result.value.startswith("pipeline-123@1_")
         assert result.value.endswith(".json") is False
 
     def test_snapshot_loads_saved_envelope(self):
@@ -87,6 +87,24 @@ class TestSnapshotStore:
 
         assert isinstance(result, Success)
         assert len(result.value) == 3
+
+    def test_snapshot_index_sorts_numerically(self):
+        pipeline_id = "pipeline-sort"
+        # Create envelopes in arbitrary order, but their steps matter
+        env2 = self._create_envelope(pipeline_id=pipeline_id, step=2)
+        env10 = self._create_envelope(pipeline_id=pipeline_id, step=10)
+        env1 = self._create_envelope(pipeline_id=pipeline_id, step=1)
+
+        self.store.save_snapshot(env2)
+        self.store.save_snapshot(env10)
+        self.store.save_snapshot(env1)
+
+        result = self.store.list_snapshots(pipeline_id)
+        assert isinstance(result, Success)
+        # Should be sorted 1, 2, 10
+        assert "pipeline-sort@1_" in result.value[0]
+        assert "pipeline-sort@2_" in result.value[1]
+        assert "pipeline-sort@10_" in result.value[2]
 
     def test_snapshot_fails_on_nonexistent_load(self):
         result = self.store.load_snapshot("nonexistent_id")
