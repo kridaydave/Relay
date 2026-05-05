@@ -4,15 +4,14 @@ Owns: ContextEnvelope, envelope creation, signing, and verification.
 Does NOT: persist data, validate content, or manage pipeline state.
 """
 
-from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Any
 import hashlib
 import hmac
 import json
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from typing import Any
 
-from relay.types import Result, Success, Failure
-
+from relay.types import Failure, Result, Success
 
 RELAY_VERSION = "0.1.0"
 
@@ -31,6 +30,7 @@ class ContextEnvelope:
         payload: The actual data being passed (agent output).
         signature: HMAC-SHA256 signature of the envelope.
     """
+
     relay_version: str
     pipeline_id: str
     step: int
@@ -45,7 +45,7 @@ def create_initial_envelope(
     pipeline_id: str,
     initial_payload: dict[str, Any],
     token_budget_total: int = 8000,
-    secret: str = "default-secret"
+    secret: str = "default-secret",
 ) -> Result[ContextEnvelope]:
     """Create the first envelope for a pipeline."""
     if not pipeline_id:
@@ -62,7 +62,7 @@ def create_initial_envelope(
         token_budget_used=token_used,
         token_budget_total=token_budget_total,
         payload=initial_payload,
-        signature=""
+        signature="",
     )
 
     signed = _sign_envelope(envelope, secret)
@@ -72,7 +72,7 @@ def create_initial_envelope(
 def create_next_envelope(
     previous_envelope: ContextEnvelope,
     agent_output: dict[str, Any],
-    secret: str = "default-secret"
+    secret: str = "default-secret",
 ) -> Result[ContextEnvelope]:
     """Create a subsequent envelope for the next step."""
     if not agent_output:
@@ -82,7 +82,7 @@ def create_next_envelope(
     if token_used > previous_envelope.token_budget_total:
         return Failure(
             reason=f"Token budget exceeded: {token_used} > {previous_envelope.token_budget_total}",
-            code="TOKEN_BUDGET_EXCEEDED"
+            code="TOKEN_BUDGET_EXCEEDED",
         )
 
     envelope = ContextEnvelope(
@@ -93,7 +93,7 @@ def create_next_envelope(
         token_budget_used=token_used,
         token_budget_total=previous_envelope.token_budget_total,
         payload=agent_output,
-        signature=""
+        signature="",
     )
 
     signed = _sign_envelope(envelope, secret)
@@ -117,18 +117,22 @@ def _sign_envelope(envelope: ContextEnvelope, secret: str) -> ContextEnvelope:
         token_budget_used=envelope.token_budget_used,
         token_budget_total=envelope.token_budget_total,
         payload=envelope.payload,
-        signature=signature
+        signature=signature,
     )
 
 
 def _compute_signature(envelope: ContextEnvelope, secret: str) -> str:
     """Compute HMAC-SHA256 signature for an envelope."""
     payload = json.dumps(envelope.payload, sort_keys=True)
-    message = f"{envelope.pipeline_id}|{envelope.step}|{envelope.timestamp.isoformat()}|{payload}"
+    message = f"{envelope.relay_version}|{envelope.pipeline_id}|{envelope.step}|{envelope.timestamp.isoformat()}|{envelope.token_budget_used}|{envelope.token_budget_total}|{payload}"
     return hmac.new(secret.encode(), message.encode(), hashlib.sha256).hexdigest()
 
 
 def _estimate_tokens(payload: dict[str, Any]) -> int:
-    """Estimate token count from payload JSON string length."""
+    """Approximates token count from payload JSON string length.
+
+    Approximates token count to within 30% of a BPE tokenizer.
+    See test_envelope.py::test_token_estimate.
+    """
     json_str = json.dumps(payload, sort_keys=True)
-    return len(json_str) // 4
+    return len(json_str) // 3
