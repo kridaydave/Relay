@@ -82,10 +82,10 @@ class HandoffValidator:
         previous_payload: dict[str, Any],
         current_payload: dict[str, Any]
     ) -> str | None:
-        """Detect hallucination by checking for fabricated entities not in prior context.
+        """Detect hallucination by checking entity fabrication ratio.
 
-        Flags when new entities appear that were NOT supported by prior context.
-        Entity removal is valid agent behavior and not flagged.
+        Flags when new entities vastly outnumber removed ones, suggesting fabrication.
+        Entity removal is valid and not flagged.
         """
         if self._hallucination_ratio_threshold is None:
             return None
@@ -93,11 +93,17 @@ class HandoffValidator:
         prev_entities = self._extract_entities(previous_payload)
         curr_entities = self._extract_entities(current_payload)
 
-        fabricated = curr_entities - prev_entities
+        new_entities = curr_entities - prev_entities
+        removed_entities = prev_entities - curr_entities
 
-        if fabricated:
-            fabricated_list = sorted(fabricated)
-            return f"Entity fabrication detected: {fabricated_list}"
+        new_count = len(new_entities)
+        removed_count = len(removed_entities)
+
+        if new_count > 0:
+            removed_count = max(removed_count, 1)
+            ratio = new_count / removed_count
+            if ratio > self._hallucination_ratio_threshold:
+                return f"Entity fabrication detected: {new_count} new, {removed_count} removed (ratio: {ratio:.1f}x)"
 
         return None
 

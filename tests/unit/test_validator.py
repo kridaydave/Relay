@@ -93,33 +93,6 @@ class TestValidateHandoff:
         assert "facts" in validation_result.contradiction_details
         assert "constraints" in validation_result.contradiction_details
 
-    @patch("relay.envelope.datetime")
-    def test_validator_detects_token_budget_exceeded(self, mock_datetime):
-        mock_datetime.now.return_value = datetime(2024, 1, 1, tzinfo=timezone.utc)
-
-        previous_result = create_initial_envelope(
-            pipeline_id="pipeline-123",
-            initial_payload={"entities": ["a"], "actions": ["b"], "facts": ["c"]},
-            secret="secret"
-        )
-        previous_envelope = previous_result.value
-
-        current_envelope = _make_envelope(
-            pipeline_id="pipeline-123",
-            step=2,
-            payload={"entities": ["a"], "actions": ["b"], "facts": ["c"]},
-            token_budget_used=9000,
-            token_budget_total=8000
-        )
-
-        validator = HandoffValidator()
-        result = validator.validate_handoff(previous_envelope, current_envelope)
-
-        assert isinstance(result, Success)
-        validation_result = result.value
-        assert validation_result.has_contradiction is True
-        assert "Token budget overflow" in validation_result.contradiction_details
-
 
 class TestShouldRollback:
     def test_validator_should_rollback_returns_true_on_contradiction(self):

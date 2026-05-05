@@ -66,6 +66,8 @@ class CoreRelayPipeline:
 
         new_envelope = envelope_result.value
 
+        self._previous_envelopes.append(self._current_envelope)
+
         validation_result = self._handoff_validator.validate_handoff(
             previous_envelope=self._current_envelope,
             current_envelope=new_envelope
@@ -77,12 +79,11 @@ class CoreRelayPipeline:
         if self._handoff_validator.should_rollback(validation):
             return self._rollback_to_previous(new_envelope, validation)
 
-        self._previous_envelopes.append(self._current_envelope)
-
         snapshot_result = self._snapshot_store.save_snapshot(new_envelope)
         if isinstance(snapshot_result, Failure):
             return snapshot_result
 
+        self._previous_envelopes.pop()
         object.__setattr__(self, '_current_envelope', new_envelope)
         return Success(new_envelope)
 
@@ -127,6 +128,7 @@ class CoreRelayPipeline:
         if isinstance(restore_result, Failure):
             return restore_result
 
+        self._previous_envelopes.pop()
         restored_envelope = restore_result.value
         object.__setattr__(self, '_current_envelope', restored_envelope)
         return RollbackSuccess(value=restored_envelope, reason="Manual rollback")
