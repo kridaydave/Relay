@@ -10,7 +10,7 @@ from relay.validator import HandoffValidator, ValidationResult
 from relay.types import Success, Failure
 
 
-RELAY_VERSION = "0.1.0"
+RELAY_VERSION = "0.2.0"
 
 
 def _make_envelope(
@@ -20,7 +20,8 @@ def _make_envelope(
     token_budget_used: int = 100,
     token_budget_total: int = 8000,
     timestamp: datetime = None,
-    signature: str = "sig"
+    signature: str = "sig",
+    manifest_hash: str = ""
 ) -> ContextEnvelope:
     if timestamp is None:
         timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
@@ -32,6 +33,7 @@ def _make_envelope(
         token_budget_used=token_budget_used,
         token_budget_total=token_budget_total,
         payload=payload,
+        manifest_hash=manifest_hash,
         signature=signature
     )
 

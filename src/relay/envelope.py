@@ -13,7 +13,7 @@ from typing import Any
 
 from relay.types import Failure, Result, Success
 
-RELAY_VERSION = "0.1.0"
+RELAY_VERSION = "0.2.0"
 
 
 @dataclass(frozen=True)
@@ -28,6 +28,7 @@ class ContextEnvelope:
         token_budget_used: Tokens consumed so far.
         token_budget_total: Maximum token budget allowed.
         payload: The actual data being passed (agent output).
+        manifest_hash: Hash of the agent manifest.
         signature: HMAC-SHA256 signature of the envelope.
     """
 
@@ -38,6 +39,7 @@ class ContextEnvelope:
     token_budget_used: int
     token_budget_total: int
     payload: dict[str, Any]
+    manifest_hash: str
     signature: str
 
 
@@ -46,12 +48,14 @@ def create_initial_envelope(
     initial_payload: dict[str, Any],
     secret: str,
     token_budget_total: int = 8000,
+    manifest_hash: str = "",
 ) -> Result[ContextEnvelope]:
     """Create the first envelope for a pipeline.
 
     Args:
         secret: HMAC signing secret. REQUIRED - must be provided by caller.
             Do NOT use default or placeholder values in production.
+        manifest_hash: Optional hash of the agent manifest.
     """
     if not pipeline_id:
         return Failure(reason="pipeline_id cannot be empty", code="INVALID_PIPELINE_ID")
@@ -67,6 +71,7 @@ def create_initial_envelope(
         token_budget_used=token_used,
         token_budget_total=token_budget_total,
         payload=initial_payload,
+        manifest_hash=manifest_hash,
         signature="",
     )
 
@@ -78,12 +83,14 @@ def create_next_envelope(
     previous_envelope: ContextEnvelope,
     secret: str,
     agent_output: dict[str, Any],
+    manifest_hash: str = "",
 ) -> Result[ContextEnvelope]:
     """Create a subsequent envelope for the next step.
 
     Args:
         secret: HMAC signing secret. REQUIRED - must be provided by caller.
             Do NOT use default or placeholder values in production.
+        manifest_hash: Optional hash of the agent manifest.
     """
     if not agent_output:
         return Failure(reason="agent_output cannot be empty", code="INVALID_PAYLOAD")
@@ -103,6 +110,7 @@ def create_next_envelope(
         token_budget_used=token_used,
         token_budget_total=previous_envelope.token_budget_total,
         payload=agent_output,
+        manifest_hash=manifest_hash,
         signature="",
     )
 
@@ -127,14 +135,19 @@ def _sign_envelope(envelope: ContextEnvelope, secret: str) -> ContextEnvelope:
         token_budget_used=envelope.token_budget_used,
         token_budget_total=envelope.token_budget_total,
         payload=envelope.payload,
+        manifest_hash=envelope.manifest_hash,
         signature=signature,
     )
 
 
 def _compute_signature(envelope: ContextEnvelope, secret: str) -> str:
-    """Compute HMAC-SHA256 signature for an envelope."""
+    """Compute HMAC-SHA256 signature for an envelope.
+
+    Canonical signature format (field order is load-bearing):
+    {relay_version}|{pipeline_id}|{step}|{timestamp.isoformat()}|{token_budget_used}|{token_budget_total}|{manifest_hash}|{json.dumps(payload, sort_keys=True)}
+    """
     payload = json.dumps(envelope.payload, sort_keys=True)
-    message = f"{envelope.relay_version}|{envelope.pipeline_id}|{envelope.step}|{envelope.timestamp.isoformat()}|{envelope.token_budget_used}|{envelope.token_budget_total}|{payload}"
+    message = f"{envelope.relay_version}|{envelope.pipeline_id}|{envelope.step}|{envelope.timestamp.isoformat()}|{envelope.token_budget_used}|{envelope.token_budget_total}|{envelope.manifest_hash}|{payload}"
     return hmac.new(secret.encode(), message.encode(), hashlib.sha256).hexdigest()
 
 

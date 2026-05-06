@@ -5,14 +5,17 @@ Does NOT: define agent behavior, manage prompts.
 """
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable, Optional
+import json
 import uuid
 
+from relay.budget import HardCapEnforcer, TokenCounter
 from relay.context_broker import ContextBroker
 from relay.envelope import ContextEnvelope
+from relay.slicer import AgentManifest, SlicePacker
 from relay.snapshot import SnapshotStore
 from relay.types import Failure, Result, Success, RollbackSuccess
-from relay.validator import HandoffValidator, ValidationResult
+from relay.validator import HandoffValidator, ValidationResult, validate_manifest_boundaries
 
 
 @dataclass
@@ -25,6 +28,8 @@ class CoreRelayPipeline:
     signing_secret: str
     token_budget: int = 8000
     storage_path: str = "./relay_data/snapshots"
+    token_counter: Optional[TokenCounter] = None
+    slice_packer: Optional[SlicePacker] = None
 
     _pipeline_id: str = field(init=False, repr=False)
     _context_broker: ContextBroker = field(init=False, repr=False)
@@ -33,6 +38,7 @@ class CoreRelayPipeline:
     _current_envelope: ContextEnvelope | None = field(default=None, init=False, repr=False)
     _previous_envelopes: list[ContextEnvelope] = field(default_factory=list, init=False, repr=False)
     _snapshot_ids: dict[int, str] = field(default_factory=dict, init=False, repr=False)
+    _enforcer: Optional[HardCapEnforcer] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         self._pipeline_id = uuid.uuid4().hex
@@ -42,9 +48,26 @@ class CoreRelayPipeline:
         )
         self._handoff_validator = HandoffValidator()
         self._snapshot_store = SnapshotStore(storage_path=self.storage_path)
+        if self.token_counter is not None:
+            self._enforcer = HardCapEnforcer(self._pipeline_id, self.token_counter)
+        else:
+            self._enforcer = None
 
     def execute_step(self, agent_output: dict[str, Any]) -> Result[ContextEnvelope]:
         """Execute a pipeline step with agent output."""
+        return self.execute_step_with_manifest(agent_output, manifest=None)
+
+    def execute_step_with_manifest(
+        self,
+        agent_output: dict[str, Any],
+        manifest: Optional[AgentManifest] = None,
+    ) -> Result[ContextEnvelope]:
+        """Execute a pipeline step with optional agent manifest for budget and boundary validation.
+
+        Args:
+            agent_output: The output from the agent.
+            manifest: Optional agent manifest for enforcing budget and write boundaries.
+        """
         if self._current_envelope is None:
             envelope_result = self._context_broker.create_initial_envelope(
                 pipeline_id=self._pipeline_id,
@@ -54,8 +77,27 @@ class CoreRelayPipeline:
                 return envelope_result
 
             new_envelope = envelope_result.value
+
+            if manifest is not None:
+                manifest_hash = manifest.compute_hash()
+                new_envelope = ContextEnvelope(
+                    relay_version=new_envelope.relay_version,
+                    pipeline_id=new_envelope.pipeline_id,
+                    step=new_envelope.step,
+                    timestamp=new_envelope.timestamp,
+                    token_budget_used=new_envelope.token_budget_used,
+                    token_budget_total=new_envelope.token_budget_total,
+                    payload=new_envelope.payload,
+                    manifest_hash=manifest_hash,
+                    signature=new_envelope.signature,
+                )
+
             self._current_envelope = new_envelope
             return Success(new_envelope)
+
+        if self._enforcer is not None and manifest is not None:
+            projected_slice = self._slice_payload(manifest)
+            self._enforcer.check(self._current_envelope, projected_slice)
 
         envelope_result = self._context_broker.create_next_envelope(
             previous_envelope=self._current_envelope,
@@ -65,6 +107,45 @@ class CoreRelayPipeline:
             return envelope_result
 
         new_envelope = envelope_result.value
+
+        if manifest is not None:
+            written_sections = set(agent_output.keys())
+            try:
+                validate_manifest_boundaries(new_envelope, manifest, written_sections)
+            except Exception as e:
+                return self._rollback_to_previous_with_reason(new_envelope, str(e))
+
+            manifest_hash = manifest.compute_hash()
+            token_used = new_envelope.token_budget_used
+            new_envelope = ContextEnvelope(
+                relay_version=new_envelope.relay_version,
+                pipeline_id=new_envelope.pipeline_id,
+                step=new_envelope.step,
+                timestamp=new_envelope.timestamp,
+                token_budget_used=token_used,
+                token_budget_total=new_envelope.token_budget_total,
+                payload=new_envelope.payload,
+                manifest_hash=manifest_hash,
+                signature="",
+            )
+
+            signed_envelope = self._context_broker.create_next_envelope(
+                previous_envelope=self._current_envelope,
+                agent_output=agent_output
+            )
+            if isinstance(signed_envelope, Failure):
+                return signed_envelope
+            new_envelope = ContextEnvelope(
+                relay_version=signed_envelope.value.relay_version,
+                pipeline_id=signed_envelope.value.pipeline_id,
+                step=signed_envelope.value.step,
+                timestamp=signed_envelope.value.timestamp,
+                token_budget_used=token_used,
+                token_budget_total=signed_envelope.value.token_budget_total,
+                payload=signed_envelope.value.payload,
+                manifest_hash=manifest_hash,
+                signature=signed_envelope.value.signature,
+            )
 
         self._previous_envelopes.append(self._current_envelope)
 
@@ -96,6 +177,13 @@ class CoreRelayPipeline:
 
         self._current_envelope = new_envelope
         return Success(new_envelope)
+
+    def _slice_payload(self, manifest: AgentManifest) -> str:
+        """Slice the current payload based on the manifest and slice packer."""
+        if self.slice_packer is None or self._current_envelope is None:
+            return ""
+        sliced = self.slice_packer.pack(self._current_envelope.payload, manifest)
+        return json.dumps(sliced)
 
     def _rollback_to_previous(
         self,

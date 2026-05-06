@@ -14,7 +14,7 @@ Section A — Foundation rules
 R1 — One file, one responsibility
 Every module does exactly one thing. context_broker.py signs envelopes. validator.py checks
 handoffs. snapshot.py persists state. If you are unsure which file a function belongs in,
-the function is probably doing too many things.
+the function is probably doing too many things. Always commit after editing/writing in 3 files max. ALWAYS DO ATOMIC COMMITS
 
 R2 — No shared mutable state
 Agents never write to a shared object. The context envelope is read-only from the moment it

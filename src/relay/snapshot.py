@@ -173,6 +173,7 @@ class SnapshotStore:
             "token_budget_used": envelope.token_budget_used,
             "token_budget_total": envelope.token_budget_total,
             "payload": envelope.payload,
+            "manifest_hash": envelope.manifest_hash,
             "signature": envelope.signature,
         }
 
@@ -181,15 +182,15 @@ class SnapshotStore:
         relay_version = data.get("relay_version")
         if not relay_version or not isinstance(relay_version, str):
             return Failure(reason="Missing or invalid relay_version", code="INVALID_SNAPSHOT")
-        
+
         pipeline_id = data.get("pipeline_id")
         if not pipeline_id or not isinstance(pipeline_id, str):
             return Failure(reason="Missing or invalid pipeline_id", code="INVALID_SNAPSHOT")
-        
+
         step = data.get("step")
         if not isinstance(step, int):
             return Failure(reason="Missing or invalid step", code="INVALID_SNAPSHOT")
-        
+
         timestamp_str = data.get("timestamp")
         if not timestamp_str or not isinstance(timestamp_str, str):
             return Failure(reason="Missing or invalid timestamp", code="INVALID_SNAPSHOT")
@@ -197,23 +198,25 @@ class SnapshotStore:
             timestamp = datetime.fromisoformat(timestamp_str)
         except (ValueError, TypeError):
             return Failure(reason="Invalid timestamp format", code="INVALID_SNAPSHOT")
-        
+
         token_budget_used = data.get("token_budget_used")
         if not isinstance(token_budget_used, int):
             return Failure(reason="Missing or invalid token_budget_used", code="INVALID_SNAPSHOT")
-        
+
         token_budget_total = data.get("token_budget_total")
         if not isinstance(token_budget_total, int):
             return Failure(reason="Missing or invalid token_budget_total", code="INVALID_SNAPSHOT")
-        
+
         payload = data.get("payload")
         if not isinstance(payload, dict):
             return Failure(reason="Missing or invalid payload", code="INVALID_SNAPSHOT")
-        
+
+        manifest_hash = data.get("manifest_hash", "")
+
         signature = data.get("signature")
         if not isinstance(signature, str):
             return Failure(reason="Missing or invalid signature", code="INVALID_SNAPSHOT")
-        
+
         return Success(ContextEnvelope(
             relay_version=relay_version,
             pipeline_id=pipeline_id,
@@ -222,5 +225,6 @@ class SnapshotStore:
             token_budget_used=token_budget_used,
             token_budget_total=token_budget_total,
             payload=payload,
+            manifest_hash=manifest_hash,
             signature=signature,
         ))

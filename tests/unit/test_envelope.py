@@ -73,6 +73,7 @@ class TestCreateNextEnvelope:
             token_budget_used=100,
             token_budget_total=8000,
             payload={"data": "initial"},
+            manifest_hash="",
             signature="sig1",
         )
 
@@ -96,6 +97,7 @@ class TestCreateNextEnvelope:
             token_budget_used=100,
             token_budget_total=8000,
             payload={"data": "initial"},
+            manifest_hash="",
             signature="sig1",
         )
 
@@ -119,6 +121,7 @@ class TestCreateNextEnvelope:
             token_budget_used=7500,
             token_budget_total=8000,
             payload={"data": "initial"},
+            manifest_hash="",
             signature="sig1",
         )
 
@@ -140,6 +143,7 @@ class TestCreateNextEnvelope:
             token_budget_used=100,
             token_budget_total=8000,
             payload={"data": "initial"},
+            manifest_hash="",
             signature="sig1",
         )
 
@@ -173,6 +177,7 @@ class TestVerifySignature:
             token_budget_used=100,
             token_budget_total=8000,
             payload={"data": "test"},
+            manifest_hash="",
             signature="invalid-signature",
         )
 
@@ -193,6 +198,7 @@ class TestVerifySignature:
             token_budget_used=original.token_budget_used,
             token_budget_total=999999,  # tampered
             payload=original.payload,
+            manifest_hash=original.manifest_hash,
             signature=original.signature,
         )
         assert verify_signature(tampered, "test-secret") is False

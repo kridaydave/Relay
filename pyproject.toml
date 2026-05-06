@@ -30,6 +30,9 @@ dependencies = [
 "Homepage" = "https://github.com/kridaydave/relay"
 "Bug Tracker" = "https://github.com/kridaydave/relay/issues"
 
+[project.optional-dependencies]
+tiktoken = ["tiktoken"]
+
 [tool.setuptools.packages.find]
 where = ["src"]
 

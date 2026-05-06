@@ -11,6 +11,36 @@ from typing import TypeVar, Generic, Union, Callable, overload, TypeAlias
 T = TypeVar("T")
 
 
+class RelayError(Exception):
+    """Base exception for Relay-specific errors."""
+    pass
+
+
+@dataclass(frozen=True)
+class BudgetExceededError(RelayError):
+    """Raised when token budget would be exceeded by an agent call."""
+    used: int
+    projected: int
+    limit: int
+    step: int
+
+
+@dataclass(frozen=True)
+class HandoffValidationError(RelayError):
+    """Raised when an agent writes to a section not in its manifest."""
+    agent_id: str
+    offending_section: str
+    step: int
+
+
+@dataclass(frozen=True)
+class ManifestHashMismatchError(RelayError):
+    """Raised when manifest hash doesn't match expected value."""
+    expected_hash: str
+    actual_hash: str
+    step: int
+
+
 @dataclass(frozen=True)
 class Success(Generic[T]):
     """Represents a successful result with a value."""
