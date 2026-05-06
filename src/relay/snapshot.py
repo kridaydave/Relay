@@ -173,6 +173,7 @@ class SnapshotStore:
             "token_budget_used": envelope.token_budget_used,
             "token_budget_total": envelope.token_budget_total,
             "payload": envelope.payload,
+            "manifest_hash": envelope.manifest_hash,
             "signature": envelope.signature,
         }
 
@@ -213,7 +214,9 @@ class SnapshotStore:
         signature = data.get("signature")
         if not isinstance(signature, str):
             return Failure(reason="Missing or invalid signature", code="INVALID_SNAPSHOT")
-        
+
+        manifest_hash = data.get("manifest_hash", "")
+
         return Success(ContextEnvelope(
             relay_version=relay_version,
             pipeline_id=pipeline_id,
@@ -222,5 +225,6 @@ class SnapshotStore:
             token_budget_used=token_budget_used,
             token_budget_total=token_budget_total,
             payload=payload,
+            manifest_hash=manifest_hash,
             signature=signature,
         ))

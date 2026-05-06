@@ -41,6 +41,7 @@ def create_mock_envelope(
         token_budget_used=100 * step,
         token_budget_total=8000,
         payload=payload,
+        manifest_hash="",
         signature=f"sig{step}",
     )
 

@@ -25,6 +25,7 @@ class EnvelopeFixture:
     token_budget_total: int
     payload: dict
     signature: str
+    manifest_hash: str = ""
 
 
 class TestCreateInitialEnvelope:
@@ -73,6 +74,7 @@ class TestCreateNextEnvelope:
             token_budget_used=100,
             token_budget_total=8000,
             payload={"data": "initial"},
+            manifest_hash="",
             signature="sig1",
         )
 
@@ -96,6 +98,7 @@ class TestCreateNextEnvelope:
             token_budget_used=100,
             token_budget_total=8000,
             payload={"data": "initial"},
+            manifest_hash="",
             signature="sig1",
         )
 
@@ -119,6 +122,7 @@ class TestCreateNextEnvelope:
             token_budget_used=7500,
             token_budget_total=8000,
             payload={"data": "initial"},
+            manifest_hash="",
             signature="sig1",
         )
 
@@ -140,6 +144,7 @@ class TestCreateNextEnvelope:
             token_budget_used=100,
             token_budget_total=8000,
             payload={"data": "initial"},
+            manifest_hash="",
             signature="sig1",
         )
 
@@ -173,6 +178,7 @@ class TestVerifySignature:
             token_budget_used=100,
             token_budget_total=8000,
             payload={"data": "test"},
+            manifest_hash="",
             signature="invalid-signature",
         )
 
@@ -191,8 +197,9 @@ class TestVerifySignature:
             step=original.step,
             timestamp=original.timestamp,
             token_budget_used=original.token_budget_used,
-            token_budget_total=999999,  # tampered
+            token_budget_total=999999,
             payload=original.payload,
+            manifest_hash=original.manifest_hash,
             signature=original.signature,
         )
         assert verify_signature(tampered, "test-secret") is False
@@ -200,16 +207,6 @@ class TestVerifySignature:
 
 class TestTokenEstimation:
     def test_token_estimate_within_realistic_tolerance(self):
-        """Test that token estimate is within realistic tolerance.
-
-        The heuristic divides by 3, which approximates BPE tokenization.
-        JSON with typical content averages ~1 token per 3-4 characters.
-        We test with 50% tolerance which is achievable for this heuristic.
-
-        R17 Fix: This test asserts a specific tolerance (50%) rather than just
-        verifying the function runs without error. The 50% tolerance reflects
-        the documented accuracy of this heuristic approximation.
-        """
         from relay.envelope import _estimate_tokens
 
         test_cases = [
