@@ -12,7 +12,9 @@ from relay.context_broker import ContextBroker
 from relay.envelope import ContextEnvelope
 from relay.snapshot import SnapshotStore
 from relay.types import Failure, Result, Success, RollbackSuccess
-from relay.validator import HandoffValidator, ValidationResult
+from relay.validator import HandoffValidator, ValidationResult, validate_manifest_boundaries
+from relay.budget import HardCapEnforcer
+from relay.slicer import AgentManifest, RecencySlicePacker
 
 
 @dataclass
@@ -25,11 +27,14 @@ class CoreRelayPipeline:
     signing_secret: str
     token_budget: int = 8000
     storage_path: str = "./relay_data/snapshots"
+    budget_enforcer: HardCapEnforcer | None = None
+    current_manifest: AgentManifest | None = None
 
     _pipeline_id: str = field(init=False, repr=False)
     _context_broker: ContextBroker = field(init=False, repr=False)
     _handoff_validator: HandoffValidator = field(init=False, repr=False)
     _snapshot_store: SnapshotStore = field(init=False, repr=False)
+    _slicer: RecencySlicePacker = field(init=False, repr=False)
     _current_envelope: ContextEnvelope | None = field(default=None, init=False, repr=False)
     _previous_envelopes: list[ContextEnvelope] = field(default_factory=list, init=False, repr=False)
     _snapshot_ids: dict[int, str] = field(default_factory=dict, init=False, repr=False)
@@ -42,9 +47,19 @@ class CoreRelayPipeline:
         )
         self._handoff_validator = HandoffValidator()
         self._snapshot_store = SnapshotStore(storage_path=self.storage_path)
+        self._slicer = RecencySlicePacker()
 
-    def execute_step(self, agent_output: dict[str, Any]) -> Result[ContextEnvelope]:
-        """Execute a pipeline step with agent output."""
+    def execute_step(
+        self,
+        agent_output: dict[str, Any],
+        projected_slice: str = "",
+    ) -> Result[ContextEnvelope]:
+        """Execute a pipeline step with agent output.
+
+        Args:
+            agent_output: Output from the agent for this step.
+            projected_slice: The slice of context being projected to the agent.
+        """
         if self._current_envelope is None:
             envelope_result = self._context_broker.create_initial_envelope(
                 pipeline_id=self._pipeline_id,
@@ -56,6 +71,9 @@ class CoreRelayPipeline:
             new_envelope = envelope_result.value
             self._current_envelope = new_envelope
             return Success(new_envelope)
+
+        if self.budget_enforcer is not None and projected_slice:
+            self.budget_enforcer.check(self._current_envelope, projected_slice)
 
         envelope_result = self._context_broker.create_next_envelope(
             previous_envelope=self._current_envelope,
@@ -83,6 +101,10 @@ class CoreRelayPipeline:
         validation = validation_result.value
         if self._handoff_validator.should_rollback(validation):
             return self._rollback_to_previous(new_envelope, validation)
+
+        if self.current_manifest is not None:
+            written_sections = set(agent_output.keys())
+            validate_manifest_boundaries(new_envelope, self.current_manifest, written_sections)
 
         snapshot_result = self._snapshot_store.save_snapshot(new_envelope)
         if isinstance(snapshot_result, Failure):
