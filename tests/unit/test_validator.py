@@ -32,6 +32,7 @@ def _make_envelope(
         token_budget_used=token_budget_used,
         token_budget_total=token_budget_total,
         payload=payload,
+        manifest_hash="",
         signature=signature
     )
 

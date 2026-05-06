@@ -13,7 +13,7 @@ from typing import Any
 
 from relay.types import Failure, Result, Success
 
-RELAY_VERSION = "0.1.0"
+RELAY_VERSION = "0.2.0"
 
 
 @dataclass(frozen=True)
@@ -39,8 +39,8 @@ class ContextEnvelope:
     token_budget_used: int
     token_budget_total: int
     payload: dict[str, Any]
+    manifest_hash: str
     signature: str
-    manifest_hash: str = ""
 
 
 def create_initial_envelope(
@@ -69,6 +69,7 @@ def create_initial_envelope(
         token_budget_used=token_used,
         token_budget_total=token_budget_total,
         payload=initial_payload,
+        manifest_hash="",
         signature="",
     )
 
@@ -105,6 +106,7 @@ def create_next_envelope(
         token_budget_used=token_used,
         token_budget_total=previous_envelope.token_budget_total,
         payload=agent_output,
+        manifest_hash=previous_envelope.manifest_hash,
         signature="",
     )
 
