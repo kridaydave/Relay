@@ -21,15 +21,30 @@ Relay treats context like a ledger: append-only, signed at every step, and rever
 - **Context Broker** — Normalizes, timestamps, and cryptographically signs context envelopes
 - **Handoff Validator** — Detects contradictions and triggers rollback on corruption
 - **Snapshot Store** — Persists immutable checkpoints for automatic rollback
+- **Budget Enforcer** — Hard token cap enforcement before every agent call
+- **Slicer** — Pluggable context slicing strategies (recency, relevance, structural)
+- **Manifest Boundaries** — Agent manifests define read/write permissions with hash verification
 
 ---
 
 ## Installation
 
 ```bash
+pip install relay-middleware
+```
+
+Or from source:
+
+```bash
 git clone https://github.com/kridaydave/Relay.git
 cd Relay
 pip install -e .
+```
+
+Optional: install tiktoken for precise token counting:
+
+```bash
+pip install relay-middleware[tiktoken]
 ```
 
 ---
@@ -81,6 +96,42 @@ restored_envelope = result.value
 
 ---
 
+## Budget & Slicing (v0.2)
+
+Enforce token limits and slice context intelligently:
+
+```python
+from relay.core_pipeline import CoreRelayPipeline
+from relay.budget import TiktokenCounter
+from relay.slicer import AgentManifest, RecencySlicePacker
+
+# Create manifest defining agent permissions
+manifest = AgentManifest(
+    agent_id="agent-1",
+    reads=frozenset({"entities", "summary"}),
+    writes=frozenset({"analysis"}),
+    max_tokens=4000
+)
+
+# Initialize pipeline with budget enforcement and slicer
+pipeline = CoreRelayPipeline(
+    signing_secret="your-secret",
+    token_budget=8000,
+    token_counter=TiktokenCounter(),
+    slice_packer=RecencySlicePacker()
+)
+
+# Execute step with manifest validation
+result = pipeline.execute_step_with_manifest(
+    agent_output={"analysis": "growth at 5%"},
+    manifest=manifest
+)
+```
+
+The budget enforcer checks projected token cost before each call. The slicer selects context based on strategy. Manifest boundaries validate write permissions.
+
+---
+
 ## How It Works
 
 ```
@@ -101,14 +152,15 @@ Every context move between agents is wrapped in a signed, immutable envelope:
 
 ```python
 {
-  "relay_version": "0.1.0",
+  "relay_version": "0.2.0",
   "pipeline_id": "uuid-v4",
   "step": 2,
   "timestamp": "2026-05-04T10:22:00Z",
   "token_budget_used": 1840,
   "token_budget_total": 8000,
   "payload": {...},
-  "signature": "sha256:abc123..."
+  "manifest_hash": "sha256:abc123...",
+  "signature": "sha256:def456..."
 }
 ```
 
