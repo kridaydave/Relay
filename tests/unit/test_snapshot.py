@@ -35,6 +35,7 @@ class TestSnapshotStore:
             token_budget_used=100,
             token_budget_total=8000,
             payload=payload,
+            manifest_hash="",
             signature="test-signature",
         )
 
@@ -132,6 +133,7 @@ class TestContextEnvelope:
             token_budget_used=100,
             token_budget_total=8000,
             payload={"key": "value"},
+            manifest_hash="",
             signature="sig-123",
         )
 

@@ -31,6 +31,7 @@ class TestHardCapEnforcer:
             token_budget_used=50,
             token_budget_total=100,
             payload={"data": "test"},
+            manifest_hash="",
             signature="sig1",
         )
         enforcer = HardCapEnforcer("pipe-1", FixedCounter(30))
@@ -46,6 +47,7 @@ class TestHardCapEnforcer:
             token_budget_used=90,
             token_budget_total=100,
             payload={"data": "test"},
+            manifest_hash="",
             signature="sig1",
         )
         enforcer = HardCapEnforcer("pipe-1", FixedCounter(10))
@@ -61,6 +63,7 @@ class TestHardCapEnforcer:
             token_budget_used=91,
             token_budget_total=100,
             payload={"data": "test"},
+            manifest_hash="",
             signature="sig1",
         )
         enforcer = HardCapEnforcer("pipe-1", FixedCounter(10))
@@ -82,6 +85,7 @@ class TestHardCapEnforcer:
             token_budget_used=50,
             token_budget_total=100,
             payload={"data": "test"},
+            manifest_hash="",
             signature="sig1",
         )
         enforcer = HardCapEnforcer("pipe-1", FixedCounter(0))
@@ -97,6 +101,7 @@ class TestHardCapEnforcer:
             token_budget_used=50,
             token_budget_total=100,
             payload={"data": "test"},
+            manifest_hash="",
             signature="sig1",
         )
         enforcer = HardCapEnforcer("pipe-1", FixedCounter(-5))

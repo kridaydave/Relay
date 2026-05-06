@@ -22,6 +22,7 @@ class TestCreateInitialEnvelope:
                 token_budget_used=100,
                 token_budget_total=8000,
                 payload={"data": "test"},
+                manifest_hash="",
                 signature="test-signature"
             )
         )
@@ -72,6 +73,7 @@ class TestCreateNextEnvelope:
                 token_budget_used=200,
                 token_budget_total=8000,
                 payload={"result": "output"},
+                manifest_hash="",
                 signature="test-signature"
             )
         )
@@ -85,6 +87,7 @@ class TestCreateNextEnvelope:
             token_budget_used=100,
             token_budget_total=8000,
             payload={"data": "initial"},
+            manifest_hash="",
             signature="sig1"
         )
 
@@ -108,6 +111,7 @@ class TestCreateNextEnvelope:
                 token_budget_used=200,
                 token_budget_total=8000,
                 payload={"result": "output"},
+                manifest_hash="",
                 signature="test-signature"
             )
         )
@@ -121,6 +125,7 @@ class TestCreateNextEnvelope:
             token_budget_used=100,
             token_budget_total=8000,
             payload={"data": "initial"},
+            manifest_hash="",
             signature="sig1"
         )
 
@@ -142,6 +147,7 @@ class TestCreateNextEnvelope:
                 token_budget_used=250,
                 token_budget_total=8000,
                 payload={"result": "output"},
+                manifest_hash="",
                 signature="test-signature"
             )
         )
@@ -155,6 +161,7 @@ class TestCreateNextEnvelope:
             token_budget_used=100,
             token_budget_total=8000,
             payload={"data": "initial"},
+            manifest_hash="",
             signature="sig1"
         )
 
@@ -181,6 +188,7 @@ class TestCreateNextEnvelope:
             token_budget_used=7500,
             token_budget_total=8000,
             payload={"data": "initial"},
+            manifest_hash="",
             signature="sig1"
         )
 
