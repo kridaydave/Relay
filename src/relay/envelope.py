@@ -44,10 +44,15 @@ class ContextEnvelope:
 def create_initial_envelope(
     pipeline_id: str,
     initial_payload: dict[str, Any],
+    secret: str,
     token_budget_total: int = 8000,
-    secret: str = "default-secret",
 ) -> Result[ContextEnvelope]:
-    """Create the first envelope for a pipeline."""
+    """Create the first envelope for a pipeline.
+
+    Args:
+        secret: HMAC signing secret. REQUIRED - must be provided by caller.
+            Do NOT use default or placeholder values in production.
+    """
     if not pipeline_id:
         return Failure(reason="pipeline_id cannot be empty", code="INVALID_PIPELINE_ID")
     if not initial_payload:
@@ -71,10 +76,15 @@ def create_initial_envelope(
 
 def create_next_envelope(
     previous_envelope: ContextEnvelope,
+    secret: str,
     agent_output: dict[str, Any],
-    secret: str = "default-secret",
 ) -> Result[ContextEnvelope]:
-    """Create a subsequent envelope for the next step."""
+    """Create a subsequent envelope for the next step.
+
+    Args:
+        secret: HMAC signing secret. REQUIRED - must be provided by caller.
+            Do NOT use default or placeholder values in production.
+    """
     if not agent_output:
         return Failure(reason="agent_output cannot be empty", code="INVALID_PAYLOAD")
 
@@ -131,8 +141,15 @@ def _compute_signature(envelope: ContextEnvelope, secret: str) -> str:
 def _estimate_tokens(payload: dict[str, Any]) -> int:
     """Approximates token count from payload JSON string length.
 
-    Approximates token count to within 30% of a BPE tokenizer.
-    See test_envelope.py::test_token_estimate.
+    This is a heuristic that divides character count by ~3 to approximate BPE tokenization.
+    Note: This is NOT precise - actual token counts vary based on:
+    - Specific vocabulary/merge table of the tokenizer
+    - Content type (code vs natural language)
+    - Repetitive vs diverse content
+
+    This achieves ~50% accuracy in typical cases and is suitable for budget
+    estimation but NOT for precise token counting. Do not rely on this
+    for exact limits.
     """
     json_str = json.dumps(payload, sort_keys=True)
     return len(json_str) // 3

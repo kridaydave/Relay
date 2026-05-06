@@ -32,7 +32,7 @@ class CoreRelayPipeline:
     _snapshot_store: SnapshotStore = field(init=False, repr=False)
     _current_envelope: ContextEnvelope | None = field(default=None, init=False, repr=False)
     _previous_envelopes: list[ContextEnvelope] = field(default_factory=list, init=False, repr=False)
-    _snapshot_ids: dict[str, str] = field(default_factory=dict, init=False, repr=False)
+    _snapshot_ids: dict[int, str] = field(default_factory=dict, init=False, repr=False)
 
     def __post_init__(self) -> None:
         self._pipeline_id = uuid.uuid4().hex

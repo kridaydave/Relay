@@ -79,14 +79,17 @@ class TestSnapshotStore:
         envelope2 = self._create_envelope(pipeline_id=pipeline_id, step=2)
         envelope3 = self._create_envelope(pipeline_id=pipeline_id, step=3)
 
-        self.store.save_snapshot(envelope1)
-        self.store.save_snapshot(envelope2)
-        self.store.save_snapshot(envelope3)
+        id1 = self.store.save_snapshot(envelope1).value
+        id2 = self.store.save_snapshot(envelope2).value
+        id3 = self.store.save_snapshot(envelope3).value
 
         result = self.store.list_snapshots(pipeline_id)
 
         assert isinstance(result, Success)
         assert len(result.value) == 3
+        assert id1 in result.value
+        assert id2 in result.value
+        assert id3 in result.value
 
     def test_snapshot_index_sorts_numerically(self):
         pipeline_id = "pipeline-sort"
@@ -117,3 +120,24 @@ class TestSnapshotStore:
 
         assert isinstance(result, Failure)
         assert result.code == "PIPELINE_NOT_FOUND"
+
+
+class TestContextEnvelope:
+    def test_context_envelope_is_frozen_dataclass(self):
+        envelope = ContextEnvelope(
+            relay_version=RELAY_VERSION,
+            pipeline_id="test-pipeline",
+            step=1,
+            timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            token_budget_used=100,
+            token_budget_total=8000,
+            payload={"key": "value"},
+            signature="sig-123",
+        )
+
+        assert envelope.pipeline_id == "test-pipeline"
+        assert envelope.step == 1
+        assert envelope.signature == "sig-123"
+
+        with pytest.raises(Exception):
+            envelope.pipeline_id = "changed"

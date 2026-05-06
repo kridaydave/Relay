@@ -5,7 +5,7 @@ Does NOT: handle specific domain errors, validate data, or make decisions.
 """
 
 from dataclasses import dataclass
-from typing import TypeVar, Generic, Union, Callable, overload
+from typing import TypeVar, Generic, Union, Callable, overload, TypeAlias
 
 
 T = TypeVar("T")
@@ -13,27 +13,25 @@ T = TypeVar("T")
 
 @dataclass(frozen=True)
 class Success(Generic[T]):
-    """Represents a successful operation with a value."""
+    """Represents a successful result with a value."""
     value: T
 
 
 @dataclass(frozen=True)
-class RollbackSuccess(Success[T]):
-    """Represents a successful rollback operation.
-    
-    Carries the restored value (envelope) and the reason for the rollback.
-    """
+class Failure:
+    """Represents a failed result with a reason and error code."""
     reason: str
+    code: str = "UNKNOWN_ERROR"
 
 
 @dataclass(frozen=True)
-class Failure:
-    """Represents a failed operation with a reason and error code."""
+class RollbackSuccess(Generic[T]):
+    """Represents a successful rollback result with restored value and reason."""
+    value: T
     reason: str
-    code: str
 
 
-Result = Union[Success[T], Failure]
+Result: TypeAlias = Union[Success[T], RollbackSuccess[T], Failure]
 
 
 def is_success(result: Result[T]) -> bool:

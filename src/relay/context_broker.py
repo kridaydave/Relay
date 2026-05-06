@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from relay.envelope import ContextEnvelope, create_initial_envelope, create_next_envelope
-from relay.types import Result, Success, Failure
+from relay.types import Result
 
 
 @dataclass(frozen=True)
@@ -27,16 +27,11 @@ class ContextBroker:
         initial_payload: dict[str, Any]
     ) -> Result[ContextEnvelope]:
         """Create the first envelope for a pipeline."""
-        if not pipeline_id:
-            return Failure(reason="pipeline_id cannot be empty", code="INVALID_PIPELINE_ID")
-        if not initial_payload:
-            return Failure(reason="initial_payload cannot be empty", code="INVALID_PAYLOAD")
-
         return create_initial_envelope(
             pipeline_id=pipeline_id,
             initial_payload=initial_payload,
+            secret=self.signing_secret,
             token_budget_total=self.token_budget_total,
-            secret=self.signing_secret
         )
 
     def create_next_envelope(
@@ -45,11 +40,8 @@ class ContextBroker:
         agent_output: dict[str, Any]
     ) -> Result[ContextEnvelope]:
         """Create a subsequent envelope for the next step."""
-        if not agent_output:
-            return Failure(reason="agent_output cannot be empty", code="INVALID_PAYLOAD")
-
         return create_next_envelope(
             previous_envelope=previous_envelope,
+            secret=self.signing_secret,
             agent_output=agent_output,
-            secret=self.signing_secret
         )

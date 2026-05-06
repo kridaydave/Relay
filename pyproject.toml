@@ -3,14 +3,32 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "relay"
+name = "relay-middleware"
 version = "0.1.0"
+description = "A context-driven data pipeline and snapshotting library"
+readme = "README.md"
+authors = [
+  { name="Kriday Dave" }
+]
+license = { file="LICENSE" }
 requires-python = ">=3.11"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
 dependencies = [
     "pytest",
     "mypy",
     "pydantic",
 ]
+
+[project.urls]
+"Homepage" = "https://github.com/kridaydave/relay"
+"Bug Tracker" = "https://github.com/kridaydave/relay/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]

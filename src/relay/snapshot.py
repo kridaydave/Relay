@@ -47,7 +47,10 @@ class SnapshotStore:
                 temp_path.unlink()
             return Failure(reason=str(e), code="SNAPSHOT_SAVE_FAILED")
 
-        self._add_to_index(pipeline_id, snapshot_id)
+        index_result = self._add_to_index(pipeline_id, snapshot_id)
+        if isinstance(index_result, Failure):
+            return index_result
+        
         return Success(snapshot_id)
 
     def load_snapshot(self, snapshot_id: str) -> Result[ContextEnvelope]:
@@ -81,7 +84,10 @@ class SnapshotStore:
         try:
             with open(snapshot_path, "r") as f:
                 data = json.load(f)
-            return Success(self._dict_to_envelope(data))
+            envelope_result = self._dict_to_envelope(data)
+            if isinstance(envelope_result, Failure):
+                return envelope_result
+            return Success(envelope_result.value)
         except Exception as e:
             return Failure(reason=str(e), code="SNAPSHOT_LOAD_FAILED")
 
@@ -111,7 +117,7 @@ class SnapshotStore:
             return Success([])
         return Success(index_data.get("snapshots", []))
 
-    def _add_to_index(self, pipeline_id: str, snapshot_id: str) -> None:
+    def _add_to_index(self, pipeline_id: str, snapshot_id: str) -> Result[None]:
         """Add a snapshot ID to the pipeline's index."""
         index_path = self._storage_path / pipeline_id / "index.json"
         try:
@@ -128,7 +134,6 @@ class SnapshotStore:
             if snapshot_id not in index_data["snapshots"]:
                 index_data["snapshots"].append(snapshot_id)
 
-                # Sort numerically by step to avoid lexicographical bug (e.g. 10 sorting before 2)
                 def sort_key(s_id: str) -> int:
                     if "@" in s_id:
                         rest = s_id.split("@", 1)[1]
@@ -142,7 +147,9 @@ class SnapshotStore:
                 json.dump(index_data, f, indent=2)
             os.replace(temp_index_path, index_path)
         except Exception as e:
-            raise RuntimeError(f"Failed to update index: {e}")
+            return Failure(reason=f"Failed to update index: {e}", code="INDEX_UPDATE_FAILED")
+        
+        return Success(None)
 
     def _load_index(self, pipeline_id: str) -> dict[str, Any] | None:
         """Load the index for a pipeline."""
@@ -169,15 +176,51 @@ class SnapshotStore:
             "signature": envelope.signature,
         }
 
-    def _dict_to_envelope(self, data: dict[str, Any]) -> ContextEnvelope:
+    def _dict_to_envelope(self, data: dict[str, Any]) -> Result[ContextEnvelope]:
         """Convert dict back to ContextEnvelope."""
-        return ContextEnvelope(
-            relay_version=data["relay_version"],
-            pipeline_id=data["pipeline_id"],
-            step=data["step"],
-            timestamp=datetime.fromisoformat(data["timestamp"]),
-            token_budget_used=data["token_budget_used"],
-            token_budget_total=data["token_budget_total"],
-            payload=data["payload"],
-            signature=data["signature"],
-        )
+        relay_version = data.get("relay_version")
+        if not relay_version or not isinstance(relay_version, str):
+            return Failure(reason="Missing or invalid relay_version", code="INVALID_SNAPSHOT")
+        
+        pipeline_id = data.get("pipeline_id")
+        if not pipeline_id or not isinstance(pipeline_id, str):
+            return Failure(reason="Missing or invalid pipeline_id", code="INVALID_SNAPSHOT")
+        
+        step = data.get("step")
+        if not isinstance(step, int):
+            return Failure(reason="Missing or invalid step", code="INVALID_SNAPSHOT")
+        
+        timestamp_str = data.get("timestamp")
+        if not timestamp_str or not isinstance(timestamp_str, str):
+            return Failure(reason="Missing or invalid timestamp", code="INVALID_SNAPSHOT")
+        try:
+            timestamp = datetime.fromisoformat(timestamp_str)
+        except (ValueError, TypeError):
+            return Failure(reason="Invalid timestamp format", code="INVALID_SNAPSHOT")
+        
+        token_budget_used = data.get("token_budget_used")
+        if not isinstance(token_budget_used, int):
+            return Failure(reason="Missing or invalid token_budget_used", code="INVALID_SNAPSHOT")
+        
+        token_budget_total = data.get("token_budget_total")
+        if not isinstance(token_budget_total, int):
+            return Failure(reason="Missing or invalid token_budget_total", code="INVALID_SNAPSHOT")
+        
+        payload = data.get("payload")
+        if not isinstance(payload, dict):
+            return Failure(reason="Missing or invalid payload", code="INVALID_SNAPSHOT")
+        
+        signature = data.get("signature")
+        if not isinstance(signature, str):
+            return Failure(reason="Missing or invalid signature", code="INVALID_SNAPSHOT")
+        
+        return Success(ContextEnvelope(
+            relay_version=relay_version,
+            pipeline_id=pipeline_id,
+            step=step,
+            timestamp=timestamp,
+            token_budget_used=token_budget_used,
+            token_budget_total=token_budget_total,
+            payload=payload,
+            signature=signature,
+        ))

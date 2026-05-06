@@ -149,3 +149,90 @@ class TestComputeDiff:
         assert "actions" in diff["removed"]
         assert "entities" in diff["modified"]
         assert "facts" in diff["modified"]
+
+
+class TestHallucinationDetection:
+    def test_hallucination_detection_at_threshold(self):
+        """Test that exactly 2.0x ratio is not flagged (boundary case)."""
+        validator = HandoffValidator()
+        previous_payload = {"entities": ["a", "b"]}
+        current_payload = {"entities": ["a", "b", "c", "d"]}
+
+        result = validator._detect_hallucination(previous_payload, current_payload)
+
+        assert result is None
+
+    def test_hallucination_detection_above_threshold(self):
+        """Test that ratio above 2.0x triggers detection."""
+        validator = HandoffValidator()
+        previous_payload = {"entity": "a", "id": "b"}
+        current_payload = {"entity": "a", "id": "b", "name": "c", "identifier": "d", "subject": "e"}
+
+        result = validator._detect_hallucination(previous_payload, current_payload)
+
+        assert result is not None
+        assert "Entity fabrication detected" in result
+
+    def test_hallucination_detection_below_threshold(self):
+        """Test that ratio below 2.0x does not trigger detection."""
+        validator = HandoffValidator()
+        previous_payload = {"entities": ["a", "b", "c"]}
+        current_payload = {"entities": ["a", "b", "c", "d"]}
+
+        result = validator._detect_hallucination(previous_payload, current_payload)
+
+        assert result is None
+
+
+class TestEntityExtraction:
+    def test_extract_entities_from_entities_list(self):
+        """Test extraction from payload with entities key."""
+        validator = HandoffValidator()
+        payload = {"entities": ["Alice", "Bob", "Charlie"]}
+
+        entities = validator._extract_entities(payload)
+
+        assert entities == frozenset({"alice", "bob", "charlie"})
+
+    def test_extract_entities_from_nested_structure(self):
+        """Test extraction from nested payload structure."""
+        validator = HandoffValidator()
+        payload = {
+            "data": {
+                "subject": "Order123",
+                "object": "Customer456"
+            }
+        }
+
+        entities = validator._extract_entities(payload)
+
+        assert "order123" in entities
+        assert "customer456" in entities
+
+    def test_extract_entities_from_string_values(self):
+        """Test extraction from string values in payload."""
+        validator = HandoffValidator()
+        payload = {"action": "process order_abc def"}
+
+        entities = validator._extract_entities(payload)
+
+        assert "process order_abc def" in entities
+
+    def test_extract_entities_empty_payload(self):
+        """Test extraction from empty payload."""
+        validator = HandoffValidator()
+        payload = {}
+
+        entities = validator._extract_entities(payload)
+
+        assert entities == frozenset()
+
+    def test_extract_entities_no_new_entities(self):
+        """Test that entity removal does not trigger hallucination."""
+        validator = HandoffValidator()
+        previous_payload = {"entities": ["a", "b", "c"]}
+        current_payload = {"entities": ["a", "b"]}
+
+        result = validator._detect_hallucination(previous_payload, current_payload)
+
+        assert result is None

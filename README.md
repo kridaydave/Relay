@@ -52,9 +52,9 @@ agent2_input = f"Given: {context}\nAnalyze this."
 **With Relay** (automatic, verified):
 
 ```python
-from relay.pipeline import RelayPipeline
+from relay.core_pipeline import CoreRelayPipeline
 
-pipeline = RelayPipeline(
+pipeline = CoreRelayPipeline(
     signing_secret="your-secret-key",
     token_budget=8000
 )

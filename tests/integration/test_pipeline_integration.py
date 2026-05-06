@@ -9,7 +9,7 @@ import shutil
 
 import pytest
 
-from relay.pipeline import RelayPipeline
+from relay.core_pipeline import CoreRelayPipeline
 from relay.context_broker import ContextBroker
 from relay.envelope import ContextEnvelope, RELAY_VERSION
 from relay.types import Success, Failure, RollbackSuccess
@@ -24,7 +24,7 @@ def temp_storage():
 
 @pytest.fixture
 def pipeline(temp_storage):
-    return RelayPipeline(
+    return CoreRelayPipeline(
         signing_secret="test-secret",
         token_budget=8000,
         storage_path=temp_storage
