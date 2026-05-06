@@ -29,6 +29,7 @@ class ContextEnvelope:
         token_budget_total: Maximum token budget allowed.
         payload: The actual data being passed (agent output).
         signature: HMAC-SHA256 signature of the envelope.
+        manifest_hash: Hash of the agent manifest for this step.
     """
 
     relay_version: str
@@ -39,6 +40,7 @@ class ContextEnvelope:
     token_budget_total: int
     payload: dict[str, Any]
     signature: str
+    manifest_hash: str = ""
 
 
 def create_initial_envelope(
@@ -127,14 +129,19 @@ def _sign_envelope(envelope: ContextEnvelope, secret: str) -> ContextEnvelope:
         token_budget_used=envelope.token_budget_used,
         token_budget_total=envelope.token_budget_total,
         payload=envelope.payload,
+        manifest_hash=envelope.manifest_hash,
         signature=signature,
     )
 
 
 def _compute_signature(envelope: ContextEnvelope, secret: str) -> str:
-    """Compute HMAC-SHA256 signature for an envelope."""
+    """Compute HMAC-SHA256 signature for an envelope.
+
+    Signature input order is load-bearing:
+    {relay_version}|{pipeline_id}|{step}|{timestamp}|{token_budget_used}|{token_budget_total}|{manifest_hash}|{payload}
+    """
     payload = json.dumps(envelope.payload, sort_keys=True)
-    message = f"{envelope.relay_version}|{envelope.pipeline_id}|{envelope.step}|{envelope.timestamp.isoformat()}|{envelope.token_budget_used}|{envelope.token_budget_total}|{payload}"
+    message = f"{envelope.relay_version}|{envelope.pipeline_id}|{envelope.step}|{envelope.timestamp.isoformat()}|{envelope.token_budget_used}|{envelope.token_budget_total}|{envelope.manifest_hash}|{payload}"
     return hmac.new(secret.encode(), message.encode(), hashlib.sha256).hexdigest()
 
 
