@@ -8,7 +8,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from relay.envelope import ContextEnvelope
-from relay.types import Failure, Result, Success
+from relay.slicer.manifest import AgentManifest
+from relay.types import Failure, Result, Success, HandoffValidationError
 
 
 @dataclass(frozen=True)
@@ -164,3 +165,27 @@ class HandoffValidator:
             return f"Critical keys removed: {sorted(missing_critical)}"
 
         return None
+
+
+def validate_manifest_boundaries(
+    envelope: ContextEnvelope,
+    manifest: AgentManifest,
+    written_sections: set[str],
+) -> None:
+    """Validate that agent only writes to permitted sections.
+
+    Args:
+        envelope: Current context envelope.
+        manifest: Agent manifest defining allowed writes.
+        written_sections: Set of section keys the agent wrote to.
+
+    Raises:
+        HandoffValidationError: If agent wrote to a section not in manifest.writes.
+    """
+    for section in written_sections:
+        if section not in manifest.writes:
+            raise HandoffValidationError(
+                agent_id=manifest.agent_id,
+                offending_section=section,
+                step=envelope.step,
+            )
