@@ -107,7 +107,9 @@ class CoreRelayPipeline:
         current_envelope = self._state.current()
         assert current_envelope is not None
 
-        self._check_budget(manifest, current_envelope)
+        budget_result = self._check_budget(manifest, current_envelope)
+        if isinstance(budget_result, Failure):
+            return budget_result
 
         result = self._create_next_envelope(current_envelope, agent_output)
         if isinstance(result, Failure):
@@ -125,11 +127,12 @@ class CoreRelayPipeline:
         self,
         manifest: Optional[AgentManifest],
         current_envelope: ContextEnvelope,
-    ) -> None:
+    ) -> Result[None]:
         """Check token budget if manifest and enforcer present."""
         if manifest is not None and self._enforcer is not None:
             projected = self._slice_payload(manifest, current_envelope)
-            self._enforcer.check(current_envelope, projected)
+            return self._enforcer.check(current_envelope, projected)
+        return Success(None)
 
     def _create_next_envelope(
         self,
