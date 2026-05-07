@@ -1,7 +1,7 @@
 """Snapshot persistence layer for Relay.
 
 Owns: checkpoint lifecycle, rollback restore, storage cleanup.
-Does NOT: validate data, sign envelopes, execute agents.
+Does NOT: execute agents or manage pipeline state.
 """
 
 import json
@@ -19,7 +19,7 @@ class SnapshotStore:
     """Persists and retrieves envelope checkpoints.
 
     Owns: checkpoint lifecycle, rollback restore, storage cleanup.
-    Does NOT: validate data, sign envelopes, execute agents.
+    Does NOT: execute agents or manage pipeline state.
     """
 
     def __init__(self, storage_path: str = "./relay_data/snapshots") -> None:
