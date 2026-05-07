@@ -160,7 +160,7 @@ class SnapshotStore:
             with open(index_path, "r") as f:
                 data = json.load(f)
                 return data if isinstance(data, dict) else None
-        except Exception:
+        except (json.JSONDecodeError, OSError):
             return None
 
     def _envelope_to_dict(self, envelope: ContextEnvelope) -> dict[str, Any]:
