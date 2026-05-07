@@ -180,23 +180,30 @@ class SnapshotStore:
             "signature": envelope.signature,
         }
 
+    def _require_field(self, data: dict[str, Any], key: str, expected_type: type) -> Any:
+        """Validate and return a field from data dict."""
+        value = data.get(key)
+        if value is None or not isinstance(value, expected_type):
+            return Failure(reason=f"Missing or invalid {key}", code="INVALID_SNAPSHOT")
+        return value
+
     def _dict_to_envelope(self, data: dict[str, Any]) -> Result[ContextEnvelope]:
         """Convert dict back to ContextEnvelope."""
-        relay_version = data.get("relay_version")
-        if not relay_version or not isinstance(relay_version, str):
-            return Failure(reason="Missing or invalid relay_version", code="INVALID_SNAPSHOT")
+        relay_version = self._require_field(data, "relay_version", str)
+        if isinstance(relay_version, Failure):
+            return relay_version
 
-        pipeline_id = data.get("pipeline_id")
-        if not pipeline_id or not isinstance(pipeline_id, str):
-            return Failure(reason="Missing or invalid pipeline_id", code="INVALID_SNAPSHOT")
+        pipeline_id = self._require_field(data, "pipeline_id", str)
+        if isinstance(pipeline_id, Failure):
+            return pipeline_id
 
-        step = data.get("step")
-        if not isinstance(step, int):
-            return Failure(reason="Missing or invalid step", code="INVALID_SNAPSHOT")
+        step = self._require_field(data, "step", int)
+        if isinstance(step, Failure):
+            return step
 
-        timestamp_str = data.get("timestamp")
-        if not timestamp_str or not isinstance(timestamp_str, str):
-            return Failure(reason="Missing or invalid timestamp", code="INVALID_SNAPSHOT")
+        timestamp_str = self._require_field(data, "timestamp", str)
+        if isinstance(timestamp_str, Failure):
+            return timestamp_str
         try:
             timestamp = datetime.fromisoformat(timestamp_str)
             if timestamp.tzinfo is None:
@@ -204,23 +211,23 @@ class SnapshotStore:
         except (ValueError, TypeError):
             return Failure(reason="Invalid timestamp format", code="INVALID_SNAPSHOT")
 
-        token_budget_used = data.get("token_budget_used")
-        if not isinstance(token_budget_used, int):
-            return Failure(reason="Missing or invalid token_budget_used", code="INVALID_SNAPSHOT")
+        token_budget_used = self._require_field(data, "token_budget_used", int)
+        if isinstance(token_budget_used, Failure):
+            return token_budget_used
 
-        token_budget_total = data.get("token_budget_total")
-        if not isinstance(token_budget_total, int):
-            return Failure(reason="Missing or invalid token_budget_total", code="INVALID_SNAPSHOT")
+        token_budget_total = self._require_field(data, "token_budget_total", int)
+        if isinstance(token_budget_total, Failure):
+            return token_budget_total
 
-        payload = data.get("payload")
-        if not isinstance(payload, dict):
-            return Failure(reason="Missing or invalid payload", code="INVALID_SNAPSHOT")
+        payload = self._require_field(data, "payload", dict)
+        if isinstance(payload, Failure):
+            return payload
 
         manifest_hash = data.get("manifest_hash", "")
 
-        signature = data.get("signature")
-        if not isinstance(signature, str):
-            return Failure(reason="Missing or invalid signature", code="INVALID_SNAPSHOT")
+        signature = self._require_field(data, "signature", str)
+        if isinstance(signature, Failure):
+            return signature
 
         return Success(ContextEnvelope(
             relay_version=relay_version,
