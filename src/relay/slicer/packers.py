@@ -1,9 +1,12 @@
 """Slice packer implementations for context selection strategies."""
 
+from typing import Any
+
 import numpy as np
 
 from relay.slicer.manifest import AgentManifest
 from relay.slicer.providers import EmbeddingProvider
+from relay.types import Failure, Result, Success
 
 
 def _cosine_similarity(a: list[float], b: list[float]) -> float:
@@ -19,7 +22,7 @@ def _cosine_similarity(a: list[float], b: list[float]) -> float:
 class SlicePacker:
     """Base class for slice packer strategies."""
 
-    def pack(self, payload: dict[str, str], manifest: AgentManifest) -> dict[str, str]:
+    def pack(self, payload: dict[str, str], manifest: AgentManifest) -> Result[dict[str, str]]:
         """Pack context based on strategy.
 
         Args:
@@ -27,7 +30,7 @@ class SlicePacker:
             manifest: Agent manifest defining constraints.
 
         Returns:
-            Selected subset of payload sections.
+            Success with selected subset of payload sections, or Failure on error.
         """
         raise NotImplementedError
 
@@ -36,10 +39,15 @@ class RecencySlicePacker(SlicePacker):
     """Selects most recent sections by step order until max_tokens consumed.
 
     Sections are ordered by their numeric suffix (e.g., section_1, section_2).
-    Returns empty slice if a single section exceeds max_tokens.
+    Uses token estimation via simple character count divided by 3.
     """
 
-    def pack(self, payload: dict[str, str], manifest: AgentManifest) -> dict[str, str]:
+    def pack(self, payload: dict[str, str], manifest: AgentManifest) -> Result[dict[str, str]]:
+        """Pack context based on recency.
+
+        Returns:
+            Success with selected subset of payload sections.
+        """
         sorted_keys = sorted(
             payload.keys(),
             key=lambda k: (
@@ -47,7 +55,7 @@ class RecencySlicePacker(SlicePacker):
             ),
         )
 
-        result = {}
+        result: dict[str, str] = {}
         used_tokens = 0
 
         for key in sorted_keys:
@@ -57,43 +65,53 @@ class RecencySlicePacker(SlicePacker):
             if used_tokens + section_tokens > manifest.max_tokens:
                 if result:
                     continue
-                return {}
+                return Success({})
 
             result[key] = section_text
             used_tokens += section_tokens
 
-        return result
+        return Success(result)
 
 
 class StructuralSlicePacker(SlicePacker):
     """Selects only sections named in AgentManifest.reads.
 
-    Raises KeyError if reads names a section absent from payload.
+    Returns Failure if reads names a section absent from payload.
     """
 
-    def pack(self, payload: dict[str, str], manifest: AgentManifest) -> dict[str, str]:
-        result = {}
-        for key in manifest.reads:
-            if key not in payload:
-                raise KeyError(
-                    f"Manifest declares read for section '{key}' but it does not exist in payload"
-                )
-            result[key] = payload[key]
-        return result
+    def pack(self, payload: dict[str, str], manifest: AgentManifest) -> Result[dict[str, str]]:
+        """Pack context based on manifest reads.
+
+        Returns:
+            Success with selected subset, or Failure if section missing.
+        """
+        missing = [key for key in manifest.reads if key not in payload]
+        if missing:
+            return Failure(
+                reason=f"Manifest declares read for sections {missing} but they do not exist in payload",
+                code="MISSING_SECTIONS",
+            )
+        return Success({key: payload[key] for key in manifest.reads})
 
 
 class RelevanceSlicePacker(SlicePacker):
     """Ranks sections by cosine similarity to query, returns top sections within max_tokens.
 
+    Uses token estimation via character count divided by 3.
     Requires injected EmbeddingProvider. Propagates provider exceptions unchanged.
     """
 
     def __init__(self, provider: EmbeddingProvider):
         self.provider = provider
 
-    def pack(self, payload: dict[str, str], manifest: AgentManifest) -> dict[str, str]:
+    def pack(self, payload: dict[str, str], manifest: AgentManifest) -> Result[dict[str, str]]:
+        """Pack context based on relevance scores.
+
+        Returns:
+            Success with selected subset of payload sections.
+        """
         if not payload:
-            return {}
+            return Success({})
 
         query_embedding = self.provider.embed(manifest.agent_id)
         section_embeddings = {
@@ -107,15 +125,15 @@ class RelevanceSlicePacker(SlicePacker):
 
         similarities.sort(key=lambda x: x[1], reverse=True)
 
-        result = {}
+        result: dict[str, str] = {}
         used_tokens = 0
 
         for key, _, section_tokens in similarities:
             if used_tokens + section_tokens > manifest.max_tokens:
                 if result:
                     continue
-                return {}
+                return Success({})
             result[key] = payload[key]
             used_tokens += section_tokens
 
-        return result
+        return Success(result)

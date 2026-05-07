@@ -259,8 +259,10 @@ class CoreRelayPipeline:
         """Slice the current payload based on the manifest and slice packer."""
         if self.slice_packer is None or current_envelope is None:
             return ""
-        sliced = self.slice_packer.pack(current_envelope.payload, manifest)
-        return json.dumps(sliced)
+        pack_result = self.slice_packer.pack(current_envelope.payload, manifest)
+        if isinstance(pack_result, Failure):
+            return ""
+        return json.dumps(pack_result.value)
 
     def rollback(self) -> Result[ContextEnvelope]:
         """Rollback to the last clean state."""
