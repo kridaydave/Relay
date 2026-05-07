@@ -11,6 +11,8 @@ from relay.envelope import ContextEnvelope, create_initial_envelope, create_next
 from relay.types import Result
 
 
+
+
 def _create_signed_envelope(
     envelope: ContextEnvelope,
     secret: str,
