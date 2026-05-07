@@ -15,13 +15,21 @@ from relay.envelope import ContextEnvelope
 from relay.types import Failure, Result, Success
 
 
+class InvalidSnapshotIdError(Exception):
+    """Raised when snapshot ID format is invalid."""
+    pass
+
+
 def _extract_step_from_snapshot_id(s_id: str) -> int:
     """Extract step number from snapshot ID for sorting.
 
     Handles formats: "pipeline_id@step_uuid" and "pipeline_id_step".
 
     Returns:
-        Sort key (step number), or -1 if format is invalid.
+        Sort key (step number).
+
+    Raises:
+        InvalidSnapshotIdError: If snapshot ID format is invalid.
     """
     try:
         if "@" in s_id:
@@ -29,7 +37,9 @@ def _extract_step_from_snapshot_id(s_id: str) -> int:
             return int(rest.split("_")[0])
         return int(s_id.split("_")[0])
     except (ValueError, IndexError):
-        return -1
+        raise InvalidSnapshotIdError(
+            f"Invalid snapshot ID format: {s_id}"
+        )
 
 
 class SnapshotStore:
@@ -93,11 +103,6 @@ class SnapshotStore:
             )
 
         snapshot_path = self._storage_path / pipeline_id / f"{snapshot_id}.json"
-        if not snapshot_path.exists():
-            return Failure(
-                reason=f"Snapshot not found: {snapshot_id}", code="SNAPSHOT_NOT_FOUND"
-            )
-
         try:
             with open(snapshot_path, "r") as f:
                 data = json.load(f)
@@ -105,18 +110,23 @@ class SnapshotStore:
             if isinstance(envelope_result, Failure):
                 return envelope_result
             return Success(envelope_result.value)
+        except FileNotFoundError:
+            return Failure(
+                reason=f"Snapshot not found: {snapshot_id}", code="SNAPSHOT_NOT_FOUND"
+            )
         except Exception as e:
             return Failure(reason=str(e), code="SNAPSHOT_LOAD_FAILED")
 
     def get_latest_snapshot(self, pipeline_id: str) -> Result[ContextEnvelope]:
         """Get the most recent snapshot for a pipeline."""
-        index_data = self._load_index(pipeline_id)
-        if index_data is None:
+        index_result = self._load_index(pipeline_id)
+        if isinstance(index_result, Failure):
             return Failure(
                 reason=f"No snapshots found for pipeline: {pipeline_id}",
                 code="PIPELINE_NOT_FOUND",
             )
 
+        index_data = index_result.value
         snapshots = index_data.get("snapshots", [])
         if not snapshots:
             return Failure(
@@ -129,10 +139,13 @@ class SnapshotStore:
 
     def list_snapshots(self, pipeline_id: str) -> Result[list[str]]:
         """List all snapshot IDs for a pipeline."""
-        index_data = self._load_index(pipeline_id)
-        if index_data is None:
-            return Success([])
-        return Success(index_data.get("snapshots", []))
+        index_result = self._load_index(pipeline_id)
+        if isinstance(index_result, Failure):
+            if index_result.code == "INDEX_NOT_FOUND":
+                return Success([])
+            return Failure(reason=index_result.reason, code=index_result.code)
+
+        return Success(index_result.value.get("snapshots", []))
 
     def _add_to_index(self, pipeline_id: str, snapshot_id: str) -> Result[None]:
         """Add a snapshot ID to the pipeline's index."""
@@ -161,17 +174,33 @@ class SnapshotStore:
         
         return Success(None)
 
-    def _load_index(self, pipeline_id: str) -> dict[str, Any] | None:
+    def _load_index(self, pipeline_id: str) -> Result[dict[str, Any]]:
         """Load the index for a pipeline."""
         index_path = self._storage_path / pipeline_id / "index.json"
         if not index_path.exists():
-            return None
+            return Failure(
+                reason=f"Index not found for pipeline: {pipeline_id}",
+                code="INDEX_NOT_FOUND",
+            )
         try:
             with open(index_path, "r") as f:
                 data = json.load(f)
-                return data if isinstance(data, dict) else None
-        except (json.JSONDecodeError, OSError):
-            return None
+                if isinstance(data, dict):
+                    return Success(data)
+                return Failure(
+                    reason="Invalid index format - expected dict",
+                    code="INVALID_INDEX",
+                )
+        except json.JSONDecodeError as e:
+            return Failure(
+                reason=f"Corrupted index JSON: {e}",
+                code="CORRUPTED_INDEX",
+            )
+        except OSError as e:
+            return Failure(
+                reason=f"Failed to read index: {e}",
+                code="INDEX_READ_FAILED",
+            )
 
     def _envelope_to_dict(self, envelope: ContextEnvelope) -> dict[str, Any]:
         """Convert envelope to JSON-serializable dict."""
