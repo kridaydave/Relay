@@ -1,7 +1,7 @@
 """Context envelope data model for Relay.
 
-Owns: ContextEnvelope, envelope creation, signing, and verification.
-Does NOT: persist data, validate content, or manage pipeline state.
+Owns: ContextEnvelope data model only.
+Does NOT: create envelopes, sign envelopes, persist data, or manage pipeline state.
 """
 
 import hashlib
@@ -56,80 +56,19 @@ class ContextEnvelope:
             signature=self.signature,
         )
 
-
-def create_initial_envelope(
-    pipeline_id: str,
-    initial_payload: dict[str, Any],
-    secret: str,
-    token_budget_total: int = 8000,
-    manifest_hash: str = "",
-) -> Result[ContextEnvelope]:
-    """Create the first envelope for a pipeline.
-
-    Args:
-        secret: HMAC signing secret. REQUIRED - must be provided by caller.
-            Do NOT use default or placeholder values in production.
-        manifest_hash: Optional hash of the agent manifest.
-    """
-    if not pipeline_id:
-        return Failure(reason="pipeline_id cannot be empty", code="INVALID_PIPELINE_ID")
-    if not initial_payload:
-        return Failure(reason="initial_payload cannot be empty", code="INVALID_PAYLOAD")
-
-    token_used = _estimate_tokens(initial_payload)
-    envelope = ContextEnvelope(
-        relay_version=RELAY_VERSION,
-        pipeline_id=pipeline_id,
-        step=1,
-        timestamp=datetime.now(timezone.utc),
-        token_budget_used=token_used,
-        token_budget_total=token_budget_total,
-        payload=initial_payload,
-        manifest_hash=manifest_hash,
-        signature="",
-    )
-
-    signed = _sign_envelope(envelope, secret)
-    return Success(signed)
-
-
-def create_next_envelope(
-    previous_envelope: ContextEnvelope,
-    secret: str,
-    agent_output: dict[str, Any],
-    manifest_hash: str = "",
-) -> Result[ContextEnvelope]:
-    """Create a subsequent envelope for the next step.
-
-    Args:
-        secret: HMAC signing secret. REQUIRED - must be provided by caller.
-            Do NOT use default or placeholder values in production.
-        manifest_hash: Optional hash of the agent manifest.
-    """
-    if not agent_output:
-        return Failure(reason="agent_output cannot be empty", code="INVALID_PAYLOAD")
-
-    token_used = previous_envelope.token_budget_used + _estimate_tokens(agent_output)
-    if token_used > previous_envelope.token_budget_total:
-        return Failure(
-            reason=f"Token budget exceeded: {token_used} > {previous_envelope.token_budget_total}",
-            code="TOKEN_BUDGET_EXCEEDED",
+    def with_signature(self, signature: str) -> "ContextEnvelope":
+        """Return a copy of this envelope with a different signature."""
+        return ContextEnvelope(
+            relay_version=self.relay_version,
+            pipeline_id=self.pipeline_id,
+            step=self.step,
+            timestamp=self.timestamp,
+            token_budget_used=self.token_budget_used,
+            token_budget_total=self.token_budget_total,
+            payload=self.payload,
+            manifest_hash=self.manifest_hash,
+            signature=signature,
         )
-
-    envelope = ContextEnvelope(
-        relay_version=RELAY_VERSION,
-        pipeline_id=previous_envelope.pipeline_id,
-        step=previous_envelope.step + 1,
-        timestamp=datetime.now(timezone.utc),
-        token_budget_used=token_used,
-        token_budget_total=previous_envelope.token_budget_total,
-        payload=agent_output,
-        manifest_hash=manifest_hash,
-        signature="",
-    )
-
-    signed = _sign_envelope(envelope, secret)
-    return Success(signed)
 
 
 def verify_signature(envelope: ContextEnvelope, secret: str) -> bool:
@@ -141,7 +80,7 @@ def verify_signature(envelope: ContextEnvelope, secret: str) -> bool:
 def _sign_envelope(envelope: ContextEnvelope, secret: str) -> ContextEnvelope:
     """Create a signed copy of the envelope."""
     signature = _compute_signature(envelope, secret)
-    return replace(envelope.with_manifest_hash(envelope.manifest_hash), signature=signature)
+    return envelope.with_signature(signature)
 
 
 def _compute_signature(envelope: ContextEnvelope, secret: str) -> str:
