@@ -7,7 +7,7 @@ Does NOT: create envelopes, sign envelopes, persist data, or manage pipeline sta
 import hashlib
 import hmac
 import json
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
@@ -71,6 +71,17 @@ class ContextEnvelope:
         )
 
 
+def _compute_signature(envelope: ContextEnvelope, secret: str) -> str:
+    """Compute HMAC-SHA256 signature for an envelope.
+
+    Canonical signature format (field order is load-bearing):
+    {relay_version}|{pipeline_id}|{step}|{timestamp.isoformat()}|{token_budget_used}|{token_budget_total}|{manifest_hash}|{json.dumps(payload, sort_keys=True)}
+    """
+    payload = json.dumps(envelope.payload, sort_keys=True)
+    message = f"{envelope.relay_version}|{envelope.pipeline_id}|{envelope.step}|{envelope.timestamp.isoformat()}|{envelope.token_budget_used}|{envelope.token_budget_total}|{envelope.manifest_hash}|{payload}"
+    return hmac.new(secret.encode(), message.encode(), hashlib.sha256).hexdigest()
+
+
 def verify_signature(envelope: ContextEnvelope, secret: str) -> bool:
     """Verify the signature of an envelope."""
     expected_sig = _compute_signature(envelope, secret)
@@ -83,15 +94,79 @@ def _sign_envelope(envelope: ContextEnvelope, secret: str) -> ContextEnvelope:
     return envelope.with_signature(signature)
 
 
-def _compute_signature(envelope: ContextEnvelope, secret: str) -> str:
-    """Compute HMAC-SHA256 signature for an envelope.
+def create_initial_envelope(
+    pipeline_id: str,
+    initial_payload: dict[str, Any],
+    secret: str,
+    token_budget_total: int = 8000,
+    manifest_hash: str = "",
+) -> Result[ContextEnvelope]:
+    """Create the first envelope for a pipeline.
 
-    Canonical signature format (field order is load-bearing):
-    {relay_version}|{pipeline_id}|{step}|{timestamp.isoformat()}|{token_budget_used}|{token_budget_total}|{manifest_hash}|{json.dumps(payload, sort_keys=True)}
+    Args:
+        secret: HMAC signing secret. REQUIRED - must be provided by caller.
+            Do NOT use default or placeholder values in production.
+        manifest_hash: Optional hash of the agent manifest.
     """
-    payload = json.dumps(envelope.payload, sort_keys=True)
-    message = f"{envelope.relay_version}|{envelope.pipeline_id}|{envelope.step}|{envelope.timestamp.isoformat()}|{envelope.token_budget_used}|{envelope.token_budget_total}|{envelope.manifest_hash}|{payload}"
-    return hmac.new(secret.encode(), message.encode(), hashlib.sha256).hexdigest()
+    if not pipeline_id:
+        return Failure(reason="pipeline_id cannot be empty", code="INVALID_PIPELINE_ID")
+    if not initial_payload:
+        return Failure(reason="initial_payload cannot be empty", code="INVALID_PAYLOAD")
+
+    token_used = _estimate_tokens(initial_payload)
+    envelope = ContextEnvelope(
+        relay_version=RELAY_VERSION,
+        pipeline_id=pipeline_id,
+        step=1,
+        timestamp=datetime.now(timezone.utc),
+        token_budget_used=token_used,
+        token_budget_total=token_budget_total,
+        payload=initial_payload,
+        manifest_hash=manifest_hash,
+        signature="",
+    )
+
+    signed = _sign_envelope(envelope, secret)
+    return Success(signed)
+
+
+def create_next_envelope(
+    previous_envelope: ContextEnvelope,
+    secret: str,
+    agent_output: dict[str, Any],
+    manifest_hash: str = "",
+) -> Result[ContextEnvelope]:
+    """Create a subsequent envelope for the next step.
+
+    Args:
+        secret: HMAC signing secret. REQUIRED - must be provided by caller.
+            Do NOT use default or placeholder values in production.
+        manifest_hash: Optional hash of the agent manifest.
+    """
+    if not agent_output:
+        return Failure(reason="agent_output cannot be empty", code="INVALID_PAYLOAD")
+
+    token_used = previous_envelope.token_budget_used + _estimate_tokens(agent_output)
+    if token_used > previous_envelope.token_budget_total:
+        return Failure(
+            reason=f"Token budget exceeded: {token_used} > {previous_envelope.token_budget_total}",
+            code="TOKEN_BUDGET_EXCEEDED",
+        )
+
+    envelope = ContextEnvelope(
+        relay_version=RELAY_VERSION,
+        pipeline_id=previous_envelope.pipeline_id,
+        step=previous_envelope.step + 1,
+        timestamp=datetime.now(timezone.utc),
+        token_budget_used=token_used,
+        token_budget_total=previous_envelope.token_budget_total,
+        payload=agent_output,
+        manifest_hash=manifest_hash,
+        signature="",
+    )
+
+    signed = _sign_envelope(envelope, secret)
+    return Success(signed)
 
 
 def _estimate_tokens(payload: dict[str, Any]) -> int:

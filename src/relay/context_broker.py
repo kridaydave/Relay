@@ -4,15 +4,11 @@ Owns: envelope lifecycle, cryptographic signing, and verification.
 Does NOT: persist snapshots, validate content, or manage pipeline state.
 """
 
-import hashlib
-import hmac
-import json
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from typing import Any
 
-from relay.envelope import ContextEnvelope, RELAY_VERSION
-from relay.types import Failure, Result, Success
+from relay.envelope import ContextEnvelope, create_initial_envelope, create_next_envelope
+from relay.types import Result
 
 
 def _create_signed_envelope(
@@ -20,25 +16,20 @@ def _create_signed_envelope(
     secret: str,
 ) -> ContextEnvelope:
     """Create a signed copy of the envelope."""
-    signature = _compute_signature(envelope, secret)
-    return envelope.with_signature(signature)
+    from relay.envelope import _sign_envelope
+    return _sign_envelope(envelope, secret)
 
 
 def _compute_signature(envelope: ContextEnvelope, secret: str) -> str:
-    """Compute HMAC-SHA256 signature for an envelope.
-
-    Canonical signature format (field order is load-bearing):
-    {relay_version}|{pipeline_id}|{step}|{timestamp.isoformat()}|{token_budget_used}|{token_budget_total}|{manifest_hash}|{json.dumps(payload, sort_keys=True)}
-    """
-    payload = json.dumps(envelope.payload, sort_keys=True)
-    message = f"{envelope.relay_version}|{envelope.pipeline_id}|{envelope.step}|{envelope.timestamp.isoformat()}|{envelope.token_budget_used}|{envelope.token_budget_total}|{envelope.manifest_hash}|{payload}"
-    return hmac.new(secret.encode(), message.encode(), hashlib.sha256).hexdigest()
+    """Compute HMAC-SHA256 signature for an envelope."""
+    from relay.envelope import _compute_signature
+    return _compute_signature(envelope, secret)
 
 
 def _verify_signature(envelope: ContextEnvelope, secret: str) -> bool:
     """Verify the signature of an envelope."""
-    expected_sig = _compute_signature(envelope, secret)
-    return hmac.compare_digest(envelope.signature, expected_sig)
+    from relay.envelope import verify_signature
+    return verify_signature(envelope, secret)
 
 
 def _estimate_tokens(payload: dict[str, Any]) -> int:
@@ -49,8 +40,8 @@ def _estimate_tokens(payload: dict[str, Any]) -> int:
     See test_envelope.py::TestTokenEstimation::test_token_estimate_within_realistic_tolerance
     for the benchmark test.
     """
-    json_str = json.dumps(payload, sort_keys=True)
-    return len(json_str) // 3
+    from relay.envelope import _estimate_tokens as estimate
+    return estimate(payload)
 
 
 def _create_initial_envelope(
@@ -61,26 +52,13 @@ def _create_initial_envelope(
     manifest_hash: str = "",
 ) -> Result[ContextEnvelope]:
     """Create the first envelope for a pipeline."""
-    if not pipeline_id:
-        return Failure(reason="pipeline_id cannot be empty", code="INVALID_PIPELINE_ID")
-    if not initial_payload:
-        return Failure(reason="initial_payload cannot be empty", code="INVALID_PAYLOAD")
-
-    token_used = _estimate_tokens(initial_payload)
-    envelope = ContextEnvelope(
-        relay_version=RELAY_VERSION,
+    return create_initial_envelope(
         pipeline_id=pipeline_id,
-        step=1,
-        timestamp=datetime.now(timezone.utc),
-        token_budget_used=token_used,
+        initial_payload=initial_payload,
+        secret=secret,
         token_budget_total=token_budget_total,
-        payload=initial_payload,
         manifest_hash=manifest_hash,
-        signature="",
     )
-
-    signed = _create_signed_envelope(envelope, secret)
-    return Success(signed)
 
 
 def _create_next_envelope(
@@ -90,30 +68,12 @@ def _create_next_envelope(
     manifest_hash: str = "",
 ) -> Result[ContextEnvelope]:
     """Create a subsequent envelope for the next step."""
-    if not agent_output:
-        return Failure(reason="agent_output cannot be empty", code="INVALID_PAYLOAD")
-
-    token_used = previous_envelope.token_budget_used + _estimate_tokens(agent_output)
-    if token_used > previous_envelope.token_budget_total:
-        return Failure(
-            reason=f"Token budget exceeded: {token_used} > {previous_envelope.token_budget_total}",
-            code="TOKEN_BUDGET_EXCEEDED",
-        )
-
-    envelope = ContextEnvelope(
-        relay_version=RELAY_VERSION,
-        pipeline_id=previous_envelope.pipeline_id,
-        step=previous_envelope.step + 1,
-        timestamp=datetime.now(timezone.utc),
-        token_budget_used=token_used,
-        token_budget_total=previous_envelope.token_budget_total,
-        payload=agent_output,
+    return create_next_envelope(
+        previous_envelope=previous_envelope,
+        secret=secret,
+        agent_output=agent_output,
         manifest_hash=manifest_hash,
-        signature="",
     )
-
-    signed = _create_signed_envelope(envelope, secret)
-    return Success(signed)
 
 
 @dataclass(frozen=True)
