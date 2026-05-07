@@ -77,7 +77,7 @@ def _compute_signature(envelope: ContextEnvelope, secret: str) -> str:
     Canonical signature format (field order is load-bearing):
     {relay_version}|{pipeline_id}|{step}|{timestamp.isoformat()}|{token_budget_used}|{token_budget_total}|{manifest_hash}|{json.dumps(payload, sort_keys=True)}
     """
-    payload = json.dumps(envelope.payload, sort_keys=True)
+    payload = json.dumps(envelope.payload, sort_keys=True, separators=(",", ":"))
     message = f"{envelope.relay_version}|{envelope.pipeline_id}|{envelope.step}|{envelope.timestamp.isoformat()}|{envelope.token_budget_used}|{envelope.token_budget_total}|{envelope.manifest_hash}|{payload}"
     return hmac.new(secret.encode(), message.encode(), hashlib.sha256).hexdigest()
 
