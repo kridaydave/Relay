@@ -6,40 +6,12 @@ Does NOT: persist snapshots, validate content, or manage pipeline state.
 
 from dataclasses import dataclass
 from typing import Any
+from typing import TYPE_CHECKING
 
 from relay.envelope import ContextEnvelope, create_initial_envelope, create_next_envelope
 
-
-def _create_initial_envelope(
-    pipeline_id: str,
-    initial_payload: dict[str, Any],
-    secret: str,
-    token_budget_total: int = 8000,
-    manifest_hash: str = "",
-) -> Result[ContextEnvelope]:
-    """Create the first envelope for a pipeline."""
-    return create_initial_envelope(
-        pipeline_id=pipeline_id,
-        initial_payload=initial_payload,
-        secret=secret,
-        token_budget_total=token_budget_total,
-        manifest_hash=manifest_hash,
-    )
-
-
-def _create_next_envelope(
-    previous_envelope: ContextEnvelope,
-    secret: str,
-    agent_output: dict[str, Any],
-    manifest_hash: str = "",
-) -> Result[ContextEnvelope]:
-    """Create a subsequent envelope for the next step."""
-    return create_next_envelope(
-        previous_envelope=previous_envelope,
-        secret=secret,
-        agent_output=agent_output,
-        manifest_hash=manifest_hash,
-    )
+if TYPE_CHECKING:
+    from relay.types import Result
 
 
 @dataclass(frozen=True)
@@ -66,7 +38,7 @@ class ContextBroker:
         initial_payload: dict[str, Any]
     ) -> Result[ContextEnvelope]:
         """Create the first envelope for a pipeline."""
-        return _create_initial_envelope(
+        return create_initial_envelope(
             pipeline_id=pipeline_id,
             initial_payload=initial_payload,
             secret=self.signing_secret,
@@ -79,7 +51,7 @@ class ContextBroker:
         agent_output: dict[str, Any]
     ) -> Result[ContextEnvelope]:
         """Create a subsequent envelope for the next step."""
-        return _create_next_envelope(
+        return create_next_envelope(
             previous_envelope=previous_envelope,
             secret=self.signing_secret,
             agent_output=agent_output,

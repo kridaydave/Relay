@@ -6,9 +6,18 @@ Does NOT: sign envelopes, persist data, execute agents.
 
 from dataclasses import dataclass
 from typing import Any
+from collections import deque
 
 from relay.envelope import ContextEnvelope
 from relay.types import Failure, Result, Success
+
+
+MAX_EXTRACTION_DEPTH = 50
+
+
+class MaxDepthExceededError(Exception):
+    """Raised when JSON depth exceeds maximum allowed."""
+    pass
 
 
 @dataclass(frozen=True)
@@ -90,8 +99,11 @@ class HandoffValidator:
         if self._hallucination_ratio_threshold is None:
             return None
 
-        prev_entities = self._extract_entities(previous_payload)
-        curr_entities = self._extract_entities(current_payload)
+        try:
+            prev_entities = self._extract_entities(previous_payload)
+            curr_entities = self._extract_entities(current_payload)
+        except MaxDepthExceededError as e:
+            return f"Payload depth exceeds limit: {e}"
 
         new_entities = curr_entities - prev_entities
         removed_entities = prev_entities - curr_entities
@@ -112,25 +124,31 @@ class HandoffValidator:
         return None
 
     def _extract_entities(self, payload: dict[str, Any]) -> frozenset[str]:
-        """Extract entity mentions from payload."""
+        """Extract entity mentions from payload using iterative traversal."""
         entities: set[str] = set()
         stop_words = {"the", "and", "but", "for", "nor", "yet", "so", "a", "an", "of", "to", "in", "on", "at", "by", "with", "from", "is", "are", "was", "were", "be", "been", "being"}
 
-        def extract_recursive(obj: Any) -> None:
+        stack: list[tuple[Any, int]] = [(payload, 0)]
+        while stack:
+            obj, depth = stack.pop()
+            if depth > MAX_EXTRACTION_DEPTH:
+                raise MaxDepthExceededError(
+                    f"JSON depth {depth} exceeds maximum allowed depth of {MAX_EXTRACTION_DEPTH}"
+                )
+
             if isinstance(obj, dict):
                 for key, value in obj.items():
                     if key in {"entity", "entities", "subject", "object", "name", "id", "identifier"}:
                         if isinstance(value, str):
                             entities.add(value.lower())
-                    extract_recursive(value)
+                    stack.append((value, depth + 1))
             elif isinstance(obj, list):
                 for item in obj:
-                    extract_recursive(item)
+                    stack.append((item, depth + 1))
             elif isinstance(obj, str):
                 if len(obj) > 2 and len(obj) < 100 and obj.lower() not in stop_words:
                     entities.add(obj.lower())
 
-        extract_recursive(payload)
         return frozenset(entities)
 
     def _compute_diff(
