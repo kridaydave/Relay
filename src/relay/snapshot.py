@@ -15,6 +15,23 @@ from relay.envelope import ContextEnvelope
 from relay.types import Failure, Result, Success
 
 
+def _extract_step_from_snapshot_id(s_id: str) -> int:
+    """Extract step number from snapshot ID for sorting.
+
+    Handles formats: "pipeline_id@step_uuid" and "pipeline_id_step".
+
+    Returns:
+        Sort key (step number), or -1 if format is invalid.
+    """
+    try:
+        if "@" in s_id:
+            rest = s_id.split("@", 1)[1]
+            return int(rest.split("_")[0])
+        return int(s_id.split("_")[0])
+    except (ValueError, IndexError):
+        return -1
+
+
 class SnapshotStore:
     """Persists and retrieves envelope checkpoints.
 
@@ -133,17 +150,7 @@ class SnapshotStore:
 
             if snapshot_id not in index_data["snapshots"]:
                 index_data["snapshots"].append(snapshot_id)
-
-                def sort_key(s_id: str) -> int:
-                    try:
-                        if "@" in s_id:
-                            rest = s_id.split("@", 1)[1]
-                            return int(rest.split("_")[0])
-                        return int(s_id.split("_")[0])
-                    except (ValueError, IndexError):
-                        return -1
-
-                index_data["snapshots"].sort(key=sort_key)
+                index_data["snapshots"].sort(key=_extract_step_from_snapshot_id)
 
             temp_index_path = index_path.parent / "index.tmp"
             with open(temp_index_path, "w") as f:
