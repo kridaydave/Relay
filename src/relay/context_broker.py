@@ -8,42 +8,6 @@ from dataclasses import dataclass
 from typing import Any
 
 from relay.envelope import ContextEnvelope, create_initial_envelope, create_next_envelope
-from relay.types import Result
-
-
-
-
-def _create_signed_envelope(
-    envelope: ContextEnvelope,
-    secret: str,
-) -> ContextEnvelope:
-    """Create a signed copy of the envelope."""
-    from relay.envelope import _sign_envelope
-    return _sign_envelope(envelope, secret)
-
-
-def _compute_signature(envelope: ContextEnvelope, secret: str) -> str:
-    """Compute HMAC-SHA256 signature for an envelope."""
-    from relay.envelope import _compute_signature
-    return _compute_signature(envelope, secret)
-
-
-def _verify_signature(envelope: ContextEnvelope, secret: str) -> bool:
-    """Verify the signature of an envelope."""
-    from relay.envelope import verify_signature
-    return verify_signature(envelope, secret)
-
-
-def _estimate_tokens(payload: dict[str, Any]) -> int:
-    """Approximates token count from payload JSON string length.
-
-    Divides character count by 3 to approximate BPE tokenization.
-
-    See test_envelope.py::TestTokenEstimation::test_token_estimate_within_realistic_tolerance
-    for the benchmark test.
-    """
-    from relay.envelope import _estimate_tokens as estimate
-    return estimate(payload)
 
 
 def _create_initial_envelope(
