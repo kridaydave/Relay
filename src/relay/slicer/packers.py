@@ -1,8 +1,7 @@
 """Slice packer implementations for context selection strategies."""
 
 from typing import Any
-
-import numpy as np
+from math import sqrt
 
 from relay.slicer.manifest import AgentManifest
 from relay.slicer.providers import EmbeddingProvider
@@ -11,9 +10,13 @@ from relay.types import Failure, Result, Success
 
 def _cosine_similarity(a: list[float], b: list[float]) -> float:
     """Compute cosine similarity between two vectors without numpy."""
-    dot_product = np.dot(a, b)
-    magnitude_a = np.linalg.norm(a)
-    magnitude_b = np.linalg.norm(b)
+    if len(a) != len(b):
+        return 0.0
+
+    dot_product = sum(x * y for x, y in zip(a, b))
+    magnitude_a = sqrt(sum(x**2 for x in a))
+    magnitude_b = sqrt(sum(x**2 for x in b))
+
     if magnitude_a == 0 or magnitude_b == 0:
         return 0.0
     return dot_product / (magnitude_a * magnitude_b)
