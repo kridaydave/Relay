@@ -49,6 +49,8 @@ class RecencySlicePacker(SlicePacker):
     ) -> Result[dict[str, Any]]:
         """Pack context based on recency.
 
+        Approximates token count using character count divided by 3.
+
         Returns:
             Success with selected subset of payload sections.
         """
@@ -114,6 +116,8 @@ class RelevanceSlicePacker(SlicePacker):
         self, payload: dict[str, Any], manifest: AgentManifest
     ) -> Result[dict[str, Any]]:
         """Pack context based on relevance scores.
+
+        Approximates token count using character count divided by 3.
 
         Returns:
             Success with selected subset of payload sections.
