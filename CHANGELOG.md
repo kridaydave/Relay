@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+
+
+## [0.2.1] - 2026-05-07
+
+### Fixed (per Relay Coding Rules)
+
+- **R4 (Errors are values)** — Converted all exceptions to Result types:
+  - `types.py`: Renamed exception classes to value types (`BudgetExceeded`, `HandoffValidationFailure`, `ManifestHashMismatch`)
+  - `validator.py`: `validate_manifest_boundaries()` now returns `Result[None]` instead of raising
+  - `budget/enforcer.py`: `HardCapEnforcer.check()` now returns `Result[None]` instead of raising
+  - `slicer/packers.py`: All packers return `Result[dict]` instead of raising `KeyError`
+  - `snapshot.py`: Specific exception types (`JSONDecodeError`, `OSError`) instead of bare `except`
+
+- **R1/R19 (Responsibility/Docstring accuracy)** — Fixed misleading docstrings:
+  - `context_broker.py`: Updated to accurately describe ownership of signing
+  - `snapshot.py`: Removed misleading "Does NOT: validate data" since `_dict_to_envelope` validates
+
+- **R16 (Validate at boundary)** — Added secret validation:
+  - `ContextBroker.__post_init__()` validates `signing_secret` >= 32 characters
+
+- **R17 (Approximations labeled)** — Added benchmark references:
+  - `_estimate_tokens()` docstrings now reference `test_envelope.py::TestTokenEstimation`
+
+- **R14 (Documentation)** — Added missing docstrings to `slicer/packers.py`
+
+---
+
+### Dependencies
+
+- Made `TiktokenCounter` conditional import (available when `tiktoken` installed)
+
+---
+
 ## [0.2.0] - 2026-05-06
 
 ### Added
