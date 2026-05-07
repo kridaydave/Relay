@@ -10,6 +10,7 @@ from relay.slicer import (
     SliceStrategy,
     StructuralSlicePacker,
 )
+from relay.types import Failure, Success
 from tests.conftest import FixedEmbeddingProvider
 
 
@@ -41,7 +42,8 @@ class TestRecencySlicePacker:
         payload = {"section_1": "x" * 10000}
         manifest = AgentManifest("a1", frozenset(), frozenset(), 100)
         result = packer.pack(payload, manifest)
-        assert result == {}
+        assert isinstance(result, Success)
+        assert result.value == {}
 
     def test_selects_sections_until_max_tokens(self):
         """Selects sections in recency order until max_tokens consumed."""
@@ -53,7 +55,8 @@ class TestRecencySlicePacker:
         }
         manifest = AgentManifest("a1", frozenset(), frozenset(), 5)
         result = packer.pack(payload, manifest)
-        assert "section_1" in result
+        assert isinstance(result, Success)
+        assert "section_1" in result.value
 
 
 class TestStructuralSlicePacker:
@@ -63,16 +66,17 @@ class TestStructuralSlicePacker:
         payload = {"section_a": "content", "section_b": "content2"}
         manifest = AgentManifest("a1", frozenset(["section_a", "section_b"]), frozenset(), 1000)
         result = packer.pack(payload, manifest)
-        assert result == payload
+        assert isinstance(result, Success)
+        assert result.value == payload
 
-    def test_missing_section_raises_key_error(self):
-        """Missing declared read section must raise KeyError."""
+    def test_missing_section_returns_failure(self):
+        """Missing declared read section must return Failure."""
         packer = StructuralSlicePacker()
         payload = {"section_a": "content"}
         manifest = AgentManifest("a1", frozenset(["section_a", "section_b"]), frozenset(), 1000)
-        with pytest.raises(KeyError) as exc_info:
-            packer.pack(payload, manifest)
-        assert "section_b" in str(exc_info.value)
+        result = packer.pack(payload, manifest)
+        assert isinstance(result, Failure)
+        assert "section_b" in result.reason
 
 
 class TestRelevanceSlicePacker:
@@ -89,7 +93,8 @@ class TestRelevanceSlicePacker:
         payload = {"section_1": "content1", "section_2": "content2"}
         manifest = AgentManifest("a1", frozenset(), frozenset(), 1000)
         result = packer.pack(payload, manifest)
-        assert len(result) == 2
+        assert isinstance(result, Success)
+        assert len(result.value) == 2
 
 
 class TestSliceStrategy:

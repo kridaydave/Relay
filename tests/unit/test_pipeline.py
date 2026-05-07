@@ -24,7 +24,7 @@ def temp_storage():
 @pytest.fixture
 def pipeline(temp_storage):
     return CoreRelayPipeline(
-        signing_secret="test-secret", token_budget=8000, storage_path=temp_storage
+        signing_secret="a" * 32, token_budget=8000, storage_path=temp_storage
     )
 
 
@@ -184,7 +184,7 @@ class TestConcurrentPipeline:
         )
 
         pipeline = CoreRelayPipeline(
-            signing_secret="test-secret", token_budget=8000, storage_path=temp_storage
+            signing_secret="a" * 32, token_budget=8000, storage_path=temp_storage
         )
 
         results = []
@@ -226,7 +226,7 @@ class TestConcurrentPipeline:
         )
 
         pipeline = CoreRelayPipeline(
-            signing_secret="test-secret", token_budget=8000, storage_path=temp_storage
+            signing_secret="a" * 32, token_budget=8000, storage_path=temp_storage
         )
 
         results = []
@@ -268,7 +268,7 @@ class TestConcurrentPipeline:
         )
 
         pipeline = CoreRelayPipeline(
-            signing_secret="test-secret", token_budget=8000, storage_path=temp_storage
+            signing_secret="a" * 32, token_budget=8000, storage_path=temp_storage
         )
 
         pipeline.execute_step({"initial": "data"})
@@ -311,7 +311,7 @@ class TestConcurrentPipeline:
         mock_store_cls.return_value = mock_store
 
         pipeline = CoreRelayPipeline(
-            signing_secret="test-secret", token_budget=8000, storage_path=temp_storage
+            signing_secret="a" * 32, token_budget=8000, storage_path=temp_storage
         )
 
         mock_initial.return_value = Success(
@@ -356,7 +356,7 @@ class TestConcurrentPipeline:
         )
 
         pipeline = CoreRelayPipeline(
-            signing_secret="test-secret", token_budget=8000, storage_path=temp_storage
+            signing_secret="a" * 32, token_budget=8000, storage_path=temp_storage
         )
 
         results = []
