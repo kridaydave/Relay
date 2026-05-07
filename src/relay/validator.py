@@ -5,11 +5,13 @@ Does NOT: sign envelopes, persist data, execute agents.
 """
 
 from dataclasses import dataclass
-from typing import Any
-from collections import deque
+from typing import TYPE_CHECKING, Any
 
 from relay.envelope import ContextEnvelope
 from relay.types import Failure, Result, Success
+
+if TYPE_CHECKING:
+    from relay.slicer.manifest import AgentManifest
 
 
 MAX_EXTRACTION_DEPTH = 50
