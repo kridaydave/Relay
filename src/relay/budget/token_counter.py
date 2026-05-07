@@ -20,6 +20,8 @@ try:
 
         Lazy imports tiktoken - must be installed separately:
             pip install relay[tiktoken]
+
+        Must call close() to release encoding resource.
         """
 
         def __init__(self, encoding: str = "cl100k_base"):
@@ -34,6 +36,10 @@ try:
         def count(self, text: str) -> int:
             enc = self._get_encoder()
             return len(enc.encode(text))
+
+        def close(self) -> None:
+            """Release the encoding resource."""
+            self._enc = None
 
 except ImportError:
     TiktokenCounter = None  # type: ignore
