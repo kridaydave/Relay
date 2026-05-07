@@ -1,0 +1,94 @@
+"""Pipeline state manager for CoreRelayPipeline.
+
+Owns: pipeline state (_current_envelope, _previous_envelopes, _snapshot_ids, _pipeline_id).
+Does NOT: create envelopes, validate handoffs, or manage snapshots.
+"""
+
+import threading
+from contextlib import contextmanager
+from typing import Generator
+
+from relay.envelope import ContextEnvelope
+
+
+class PipelineState:
+    """Thread-safe manager of pipeline state.
+
+    Owns: pipeline state (_current_envelope, _previous_envelopes, _snapshot_ids, _pipeline_id).
+    Does NOT: create envelopes, validate handoffs, or manage snapshots.
+    """
+
+    def __init__(self, pipeline_id: str) -> None:
+        self._pipeline_id = pipeline_id
+        self._current_envelope: ContextEnvelope | None = None
+        self._previous_envelopes: list[ContextEnvelope] = []
+        self._snapshot_ids: dict[int, str] = {}
+        self._lock = threading.Lock()
+
+    @property
+    def pipeline_id(self) -> str:
+        return self._pipeline_id
+
+    @property
+    def snapshot_ids(self) -> dict[int, str]:
+        return self._snapshot_ids
+
+    def current(self) -> ContextEnvelope | None:
+        """Return the current envelope (no lock needed for read of None check)."""
+        return self._current_envelope
+
+    def current_and_lock(self) -> tuple[ContextEnvelope | None, threading.Lock]:
+        """Return current envelope with the lock held. Caller must release.
+
+        DEPRECATED: Use transaction() context manager instead.
+        """
+        return self._current_envelope, self._lock
+
+    @contextmanager
+    def transaction(self) -> Generator[ContextEnvelope | None, None, None]:
+        """Context manager for safe lock acquisition and release.
+
+        Yields the current envelope while holding the lock.
+        Automatically acquires and releases the lock.
+        """
+        with self._lock:
+            yield self._current_envelope
+
+    def get_previous_envelopes(self) -> list[ContextEnvelope]:
+        """Return a copy of the previous envelopes list."""
+        return list(self._previous_envelopes)
+
+    def set_current(self, envelope: ContextEnvelope) -> None:
+        """Set the current envelope (internal, caller holds lock)."""
+        self._current_envelope = envelope
+
+    def archive_and_set(self, new_envelope: ContextEnvelope) -> None:
+        """Archive current envelope and set new one. Caller holds lock."""
+        if self._current_envelope is not None:
+            self._previous_envelopes.append(self._current_envelope)
+        self._current_envelope = new_envelope
+
+    def peek_last(self) -> ContextEnvelope | None:
+        """Peek at the last envelope in history without removing it."""
+        return self._previous_envelopes[-1] if self._previous_envelopes else None
+
+    def consume_last(self) -> ContextEnvelope:
+        """Remove and return the last envelope from history. Must be called AFTER successful restore."""
+        return self._previous_envelopes.pop()
+
+    def rollback_to_last(self) -> tuple[ContextEnvelope, list[ContextEnvelope]]:
+        """Remove and return the last envelope from history. Caller holds lock.
+
+        Returns:
+            The envelope to restore and the updated previous list.
+        """
+        previous_envelope = self._previous_envelopes.pop()
+        return previous_envelope, list(self._previous_envelopes)
+
+    def has_history(self) -> bool:
+        """Check if there are previous envelopes to rollback to."""
+        return len(self._previous_envelopes) > 0
+
+    def last_envelope(self) -> ContextEnvelope | None:
+        """Return the last envelope in history, or None."""
+        return self._previous_envelopes[-1] if self._previous_envelopes else None
