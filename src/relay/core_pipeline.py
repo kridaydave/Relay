@@ -25,7 +25,7 @@ from relay.validator import (
 )
 
 
-@dataclass
+@dataclass(frozen=True)
 class CoreRelayPipeline:
     """Base class for pipeline orchestration.
 
