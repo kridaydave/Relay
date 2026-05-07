@@ -211,10 +211,10 @@ class TestTokenEstimation:
     def test_token_estimate_within_realistic_tolerance(self):
         payload = {"key": "value" * 50}
         estimate = _estimate_tokens(payload)
+        json_str = json.dumps(payload, sort_keys=True)
 
         assert estimate > 0
-        json_len = len(json.dumps(payload))
-        assert estimate <= json_len
+        assert estimate == len(json_str) // 3, "Must use formula: len(json_str) // 3"
 
 
 class TestContextEnvelope:
