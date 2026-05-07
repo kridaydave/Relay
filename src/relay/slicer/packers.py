@@ -1,6 +1,6 @@
 """Slice packer implementations for context selection strategies."""
 
-from typing import Optional
+import numpy as np
 
 from relay.slicer.manifest import AgentManifest
 from relay.slicer.providers import EmbeddingProvider
@@ -8,9 +8,9 @@ from relay.slicer.providers import EmbeddingProvider
 
 def _cosine_similarity(a: list[float], b: list[float]) -> float:
     """Compute cosine similarity between two vectors without numpy."""
-    dot_product = sum(x * y for x, y in zip(a, b))
-    magnitude_a = sum(x * x for x in a) ** 0.5
-    magnitude_b = sum(x * x for x in b) ** 0.5
+    dot_product = np.dot(a, b)
+    magnitude_a = np.linalg.norm(a)
+    magnitude_b = np.linalg.norm(b)
     if magnitude_a == 0 or magnitude_b == 0:
         return 0.0
     return dot_product / (magnitude_a * magnitude_b)
@@ -42,7 +42,9 @@ class RecencySlicePacker(SlicePacker):
     def pack(self, payload: dict[str, str], manifest: AgentManifest) -> dict[str, str]:
         sorted_keys = sorted(
             payload.keys(),
-            key=lambda k: int(k.split("_")[-1]) if "_" in k and k.split("_")[-1].isdigit() else 0,
+            key=lambda k: (
+                int(k.split("_")[-1]) if "_" in k and k.split("_")[-1].isdigit() else 0
+            ),
         )
 
         result = {}
@@ -73,7 +75,9 @@ class StructuralSlicePacker(SlicePacker):
         result = {}
         for key in manifest.reads:
             if key not in payload:
-                raise KeyError(f"Manifest declares read for section '{key}' but it does not exist in payload")
+                raise KeyError(
+                    f"Manifest declares read for section '{key}' but it does not exist in payload"
+                )
             result[key] = payload[key]
         return result
 
@@ -92,7 +96,9 @@ class RelevanceSlicePacker(SlicePacker):
             return {}
 
         query_embedding = self.provider.embed(manifest.agent_id)
-        section_embeddings = {key: self.provider.embed(text) for key, text in payload.items()}
+        section_embeddings = {
+            key: self.provider.embed(text) for key, text in payload.items()
+        }
 
         similarities = []
         for key, embedding in section_embeddings.items():
