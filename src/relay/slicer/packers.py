@@ -22,7 +22,9 @@ def _cosine_similarity(a: list[float], b: list[float]) -> float:
 class SlicePacker:
     """Base class for slice packer strategies."""
 
-    def pack(self, payload: dict[str, str], manifest: AgentManifest) -> Result[dict[str, str]]:
+    def pack(
+        self, payload: dict[str, Any], manifest: AgentManifest
+    ) -> Result[dict[str, Any]]:
         """Pack context based on strategy.
 
         Args:
@@ -42,7 +44,9 @@ class RecencySlicePacker(SlicePacker):
     Uses token estimation via simple character count divided by 3.
     """
 
-    def pack(self, payload: dict[str, str], manifest: AgentManifest) -> Result[dict[str, str]]:
+    def pack(
+        self, payload: dict[str, Any], manifest: AgentManifest
+    ) -> Result[dict[str, Any]]:
         """Pack context based on recency.
 
         Returns:
@@ -55,7 +59,7 @@ class RecencySlicePacker(SlicePacker):
             ),
         )
 
-        result: dict[str, str] = {}
+        result: dict[str, Any] = {}
         used_tokens = 0
 
         for key in sorted_keys:
@@ -79,7 +83,9 @@ class StructuralSlicePacker(SlicePacker):
     Returns Failure if reads names a section absent from payload.
     """
 
-    def pack(self, payload: dict[str, str], manifest: AgentManifest) -> Result[dict[str, str]]:
+    def pack(
+        self, payload: dict[str, Any], manifest: AgentManifest
+    ) -> Result[dict[str, Any]]:
         """Pack context based on manifest reads.
 
         Returns:
@@ -104,7 +110,9 @@ class RelevanceSlicePacker(SlicePacker):
     def __init__(self, provider: EmbeddingProvider):
         self.provider = provider
 
-    def pack(self, payload: dict[str, str], manifest: AgentManifest) -> Result[dict[str, str]]:
+    def pack(
+        self, payload: dict[str, Any], manifest: AgentManifest
+    ) -> Result[dict[str, Any]]:
         """Pack context based on relevance scores.
 
         Returns:
@@ -125,7 +133,7 @@ class RelevanceSlicePacker(SlicePacker):
 
         similarities.sort(key=lambda x: x[1], reverse=True)
 
-        result: dict[str, str] = {}
+        result: dict[str, Any] = {}
         used_tokens = 0
 
         for key, _, section_tokens in similarities:
