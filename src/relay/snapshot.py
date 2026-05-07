@@ -199,6 +199,8 @@ class SnapshotStore:
             return Failure(reason="Missing or invalid timestamp", code="INVALID_SNAPSHOT")
         try:
             timestamp = datetime.fromisoformat(timestamp_str)
+            if timestamp.tzinfo is None:
+                timestamp = timestamp.replace(tzinfo=timezone.utc)
         except (ValueError, TypeError):
             return Failure(reason="Invalid timestamp format", code="INVALID_SNAPSHOT")
 
