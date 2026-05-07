@@ -36,6 +36,14 @@ class TestAgentManifest:
 
 
 class TestRecencySlicePacker:
+    def test_empty_payload_returns_empty(self):
+        """Empty payload returns Success with empty dict."""
+        packer = RecencySlicePacker()
+        payload: dict[str, str] = {}
+        manifest = AgentManifest("a1", frozenset(), frozenset(), 100)
+        result = packer.pack(payload, manifest)
+        assert isinstance(result, Success)
+        assert result.value == {}
     def test_single_section_exceeds_max_tokens_returns_empty(self):
         """Single section exceeding max_tokens returns empty slice, not truncated."""
         packer = RecencySlicePacker()

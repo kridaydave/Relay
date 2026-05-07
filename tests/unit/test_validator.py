@@ -40,6 +40,56 @@ def _make_envelope(
 
 class TestValidateHandoff:
     @patch("relay.envelope.datetime")
+    def test_validate_handoff_pipeline_id_mismatch(self, mock_datetime):
+        """Mismatched pipeline IDs must return Failure."""
+        mock_datetime.now.return_value = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        previous_result = create_initial_envelope(
+            pipeline_id="pipeline-123",
+            initial_payload={"entities": ["a"]},
+            secret="a" * 32
+        )
+        previous_envelope = previous_result.value
+
+        current_envelope = _make_envelope(
+            pipeline_id="different-pipeline",  # Different pipeline ID
+            step=2,
+            payload={"entities": ["a"]},
+            token_budget_used=100,
+            token_budget_total=8000
+        )
+
+        validator = HandoffValidator()
+        result = validator.validate_handoff(previous_envelope, current_envelope)
+
+        assert isinstance(result, Failure)
+        assert result.code == "PIPELINE_MISMATCH"
+
+    @patch("relay.envelope.datetime")
+    def test_validate_handoff_step_not_increasing(self, mock_datetime):
+        """Step must increase between envelopes."""
+        mock_datetime.now.return_value = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        previous_result = create_initial_envelope(
+            pipeline_id="pipeline-123",
+            initial_payload={"entities": ["a"]},
+            secret="a" * 32
+        )
+        previous_envelope = previous_result.value
+
+        current_envelope = _make_envelope(
+            pipeline_id="pipeline-123",
+            step=1,  # Same step - not increasing
+            payload={"entities": ["a", "b"]},
+            token_budget_used=100,
+            token_budget_total=8000
+        )
+
+        validator = HandoffValidator()
+        result = validator.validate_handoff(previous_envelope, current_envelope)
+
+        assert isinstance(result, Failure)
+        assert result.code == "INVALID_STEP"
+
+    @patch("relay.envelope.datetime")
     def test_validator_passes_clean_handoff(self, mock_datetime):
         mock_datetime.now.return_value = datetime(2024, 1, 1, tzinfo=timezone.utc)
 

@@ -11,6 +11,12 @@ from relay.types import Failure, Success
 
 
 class TestCreateInitialEnvelope:
+    def test_short_secret_raises_on_init(self):
+        """ContextBroker must reject secrets shorter than 32 characters."""
+        with pytest.raises(ValueError) as exc_info:
+            ContextBroker(signing_secret="short", token_budget_total=8000)
+        assert "32 characters" in str(exc_info.value)
+
     @patch("relay.context_broker.create_initial_envelope")
     def test_broker_creates_initial_envelope_with_valid_inputs(self, mock_create):
         mock_create.return_value = Success(
