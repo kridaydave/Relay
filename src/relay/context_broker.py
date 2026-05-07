@@ -126,6 +126,14 @@ class ContextBroker:
     signing_secret: str
     token_budget_total: int
 
+    def __post_init__(self) -> None:
+        """Validate the signing secret at boundary entry per R16."""
+        if len(self.signing_secret) < 32:
+            raise ValueError(
+                f"signing_secret must be at least 32 characters, got {len(self.signing_secret)}. "
+                "Weak secrets compromise envelope integrity."
+            )
+
     def create_initial_envelope(
         self,
         pipeline_id: str,
