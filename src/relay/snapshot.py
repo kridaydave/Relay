@@ -135,10 +135,13 @@ class SnapshotStore:
                 index_data["snapshots"].append(snapshot_id)
 
                 def sort_key(s_id: str) -> int:
-                    if "@" in s_id:
-                        rest = s_id.split("@", 1)[1]
-                        return int(rest.split("_")[0])
-                    return int(s_id.split("_")[0])
+                    try:
+                        if "@" in s_id:
+                            rest = s_id.split("@", 1)[1]
+                            return int(rest.split("_")[0])
+                        return int(s_id.split("_")[0])
+                    except (ValueError, IndexError):
+                        return -1
 
                 index_data["snapshots"].sort(key=sort_key)
 
