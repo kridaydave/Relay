@@ -7,7 +7,7 @@ import pytest
 
 from relay.budget import HardCapEnforcer, TokenCounter
 from relay.envelope import ContextEnvelope
-from relay.types import BudgetExceededError
+from relay.types import BudgetExceeded, Failure, Success
 from tests.conftest import FixedCounter
 
 
@@ -30,37 +30,39 @@ class TestHardCapEnforcer:
         """Exact boundary (used + projected == total) must pass."""
         envelope = make_envelope(token_budget_used=90, token_budget_total=100)
         enforcer = HardCapEnforcer("pipe-1", FixedCounter(10))
-        enforcer.check(envelope, "any text")
+        result = enforcer.check(envelope, "any text")
+        assert isinstance(result, Success)
 
-    def test_one_over_raises(self):
-        """One over the limit must raise BudgetExceededError."""
+    def test_one_over_returns_failure(self):
+        """One over the limit must return Failure."""
         envelope = make_envelope(token_budget_used=91, token_budget_total=100)
         enforcer = HardCapEnforcer("pipe-1", FixedCounter(10))
-        with pytest.raises(BudgetExceededError) as exc_info:
-            enforcer.check(envelope, "any text")
-        assert exc_info.value.step == envelope.step
-        assert exc_info.value.used == 91
-        assert exc_info.value.limit == 100
+        result = enforcer.check(envelope, "any text")
+        assert isinstance(result, Failure)
+        assert result.code == "BUDGET_EXCEEDED"
 
     def test_zero_token_slice_passes(self):
         """Zero-token slice always passes regardless of budget state."""
         envelope = make_envelope(token_budget_used=100, token_budget_total=100)
         enforcer = HardCapEnforcer("pipe-1", FixedCounter(0))
-        enforcer.check(envelope, "")
+        result = enforcer.check(envelope, "")
+        assert isinstance(result, Success)
 
-    def test_negative_count_raises_value_error(self):
-        """Negative count must raise ValueError immediately."""
+    def test_negative_count_returns_failure(self):
+        """Negative count must return Failure immediately."""
         envelope = make_envelope()
         enforcer = HardCapEnforcer("pipe-1", FixedCounter(-5))
-        with pytest.raises(ValueError) as exc_info:
-            enforcer.check(envelope, "any text")
-        assert "negative" in str(exc_info.value).lower()
+        result = enforcer.check(envelope, "any text")
+        assert isinstance(result, Failure)
+        assert result.code == "INVALID_TOKEN_COUNT"
+        assert "negative" in result.reason.lower()
 
     def test_under_budget_passes(self):
-        """Under budget should pass without raising."""
+        """Under budget should pass and return Success."""
         envelope = make_envelope(token_budget_used=50, token_budget_total=100)
         enforcer = HardCapEnforcer("pipe-1", FixedCounter(30))
-        enforcer.check(envelope, "any text")
+        result = enforcer.check(envelope, "any text")
+        assert isinstance(result, Success)
 
 
 class TestTokenCounterProtocol:
