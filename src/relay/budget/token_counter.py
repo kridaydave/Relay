@@ -12,23 +12,28 @@ class TokenCounter(Protocol):
         ...
 
 
-class TiktokenCounter:
-    """Token counter using tiktoken library.
+try:
+    import tiktoken
 
-    Lazy imports tiktoken - must be installed separately:
-        pip install relay[tiktoken]
-    """
+    class TiktokenCounter:
+        """Token counter using tiktoken library.
 
-    def __init__(self, encoding: str = "cl100k_base"):
-        self._encoding = encoding
-        self._enc = None
+        Lazy imports tiktoken - must be installed separately:
+            pip install relay[tiktoken]
+        """
 
-    def _get_encoder(self):
-        if self._enc is None:
-            import tiktoken
-            self._enc = tiktoken.get_encoding(self._encoding)
-        return self._enc
+        def __init__(self, encoding: str = "cl100k_base"):
+            self._encoding = encoding
+            self._enc = None
 
-    def count(self, text: str) -> int:
-        enc = self._get_encoder()
-        return len(enc.encode(text))
+        def _get_encoder(self):
+            if self._enc is None:
+                self._enc = tiktoken.get_encoding(self._encoding)
+            return self._enc
+
+        def count(self, text: str) -> int:
+            enc = self._get_encoder()
+            return len(enc.encode(text))
+
+except ImportError:
+    TiktokenCounter = None  # type: ignore
