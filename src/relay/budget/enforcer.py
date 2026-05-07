@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 
+from relay.budget.token_counter import TokenCounter
 from relay.envelope import ContextEnvelope
 from relay.types import BudgetExceeded, Failure, Result, Success
 
@@ -15,7 +16,7 @@ class HardCapEnforcer:
     """
 
     pipeline_id: str
-    counter: "TokenCounter"
+    counter: TokenCounter
 
     def check(self, envelope: ContextEnvelope, projected_slice: str) -> Result[None]:
         """Check if projected slice would exceed budget.
