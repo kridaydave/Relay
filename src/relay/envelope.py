@@ -186,4 +186,4 @@ def _estimate_tokens(payload: dict[str, Any]) -> int:
     for the benchmark test.
     """
     json_str = json.dumps(payload, sort_keys=True)
-    return len(json_str) // 3
+    return max(1, len(json_str) // 3)
