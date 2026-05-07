@@ -7,7 +7,7 @@ Does NOT: persist data, validate content, or manage pipeline state.
 import hashlib
 import hmac
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from typing import Any
 
@@ -41,6 +41,20 @@ class ContextEnvelope:
     payload: dict[str, Any]
     manifest_hash: str
     signature: str
+
+    def with_manifest_hash(self, manifest_hash: str) -> "ContextEnvelope":
+        """Return a copy of this envelope with a different manifest hash."""
+        return ContextEnvelope(
+            relay_version=self.relay_version,
+            pipeline_id=self.pipeline_id,
+            step=self.step,
+            timestamp=self.timestamp,
+            token_budget_used=self.token_budget_used,
+            token_budget_total=self.token_budget_total,
+            payload=self.payload,
+            manifest_hash=manifest_hash,
+            signature=self.signature,
+        )
 
 
 def create_initial_envelope(
@@ -127,17 +141,7 @@ def verify_signature(envelope: ContextEnvelope, secret: str) -> bool:
 def _sign_envelope(envelope: ContextEnvelope, secret: str) -> ContextEnvelope:
     """Create a signed copy of the envelope."""
     signature = _compute_signature(envelope, secret)
-    return ContextEnvelope(
-        relay_version=envelope.relay_version,
-        pipeline_id=envelope.pipeline_id,
-        step=envelope.step,
-        timestamp=envelope.timestamp,
-        token_budget_used=envelope.token_budget_used,
-        token_budget_total=envelope.token_budget_total,
-        payload=envelope.payload,
-        manifest_hash=envelope.manifest_hash,
-        signature=signature,
-    )
+    return replace(envelope.with_manifest_hash(envelope.manifest_hash), signature=signature)
 
 
 def _compute_signature(envelope: ContextEnvelope, secret: str) -> str:

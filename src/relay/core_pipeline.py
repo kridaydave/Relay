@@ -4,18 +4,25 @@ Owns: pipeline lifecycle, component coordination.
 Does NOT: define agent behavior, manage prompts.
 """
 
-from dataclasses import dataclass, field
-from typing import Any, Callable, Optional
 import json
 import uuid
+from dataclasses import dataclass, field
+from typing import Any, Optional
 
 from relay.budget import HardCapEnforcer, TokenCounter
 from relay.context_broker import ContextBroker
 from relay.envelope import ContextEnvelope
+from relay.pipeline_rollback import RollbackHandler
+from relay.pipeline_snapshot import SnapshotManager
+from relay.pipeline_state import PipelineState
 from relay.slicer import AgentManifest, SlicePacker
 from relay.snapshot import SnapshotStore
-from relay.types import Failure, Result, Success, RollbackSuccess
-from relay.validator import HandoffValidator, ValidationResult, validate_manifest_boundaries
+from relay.types import Failure, Result, RollbackSuccess, Success
+from relay.validator import (
+    HandoffValidator,
+    ValidationResult,
+    validate_manifest_boundaries,
+)
 
 
 @dataclass
@@ -25,6 +32,7 @@ class CoreRelayPipeline:
     Owns: pipeline lifecycle, component coordination.
     Does NOT: define agent behavior, manage prompts.
     """
+
     signing_secret: str
     token_budget: int = 8000
     storage_path: str = "./relay_data/snapshots"
@@ -32,22 +40,26 @@ class CoreRelayPipeline:
     slice_packer: Optional[SlicePacker] = None
 
     _pipeline_id: str = field(init=False, repr=False)
+    _state: PipelineState = field(init=False, repr=False)
     _context_broker: ContextBroker = field(init=False, repr=False)
     _handoff_validator: HandoffValidator = field(init=False, repr=False)
     _snapshot_store: SnapshotStore = field(init=False, repr=False)
-    _current_envelope: ContextEnvelope | None = field(default=None, init=False, repr=False)
-    _previous_envelopes: list[ContextEnvelope] = field(default_factory=list, init=False, repr=False)
-    _snapshot_ids: dict[int, str] = field(default_factory=dict, init=False, repr=False)
+    _snapshot_manager: SnapshotManager = field(init=False, repr=False)
+    _rollback_handler: RollbackHandler = field(init=False, repr=False)
     _enforcer: Optional[HardCapEnforcer] = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         self._pipeline_id = uuid.uuid4().hex
+        self._state = PipelineState(pipeline_id=self._pipeline_id)
         self._context_broker = ContextBroker(
-            signing_secret=self.signing_secret,
-            token_budget_total=self.token_budget
+            signing_secret=self.signing_secret, token_budget_total=self.token_budget
         )
         self._handoff_validator = HandoffValidator()
         self._snapshot_store = SnapshotStore(storage_path=self.storage_path)
+        self._snapshot_manager = SnapshotManager(
+            self._snapshot_store, self._state.snapshot_ids
+        )
+        self._rollback_handler = RollbackHandler()
         if self.token_counter is not None:
             self._enforcer = HardCapEnforcer(self._pipeline_id, self.token_counter)
         else:
@@ -62,179 +74,214 @@ class CoreRelayPipeline:
         agent_output: dict[str, Any],
         manifest: Optional[AgentManifest] = None,
     ) -> Result[ContextEnvelope]:
-        """Execute a pipeline step with optional agent manifest for budget and boundary validation.
+        """Execute a pipeline step with optional manifest for budget/boundary validation."""
+        _, lock = self._state.current_and_lock()
+        with lock:
+            if self._state.current() is None:
+                return self._handle_initial_step(agent_output, manifest)
 
-        Args:
-            agent_output: The output from the agent.
-            manifest: Optional agent manifest for enforcing budget and write boundaries.
-        """
-        if self._current_envelope is None:
-            envelope_result = self._context_broker.create_initial_envelope(
-                pipeline_id=self._pipeline_id,
-                initial_payload=agent_output
-            )
-            if isinstance(envelope_result, Failure):
-                return envelope_result
+            return self._handle_subsequent_step(agent_output, manifest)
 
-            new_envelope = envelope_result.value
-
-            if manifest is not None:
-                manifest_hash = manifest.compute_hash()
-                new_envelope = ContextEnvelope(
-                    relay_version=new_envelope.relay_version,
-                    pipeline_id=new_envelope.pipeline_id,
-                    step=new_envelope.step,
-                    timestamp=new_envelope.timestamp,
-                    token_budget_used=new_envelope.token_budget_used,
-                    token_budget_total=new_envelope.token_budget_total,
-                    payload=new_envelope.payload,
-                    manifest_hash=manifest_hash,
-                    signature=new_envelope.signature,
-                )
-
-            self._current_envelope = new_envelope
-            return Success(new_envelope)
-
-        if self._enforcer is not None and manifest is not None:
-            projected_slice = self._slice_payload(manifest)
-            self._enforcer.check(self._current_envelope, projected_slice)
-
-        envelope_result = self._context_broker.create_next_envelope(
-            previous_envelope=self._current_envelope,
-            agent_output=agent_output
+    def _handle_initial_step(
+        self,
+        agent_output: dict[str, Any],
+        manifest: Optional[AgentManifest],
+    ) -> Result[ContextEnvelope]:
+        """Handle the first pipeline step."""
+        result = self._context_broker.create_initial_envelope(
+            pipeline_id=self._pipeline_id, initial_payload=agent_output
         )
-        if isinstance(envelope_result, Failure):
-            return envelope_result
+        if isinstance(result, Failure):
+            return result
 
-        new_envelope = envelope_result.value
+        new_envelope = self._apply_manifest(result.value, manifest)
+        self._state.set_current(new_envelope)
+        return Success(new_envelope)
 
-        if manifest is not None:
-            written_sections = set(agent_output.keys())
-            try:
-                validate_manifest_boundaries(new_envelope, manifest, written_sections)
-            except Exception as e:
-                return self._rollback_to_previous_with_reason(new_envelope, str(e))
+    def _handle_subsequent_step(
+        self,
+        agent_output: dict[str, Any],
+        manifest: Optional[AgentManifest],
+    ) -> Result[ContextEnvelope]:
+        """Handle a subsequent pipeline step."""
+        current_envelope = self._state.current()
+        assert current_envelope is not None
 
-            manifest_hash = manifest.compute_hash()
-            token_used = new_envelope.token_budget_used
-            new_envelope = ContextEnvelope(
-                relay_version=new_envelope.relay_version,
-                pipeline_id=new_envelope.pipeline_id,
-                step=new_envelope.step,
-                timestamp=new_envelope.timestamp,
-                token_budget_used=token_used,
-                token_budget_total=new_envelope.token_budget_total,
-                payload=new_envelope.payload,
-                manifest_hash=manifest_hash,
-                signature="",
-            )
+        self._check_budget(manifest, current_envelope)
 
-            signed_envelope = self._context_broker.create_next_envelope(
-                previous_envelope=self._current_envelope,
-                agent_output=agent_output
-            )
-            if isinstance(signed_envelope, Failure):
-                return signed_envelope
-            new_envelope = ContextEnvelope(
-                relay_version=signed_envelope.value.relay_version,
-                pipeline_id=signed_envelope.value.pipeline_id,
-                step=signed_envelope.value.step,
-                timestamp=signed_envelope.value.timestamp,
-                token_budget_used=token_used,
-                token_budget_total=signed_envelope.value.token_budget_total,
-                payload=signed_envelope.value.payload,
-                manifest_hash=manifest_hash,
-                signature=signed_envelope.value.signature,
-            )
+        result = self._create_next_envelope(current_envelope, agent_output)
+        if isinstance(result, Failure):
+            return result
+        new_envelope = result.value
 
-        self._previous_envelopes.append(self._current_envelope)
+        result = self._apply_manifest_if_present(new_envelope, manifest)
+        if isinstance(result, Failure):
+            return result
+        new_envelope = result.value
 
-        current_snapshot_result = self._snapshot_store.save_snapshot(self._current_envelope)
-        if isinstance(current_snapshot_result, Failure):
-            return current_snapshot_result
-        self._snapshot_ids[self._current_envelope.step] = current_snapshot_result.value
+        return self._finalize_step(current_envelope, new_envelope)
+
+    def _check_budget(
+        self,
+        manifest: Optional[AgentManifest],
+        current_envelope: ContextEnvelope,
+    ) -> None:
+        """Check token budget if manifest and enforcer present."""
+        if manifest is not None and self._enforcer is not None:
+            projected = self._slice_payload(manifest, current_envelope)
+            self._enforcer.check(current_envelope, projected)
+
+    def _create_next_envelope(
+        self,
+        current_envelope: ContextEnvelope,
+        agent_output: dict[str, Any],
+    ) -> Result[ContextEnvelope]:
+        """Create the next envelope from current envelope and agent output."""
+        return self._context_broker.create_next_envelope(
+            previous_envelope=current_envelope, agent_output=agent_output
+        )
+
+    def _apply_manifest_if_present(
+        self,
+        envelope: ContextEnvelope,
+        manifest: Optional[AgentManifest],
+    ) -> Result[ContextEnvelope]:
+        """Apply manifest validation if manifest provided."""
+        if manifest is None:
+            return Success(envelope)
+        return self._apply_manifest_validation(envelope, manifest)
+
+    def _finalize_step(
+        self,
+        current_envelope: ContextEnvelope,
+        new_envelope: ContextEnvelope,
+    ) -> Result[ContextEnvelope]:
+        """Save snapshot, validate handoff, and advance pipeline."""
+        self._state.archive_and_set(new_envelope)
+
+        save_result = self._snapshot_manager.save_and_register(current_envelope)
+        if isinstance(save_result, Failure):
+            return save_result
 
         validation_result = self._handoff_validator.validate_handoff(
-            previous_envelope=self._current_envelope,
-            current_envelope=new_envelope
+            previous_envelope=current_envelope, current_envelope=new_envelope
         )
         if isinstance(validation_result, Failure):
             return validation_result
 
-        validation = validation_result.value
-        if self._handoff_validator.should_rollback(validation):
-            return self._rollback_to_previous(new_envelope, validation)
+        if self._handoff_validator.should_rollback(validation_result.value):
+            return self._rollback_on_contradiction(
+                new_envelope, validation_result.value
+            )
 
-        snapshot_result = self._snapshot_store.save_snapshot(new_envelope)
-        if isinstance(snapshot_result, Failure):
-            return snapshot_result
+        return self._advance_to_new_envelope(new_envelope)
 
-        snapshot_id = snapshot_result.value
-        self._snapshot_ids[new_envelope.step] = snapshot_id
-        if self._previous_envelopes:
-            oldest_step = self._previous_envelopes[0].step
-            self._snapshot_ids.pop(oldest_step, None)
-
-        self._current_envelope = new_envelope
-        return Success(new_envelope)
-
-    def _slice_payload(self, manifest: AgentManifest) -> str:
-        """Slice the current payload based on the manifest and slice packer."""
-        if self.slice_packer is None or self._current_envelope is None:
-            return ""
-        sliced = self.slice_packer.pack(self._current_envelope.payload, manifest)
-        return json.dumps(sliced)
-
-    def _rollback_to_previous(
+    def _apply_manifest(
         self,
-        proposed_envelope: ContextEnvelope,
-        validation: ValidationResult
+        envelope: ContextEnvelope,
+        manifest: Optional[AgentManifest],
+    ) -> ContextEnvelope:
+        """Apply manifest hash to envelope if manifest provided."""
+        if manifest is None:
+            return envelope
+        return envelope.with_manifest_hash(manifest.compute_hash())
+
+    def _apply_manifest_validation(
+        self,
+        new_envelope: ContextEnvelope,
+        manifest: AgentManifest,
+    ) -> Result[ContextEnvelope]:
+        """Validate manifest boundaries and apply manifest hash to envelope.
+
+        Uses the already-created envelope (passed in) instead of re-creating one.
+        """
+        try:
+            validate_manifest_boundaries(new_envelope, manifest, set(new_envelope.payload.keys()))
+        except Exception as e:
+            return self._rollback_with_reason(str(e))
+
+        return Success(new_envelope.with_manifest_hash(manifest.compute_hash()))
+
+    def _rollback_on_contradiction(
+        self, proposed_envelope: ContextEnvelope, validation: ValidationResult
     ) -> Result[ContextEnvelope]:
         """Rollback to previous envelope on contradiction."""
         reason = validation.contradiction_details or "Contradiction detected"
-        return self._rollback_to_previous_with_reason(proposed_envelope, reason)
+        return self._rollback_with_reason(reason)
 
-    def _rollback_to_previous_with_reason(
-        self,
-        proposed_envelope: ContextEnvelope,
-        reason: str
-    ) -> Result[ContextEnvelope]:
+    def _rollback_with_reason(self, reason: str) -> Result[ContextEnvelope]:
         """Rollback to previous envelope with explicit reason."""
-        if not self._previous_envelopes:
-            return Failure(reason="No previous envelope to rollback to", code="NO_ROLLBACK_AVAILABLE")
+        if not self._state.has_history():
+            return Failure(
+                reason="No previous envelope to rollback to",
+                code="NO_ROLLBACK_AVAILABLE",
+            )
 
-        previous_envelope = self._previous_envelopes[-1]
-        snapshot_id = self._snapshot_ids.get(previous_envelope.step)
-        if snapshot_id is None:
-            return Failure(reason="No snapshot registered for step", code="NO_SNAPSHOT_REGISTERED")
+        return self._do_rollback(reason, consume_history=False)
 
-        restore_result = self._snapshot_store.load_snapshot(snapshot_id)
-        if isinstance(restore_result, Failure):
-            return restore_result
+    def _do_rollback(self, reason: str, consume_history: bool) -> Result[ContextEnvelope]:
+        """Execute rollback to previous envelope."""
+        previous_envelope = self._state.peek_last()
+        assert previous_envelope is not None
+        result = self._rollback_handler.restore_to_previous(
+            previous_envelope,
+            self._state.snapshot_ids,
+            self._snapshot_store,
+            reason,
+        )
+        if isinstance(result, RollbackSuccess):
+            if consume_history:
+                self._state.consume_last()
+            self._state.set_current(result.value)
+        return result
 
-        restored_envelope = restore_result.value
-        self._current_envelope = restored_envelope
-        return RollbackSuccess(value=restored_envelope, reason=reason)
+    def _advance_to_new_envelope(
+        self,
+        new_envelope: ContextEnvelope,
+    ) -> Result[ContextEnvelope]:
+        """Advance pipeline to new envelope, saving snapshot and cleaning up old."""
+        oldest_in_history = self._state.peek_last()
+        advance_result = self._snapshot_manager.advance(
+            new_envelope, oldest_in_history
+        )
+        if isinstance(advance_result, Failure):
+            return advance_result
+
+        return Success(new_envelope)
+
+    def _slice_payload(
+        self, manifest: AgentManifest, current_envelope: ContextEnvelope | None
+    ) -> str:
+        """Slice the current payload based on the manifest and slice packer."""
+        if self.slice_packer is None or current_envelope is None:
+            return ""
+        sliced = self.slice_packer.pack(current_envelope.payload, manifest)
+        return json.dumps(sliced)
 
     def rollback(self) -> Result[ContextEnvelope]:
         """Rollback to the last clean state."""
-        if not self._previous_envelopes:
-            return Failure(reason="No previous envelope to rollback to", code="NO_ROLLBACK_AVAILABLE")
-
-        previous_envelope = self._previous_envelopes[-1]
-        snapshot_id = self._snapshot_ids.get(previous_envelope.step)
-        if snapshot_id is None:
-            return Failure(reason="No snapshot registered for step", code="NO_SNAPSHOT_REGISTERED")
-
-        restore_result = self._snapshot_store.load_snapshot(snapshot_id)
-        if isinstance(restore_result, Failure):
-            return restore_result
-
-        self._previous_envelopes.pop()
-        restored_envelope = restore_result.value
-        self._current_envelope = restored_envelope
-        return RollbackSuccess(value=restored_envelope, reason="Manual rollback")
+        _, lock = self._state.current_and_lock()
+        with lock:
+            if not self._state.has_history():
+                return Failure(
+                    reason="No previous envelope to rollback to",
+                    code="NO_ROLLBACK_AVAILABLE",
+                )
+            return self._do_rollback("Manual rollback", consume_history=True)
 
     def get_current_envelope(self) -> ContextEnvelope | None:
         """Get the current envelope."""
-        return self._current_envelope
+        _, lock = self._state.current_and_lock()
+        with lock:
+            return self._state.current()
+
+    # Backward-compatible accessors for tests
+    @property
+    def _current_envelope(self) -> ContextEnvelope | None:
+        """Expose current envelope for test compatibility."""
+        return self._state.current()
+
+    @property
+    def _snapshot_ids(self) -> dict[int, str]:
+        """Expose snapshot_ids for test compatibility."""
+        return self._state.snapshot_ids

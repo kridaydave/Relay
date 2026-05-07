@@ -103,84 +103,51 @@ class TestPipelineValidationAndSnapshot:
 
 
 class TestPipelineRollback:
-    @patch("relay.core_pipeline.SnapshotStore")
     @patch("relay.context_broker.ContextBroker.create_initial_envelope")
     @patch("relay.context_broker.ContextBroker.create_next_envelope")
     def test_pipeline_triggers_rollback_on_contradiction(
-        self, mock_next, mock_initial, mock_store_cls
+        self, mock_next, mock_initial, pipeline
     ):
-        temp_dir = tempfile.mkdtemp()
-        try:
-            mock_store = MagicMock()
-            mock_store.save_snapshot.return_value = Success("snapshot-id")
-            mock_store.load_snapshot.return_value = Failure(
-                reason="Snapshot not found", code="SNAPSHOT_NOT_FOUND"
+        mock_initial.return_value = Success(
+            create_mock_envelope(
+                1, pipeline._pipeline_id, {"entities": ["entity1"]}
             )
-            mock_store_cls.return_value = mock_store
+        )
+        mock_next.return_value = Success(
+            create_mock_envelope(2, pipeline._pipeline_id, {"data": "next"})
+        )
 
-            pipeline = CoreRelayPipeline(
-                signing_secret="test-secret", token_budget=8000, storage_path=temp_dir
-            )
+        pipeline.execute_step({"entities": ["entity1"], "data": "initial"})
+        result = pipeline.execute_step({"data": "next"})
 
-            mock_initial.return_value = Success(
-                create_mock_envelope(
-                    1, pipeline._pipeline_id, {"entities": ["entity1"]}
-                )
-            )
-            mock_next.return_value = Success(
-                create_mock_envelope(2, pipeline._pipeline_id, {"data": "next"})
-            )
-
-            pipeline.execute_step({"entities": ["entity1"], "data": "initial"})
-            result = pipeline.execute_step({"data": "next"})
-
-            assert isinstance(result, Failure)
-            assert "Snapshot not found" in result.reason
-        finally:
-            shutil.rmtree(temp_dir, ignore_errors=True)
+        assert isinstance(result, RollbackSuccess)
+        assert result.value.step == 1
 
 
 class TestPipelineRollback2:
-    @patch("relay.core_pipeline.SnapshotStore")
     @patch("relay.context_broker.ContextBroker.create_initial_envelope")
     @patch("relay.context_broker.ContextBroker.create_next_envelope")
     def test_pipeline_rollback_restores_previous_envelope(
-        self, mock_next, mock_initial, mock_store_cls
+        self, mock_next, mock_initial, pipeline
     ):
-        temp_dir = tempfile.mkdtemp()
-        try:
-            env1 = create_mock_envelope(
-                1, "", {"entities": ["entity1"], "data": "initial"}
+        mock_initial.return_value = Success(
+            create_mock_envelope(
+                1,
+                pipeline._pipeline_id,
+                {"entities": ["entity1"], "data": "initial"},
             )
-            mock_store = MagicMock()
-            mock_store.save_snapshot.return_value = Success("snapshot-id")
-            mock_store.load_snapshot.return_value = Success(env1)
-            mock_store_cls.return_value = mock_store
+        )
+        mock_next.return_value = Success(
+            create_mock_envelope(2, pipeline._pipeline_id, {"data": "next"})
+        )
 
-            pipeline = CoreRelayPipeline(
-                signing_secret="test-secret", token_budget=8000, storage_path=temp_dir
-            )
+        pipeline.execute_step({"entities": ["entity1"], "data": "initial"})
+        pipeline.execute_step({"data": "next"})
+        result = pipeline.rollback()
 
-            mock_initial.return_value = Success(
-                create_mock_envelope(
-                    1,
-                    pipeline._pipeline_id,
-                    {"entities": ["entity1"], "data": "initial"},
-                )
-            )
-            mock_next.return_value = Success(
-                create_mock_envelope(2, pipeline._pipeline_id, {"data": "next"})
-            )
-
-            pipeline.execute_step({"entities": ["entity1"], "data": "initial"})
-            pipeline.execute_step({"data": "next"})
-            result = pipeline.rollback()
-
-            assert isinstance(result, (Success, RollbackSuccess))
-            assert result.value.step == 1
-            assert result.value.payload == {"entities": ["entity1"], "data": "initial"}
-        finally:
-            shutil.rmtree(temp_dir, ignore_errors=True)
+        assert isinstance(result, (Success, RollbackSuccess))
+        assert result.value.step == 1
+        assert result.value.payload == {"entities": ["entity1"], "data": "initial"}
 
 
 class TestPipelineGetCurrentEnvelope:
@@ -377,7 +344,7 @@ class TestConcurrentPipeline:
             t.join()
 
         assert len(results) >= 0
-        assert all(isinstance(r, Failure) or isinstance(r, Success) for r in results)
+        assert all(isinstance(r, Failure) or isinstance(r, Success) or isinstance(r, RollbackSuccess) for r in results)
 
     @patch("relay.context_broker.ContextBroker.create_initial_envelope")
     def test_thread_pool_executor_operations(
