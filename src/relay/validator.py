@@ -105,6 +105,10 @@ class HandoffValidator:
             if ratio > self._hallucination_ratio_threshold:
                 return f"Entity fabrication detected: {new_count} new, {removed_count} removed (ratio: {ratio:.1f}x)"
 
+        if removed_count > 0 and new_count == 0:
+            if removed_count > self._hallucination_ratio_threshold:
+                return f"Excessive entity deletion detected: {removed_count} removed, 0 new"
+
         return None
 
     def _extract_entities(self, payload: dict[str, Any]) -> frozenset[str]:
