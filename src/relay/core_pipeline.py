@@ -65,6 +65,14 @@ class CoreRelayPipeline:
         else:
             self._enforcer = None
 
+    def close(self) -> None:
+        """Release pipeline resources.
+
+        Cleans up token counter if it has a close method.
+        """
+        if self.token_counter is not None and hasattr(self.token_counter, "close"):
+            self.token_counter.close()
+
     def execute_step(self, agent_output: dict[str, Any]) -> Result[ContextEnvelope]:
         """Execute a pipeline step with agent output."""
         return self.execute_step_with_manifest(agent_output, manifest=None)
