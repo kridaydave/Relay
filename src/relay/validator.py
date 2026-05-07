@@ -114,6 +114,7 @@ class HandoffValidator:
     def _extract_entities(self, payload: dict[str, Any]) -> frozenset[str]:
         """Extract entity mentions from payload."""
         entities: set[str] = set()
+        stop_words = {"the", "and", "but", "for", "nor", "yet", "so", "a", "an", "of", "to", "in", "on", "at", "by", "with", "from", "is", "are", "was", "were", "be", "been", "being"}
 
         def extract_recursive(obj: Any) -> None:
             if isinstance(obj, dict):
@@ -126,7 +127,7 @@ class HandoffValidator:
                 for item in obj:
                     extract_recursive(item)
             elif isinstance(obj, str):
-                if len(obj) > 2 and len(obj) < 100:
+                if len(obj) > 2 and len(obj) < 100 and obj.lower() not in stop_words:
                     entities.add(obj.lower())
 
         extract_recursive(payload)
