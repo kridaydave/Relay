@@ -113,7 +113,11 @@ class CoreRelayPipeline:
     ) -> Result[ContextEnvelope]:
         """Handle a subsequent pipeline step."""
         current_envelope = self._state.current()
-        assert current_envelope is not None
+        if current_envelope is None:
+            return Failure(
+                reason="Current envelope is None - invalid state",
+                code="INVALID_STATE",
+            )
 
         budget_result = self._check_budget(manifest, current_envelope)
         if isinstance(budget_result, Failure):
@@ -234,7 +238,11 @@ class CoreRelayPipeline:
     def _do_rollback(self, reason: str, consume_history: bool) -> Result[ContextEnvelope]:
         """Execute rollback to previous envelope."""
         previous_envelope = self._state.peek_last()
-        assert previous_envelope is not None
+        if previous_envelope is None:
+            return Failure(
+                reason="No previous envelope to rollback to",
+                code="INVALID_STATE",
+            )
         result = self._rollback_handler.restore_to_previous(
             previous_envelope,
             self._state.snapshot_ids,
