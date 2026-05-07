@@ -11,14 +11,9 @@ from typing import TypeVar, Generic, Union, Callable, overload, TypeAlias
 T = TypeVar("T")
 
 
-class RelayError(Exception):
-    """Base exception for Relay-specific errors."""
-    pass
-
-
 @dataclass(frozen=True)
-class BudgetExceededError(RelayError):
-    """Raised when token budget would be exceeded by an agent call."""
+class BudgetExceeded:
+    """Represents a budget exceeded error value."""
     used: int
     projected: int
     limit: int
@@ -26,16 +21,16 @@ class BudgetExceededError(RelayError):
 
 
 @dataclass(frozen=True)
-class HandoffValidationError(RelayError):
-    """Raised when an agent writes to a section not in its manifest."""
+class HandoffValidationFailure:
+    """Represents an agent boundary violation error value."""
     agent_id: str
     offending_section: str
     step: int
 
 
 @dataclass(frozen=True)
-class ManifestHashMismatchError(RelayError):
-    """Raised when manifest hash doesn't match expected value."""
+class ManifestHashMismatch:
+    """Represents a manifest hash mismatch error value."""
     expected_hash: str
     actual_hash: str
     step: int
@@ -75,8 +70,8 @@ def is_failure(result: Result[T]) -> bool:
 
 
 def unwrap(result: Result[T]) -> T:
-    """Extract value from Success, raise on Failure."""
-    if isinstance(result, Success):
+    """Extract value from Success or RollbackSuccess, raise on Failure."""
+    if isinstance(result, (Success, RollbackSuccess)):
         return result.value
     raise ValueError(f"Unwrap called on Failure: {result.reason}")
 
