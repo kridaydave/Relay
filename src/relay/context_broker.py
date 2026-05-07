@@ -45,6 +45,9 @@ def _estimate_tokens(payload: dict[str, Any]) -> int:
     """Approximates token count from payload JSON string length.
 
     Divides character count by 3 to approximate BPE tokenization.
+
+    See test_envelope.py::TestTokenEstimation::test_token_estimate_within_realistic_tolerance
+    for the benchmark test.
     """
     json_str = json.dumps(payload, sort_keys=True)
     return len(json_str) // 3

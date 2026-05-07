@@ -97,7 +97,7 @@ def _compute_signature(envelope: ContextEnvelope, secret: str) -> str:
 def _estimate_tokens(payload: dict[str, Any]) -> int:
     """Approximates token count from payload JSON string length.
 
-    This is a heuristic that divides character count by ~3 to approximate BPE tokenization.
+    This is a heuristic that estimates BPE tokens by dividing character count by 3.
     Note: This is NOT precise - actual token counts vary based on:
     - Specific vocabulary/merge table of the tokenizer
     - Content type (code vs natural language)
@@ -106,6 +106,9 @@ def _estimate_tokens(payload: dict[str, Any]) -> int:
     This achieves ~50% accuracy in typical cases and is suitable for budget
     estimation but NOT for precise token counting. Do not rely on this
     for exact limits.
+
+    See test_envelope.py::TestTokenEstimation::test_token_estimate_within_realistic_tolerance
+    for the benchmark test.
     """
     json_str = json.dumps(payload, sort_keys=True)
     return len(json_str) // 3
