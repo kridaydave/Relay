@@ -170,7 +170,7 @@ def validate_manifest_boundaries(
     envelope: ContextEnvelope,
     manifest: "AgentManifest",
     written_sections: set[str],
-) -> None:
+) -> Result[None]:
     """Validate that agent only wrote to sections in its manifest.
 
     Args:
@@ -178,16 +178,21 @@ def validate_manifest_boundaries(
         manifest: Agent manifest defining write permissions.
         written_sections: Set of section keys the agent wrote to.
 
-    Raises:
-        HandoffValidationError: If agent wrote to a section not in manifest.writes.
+    Returns:
+        Success(None) if validation passes, Failure if agent wrote outside manifest.
     """
     from relay.slicer.manifest import AgentManifest
-    from relay.types import HandoffValidationError
+    from relay.types import HandoffValidationFailure
 
+    violations = []
     for section in written_sections:
         if section not in manifest.writes:
-            raise HandoffValidationError(
-                agent_id=manifest.agent_id,
-                offending_section=section,
-                step=envelope.step,
-            )
+            violations.append(section)
+
+    if violations:
+        return Failure(
+            reason=f"Agent {manifest.agent_id} wrote to sections not in manifest: {violations}",
+            code="MANIFEST_BOUNDARY_VIOLATION",
+        )
+
+    return Success(None)

@@ -195,10 +195,11 @@ class CoreRelayPipeline:
 
         Uses the already-created envelope (passed in) instead of re-creating one.
         """
-        try:
-            validate_manifest_boundaries(new_envelope, manifest, set(new_envelope.payload.keys()))
-        except Exception as e:
-            return self._rollback_with_reason(str(e))
+        result = validate_manifest_boundaries(
+            new_envelope, manifest, set(new_envelope.payload.keys())
+        )
+        if isinstance(result, Failure):
+            return self._rollback_with_reason(result.reason)
 
         return Success(new_envelope.with_manifest_hash(manifest.compute_hash()))
 
