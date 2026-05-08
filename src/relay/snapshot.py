@@ -113,7 +113,18 @@ class SnapshotStore:
             envelope_result = self._dict_to_envelope(data)
             if isinstance(envelope_result, Failure):
                 return envelope_result
-            return Success(envelope_result.value)
+            envelope = envelope_result.value
+
+            if envelope.step != step:
+                return Failure(
+                    reason=(
+                        f"Snapshot integrity error: filename indicates step {step} "
+                        f"but envelope body contains step {envelope.step}"
+                    ),
+                    code=ErrorCode.INVALID_SNAPSHOT,
+                )
+
+            return Success(envelope)
         except FileNotFoundError:
             return Failure(
                 reason=f"Snapshot not found: {snapshot_id}", code=ErrorCode.SNAPSHOT_NOT_FOUND

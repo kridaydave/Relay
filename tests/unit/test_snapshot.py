@@ -92,6 +92,23 @@ class TestSnapshotStore:
         assert id2 in result.value
         assert id3 in result.value
 
+    def test_load_snapshot_fails_when_body_step_mismatches_filename(self):
+        """Tampered snapshot where body step differs from filename is rejected."""
+        import json
+        from pathlib import Path
+
+        env = self._create_envelope(step=1)
+        snapshot_id = self.store.save_snapshot(env).value
+
+        path = Path(self.temp_dir) / env.pipeline_id / f"{snapshot_id}.json"
+        data = json.loads(path.read_text())
+        data["step"] = 99
+        path.write_text(json.dumps(data))
+
+        result = self.store.load_snapshot(snapshot_id)
+        assert isinstance(result, Failure)
+        assert result.code == "INVALID_SNAPSHOT"
+
     def test_snapshot_index_sorts_numerically(self):
         pipeline_id = "pipeline-sort"
         # Create envelopes in arbitrary order, but their steps matter
