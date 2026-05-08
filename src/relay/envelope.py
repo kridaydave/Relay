@@ -12,7 +12,11 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
+from relay.types import ErrorCode, Failure, Result, Success
+
+RELAY_VERSION = "0.2.0"
 PIPELINE_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{1,128}$")
+_MIN_SECRET_LENGTH = 32
 
 
 def _validate_pipeline_id(pipeline_id: str) -> Result[str]:
@@ -25,10 +29,6 @@ def _validate_pipeline_id(pipeline_id: str) -> Result[str]:
             code=ErrorCode.INVALID_PIPELINE_ID,
         )
     return Success(pipeline_id)
-
-from relay.types import ErrorCode, Failure, Result, Success
-
-RELAY_VERSION = "0.2.0"
 
 
 @dataclass(frozen=True)
@@ -104,7 +104,17 @@ def verify_signature(envelope: ContextEnvelope, secret: str) -> bool:
 
 
 def _sign_envelope(envelope: ContextEnvelope, secret: str) -> ContextEnvelope:
-    """Create a signed copy of the envelope."""
+    """Create a signed copy of the envelope.
+
+    Raises:
+        ValueError: If secret is shorter than _MIN_SECRET_LENGTH characters.
+            Weak secrets are a programmer error, not an operational failure.
+    """
+    if len(secret) < _MIN_SECRET_LENGTH:
+        raise ValueError(
+            f"signing_secret must be at least {_MIN_SECRET_LENGTH} characters, "
+            f"got {len(secret)}. Weak secrets compromise envelope integrity."
+        )
     signature = _compute_signature(envelope, secret)
     return envelope.with_signature(signature)
 
