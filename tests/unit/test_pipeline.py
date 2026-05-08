@@ -212,6 +212,12 @@ class TestConcurrentPipeline:
         assert final_envelope is not None
         assert final_envelope.step >= 1
 
+        submitted_payloads = [{"step": i, "data": f"data-{i}"} for i in range(3)]
+        assert final_envelope.payload in submitted_payloads, (
+            f"Final payload {final_envelope.payload} is not one of the submitted payloads — "
+            "possible state corruption from concurrent writes"
+        )
+
     @patch("relay.context_broker.ContextBroker.create_initial_envelope")
     @patch("relay.context_broker.ContextBroker.create_next_envelope")
     def test_concurrent_step_execution_with_snapshot_tracking(

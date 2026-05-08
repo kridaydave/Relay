@@ -102,7 +102,7 @@ class StructuralSlicePacker(SlicePacker):
                 reason=f"Manifest declares read for sections {missing} but they do not exist in payload",
                 code="MISSING_SECTIONS",
             )
-        return Success({key: payload[key] for key in manifest.reads})
+        return Success({key: payload[key] for key in sorted(manifest.reads)})
 
 
 class RelevanceSlicePacker(SlicePacker):

@@ -1,7 +1,7 @@
-"""Core pipeline orchestration for Relay v0.1.
+"""Core pipeline orchestration for Relay.
 
-Owns: pipeline lifecycle, component coordination.
-Does NOT: define agent behavior, manage prompts.
+Owns: pipeline lifecycle, component coordination, budget enforcement hooks, slicer dispatch.
+Does NOT: define agent behaviour, manage prompts, implement token counting, or implement slicing strategies.
 """
 
 import json
