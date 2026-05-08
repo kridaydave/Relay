@@ -7,6 +7,7 @@ import pytest
 from relay.types import (
     Success,
     Failure,
+    RollbackSuccess,
     Result,
     is_success,
     is_failure,
@@ -81,6 +82,10 @@ class TestUnwrapOr:
         result: Result[str] = Failure(reason="error", code="ERR")
         assert unwrap_or(result, "default") == "default"
 
+    def test_unwrap_or_returns_default_for_rollback_success(self):
+        result: Result[str] = RollbackSuccess(value="restored", reason="contradiction")
+        assert unwrap_or(result, "default") == "default"
+
 
 class TestMapResult:
     def test_map_result_applies_function_to_success(self):
@@ -91,6 +96,11 @@ class TestMapResult:
 
     def test_map_result_leaves_failure_unchanged(self):
         result: Result[int] = Failure(reason="error", code="ERR")
+        mapped = map_result(result, lambda x: x * 2)
+        assert mapped is result
+
+    def test_map_result_leaves_rollback_success_unchanged(self):
+        result: Result[int] = RollbackSuccess(value=5, reason="rollback")
         mapped = map_result(result, lambda x: x * 2)
         assert mapped is result
 

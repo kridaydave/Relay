@@ -122,6 +122,12 @@ class TestSnapshotStore:
         assert isinstance(result, Failure)
         assert result.code == "PIPELINE_NOT_FOUND"
 
+    def test_list_snapshots_returns_empty_for_unknown_pipeline(self):
+        result = self.store.list_snapshots("does-not-exist")
+
+        assert isinstance(result, Success)
+        assert result.value == []
+
 
 class TestContextEnvelope:
     def test_context_envelope_is_frozen_dataclass(self):
