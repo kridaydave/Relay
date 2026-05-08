@@ -42,5 +42,13 @@ try:
             """Release the encoding resource."""
             self._enc = None
 
+        def __enter__(self) -> "TiktokenCounter":
+            """Enter the context manager."""
+            return self
+
+        def __exit__(self, *_: object) -> None:
+            """Exit the context manager and release resources."""
+            self.close()
+
 except ImportError:
     TiktokenCounter = None  # type: ignore

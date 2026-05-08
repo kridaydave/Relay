@@ -111,10 +111,8 @@ class TestSnapshotIds:
 
 class TestThreadSafety:
     def test_lock_is_acquirable(self, state):
-        _, lock = state.current_and_lock()
-        acquired = lock.acquire(timeout=1.0)
-        assert acquired is True
-        lock.release()
+        with state.transaction() as _:
+            pass
 
     def test_lock_prevents_concurrent_modification(self, state):
         env1 = create_mock_envelope(1)
@@ -123,16 +121,21 @@ class TestThreadSafety:
 
         def set_current():
             try:
-                _, lock = state.current_and_lock()
-                with lock:
+                with state.transaction():
                     state.set_current(env1)
             except Exception as e:
                 errors.append(e)
 
         def archive_and_set():
             try:
-                _, lock = state.current_and_lock()
-                with lock:
+                with state.transaction():
+                    state.archive_and_set(env2)
+            except Exception as e:
+                errors.append(e)
+
+        def archive_and_set():
+            try:
+                with state.transaction():
                     state.archive_and_set(env2)
             except Exception as e:
                 errors.append(e)

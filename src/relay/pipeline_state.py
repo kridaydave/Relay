@@ -37,13 +37,6 @@ class PipelineState:
         """Return the current envelope (no lock needed for read of None check)."""
         return self._current_envelope
 
-    def current_and_lock(self) -> tuple[ContextEnvelope | None, threading.Lock]:
-        """Return current envelope with the lock held. Caller must release.
-
-        DEPRECATED: Use transaction() context manager instead.
-        """
-        return self._current_envelope, self._lock
-
     @contextmanager
     def transaction(self) -> Generator[ContextEnvelope | None, None, None]:
         """Context manager for safe lock acquisition and release.

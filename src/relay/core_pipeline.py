@@ -91,9 +91,8 @@ class CoreRelayPipeline:
         manifest: Optional[AgentManifest] = None,
     ) -> Result[ContextEnvelope]:
         """Execute a pipeline step with optional manifest for budget/boundary validation."""
-        _, lock = self._state.current_and_lock()
-        with lock:
-            if self._state.current() is None:
+        with self._state.transaction() as current_envelope:
+            if current_envelope is None:
                 return self._handle_initial_step(agent_output, manifest)
 
             return self._handle_subsequent_step(agent_output, manifest)
@@ -290,8 +289,7 @@ class CoreRelayPipeline:
 
     def rollback(self) -> Result[ContextEnvelope]:
         """Rollback to the last clean state."""
-        _, lock = self._state.current_and_lock()
-        with lock:
+        with self._state.transaction():
             if not self._state.has_history():
                 return Failure(
                     reason="No previous envelope to rollback to",
@@ -301,9 +299,8 @@ class CoreRelayPipeline:
 
     def get_current_envelope(self) -> ContextEnvelope | None:
         """Get the current envelope."""
-        _, lock = self._state.current_and_lock()
-        with lock:
-            return self._state.current()
+        with self._state.transaction() as envelope:
+            return envelope
 
     # Backward-compatible accessors for tests
     @property
