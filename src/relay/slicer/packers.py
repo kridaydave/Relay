@@ -5,9 +5,11 @@ Does NOT: define SliceStrategy enum, own EmbeddingProvider protocol,
           or count tokens precisely (delegates to envelope._estimate_tokens).
 """
 
+import json
 from typing import Any
 from math import sqrt
 
+from relay.envelope import _estimate_tokens
 from relay.slicer.manifest import AgentManifest
 from relay.slicer.providers import EmbeddingProvider
 from relay.types import ErrorCode, Failure, Result, Success
@@ -74,7 +76,7 @@ class RecencySlicePacker(SlicePacker):
 
         for key in sorted_keys:
             section_text = payload[key]
-            section_tokens = len(section_text) // 3
+            section_tokens = _estimate_tokens({key: section_text})
 
             if used_tokens + section_tokens > manifest.max_tokens:
                 if result:

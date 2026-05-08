@@ -61,7 +61,7 @@ class TestRecencySlicePacker:
             "section_2": "b",
             "section_3": "c",
         }
-        manifest = AgentManifest("a1", frozenset(), frozenset(), 5)
+        manifest = AgentManifest("a1", frozenset(), frozenset(), 20)
         result = packer.pack(payload, manifest)
         assert isinstance(result, Success)
         assert "section_1" in result.value

@@ -111,7 +111,10 @@ class CoreRelayPipeline:
         if isinstance(result, Failure):
             return result
 
-        new_envelope = self._apply_manifest(result.value, manifest)
+        apply_result = self._apply_manifest(result.value, manifest, validate=False)
+        if isinstance(apply_result, Failure):
+            return apply_result
+        new_envelope = apply_result.value
         self._state.set_current(new_envelope)
         return Success(new_envelope)
 
@@ -136,7 +139,9 @@ class CoreRelayPipeline:
         if isinstance(budget_result, Failure):
             return budget_result
 
-        result = self._create_next_envelope(current_envelope, agent_output)
+        result = self._context_broker.create_next_envelope(
+            previous_envelope=current_envelope, agent_output=agent_output
+        )
         if isinstance(result, Failure):
             return result
         new_envelope = result.value
@@ -159,33 +164,21 @@ class CoreRelayPipeline:
             return self._enforcer.check(current_envelope, projected)
         return Success(None)
 
-    def _create_next_envelope(
-        self,
-        current_envelope: ContextEnvelope,
-        agent_output: dict[str, Any],
-    ) -> Result[ContextEnvelope]:
-        """Create the next envelope from current envelope and agent output.
-
-        REQUIRES: caller holds self._state._lock via transaction() context manager.
-        Must NOT call self._state.transaction() — lock is non-reentrant.
-        """
-        return self._context_broker.create_next_envelope(
-            previous_envelope=current_envelope, agent_output=agent_output
-        )
-
     def _apply_manifest_if_present(
         self,
         envelope: ContextEnvelope,
         manifest: Optional[AgentManifest],
     ) -> Result[ContextEnvelope]:
-        """Apply manifest validation if manifest provided.
+        """Apply manifest hash to envelope, optionally validating write boundaries.
 
-        REQUIRES: caller holds self._state._lock via transaction() context manager.
-        Must NOT call self._state.transaction() — lock is non-reentrant.
+        Args:
+            validate: True for subsequent steps (has prior payload to diff against).
+                      False for the initial step.
+        REQUIRES: caller holds self._state._lock.
         """
         if manifest is None:
             return Success(envelope)
-        return self._apply_manifest_validation(envelope, manifest)
+        return self._apply_manifest(envelope, manifest, validate=True)
 
     def _finalize_step(
         self,
@@ -221,34 +214,24 @@ class CoreRelayPipeline:
         self,
         envelope: ContextEnvelope,
         manifest: Optional[AgentManifest],
-    ) -> ContextEnvelope:
-        """Apply manifest hash to envelope if manifest provided.
+        validate: bool = False,
+    ) -> Result[ContextEnvelope]:
+        """Apply manifest hash to envelope, optionally validating write boundaries.
 
-        REQUIRES: caller holds self._state._lock via transaction() context manager.
-        Must NOT call self._state.transaction() — lock is non-reentrant.
+        Args:
+            validate: True for subsequent steps (has prior payload to diff against).
+                      False for the initial step.
+            REQUIRES: caller holds self._state._lock.
         """
         if manifest is None:
-            return envelope
-        return envelope.with_manifest_hash(manifest.compute_hash())
-
-    def _apply_manifest_validation(
-        self,
-        new_envelope: ContextEnvelope,
-        manifest: AgentManifest,
-    ) -> Result[ContextEnvelope]:
-        """Validate manifest boundaries and apply manifest hash to envelope.
-
-        Uses the already-created envelope (passed in) instead of re-creating one.
-        REQUIRES: caller holds self._state._lock via transaction() context manager.
-        Must NOT call self._state.transaction() — lock is non-reentrant.
-        """
-        result = validate_manifest_boundaries(
-            new_envelope, manifest, set(new_envelope.payload.keys())
-        )
-        if isinstance(result, Failure):
-            return self._rollback_with_reason(result.reason)
-
-        return Success(new_envelope.with_manifest_hash(manifest.compute_hash()))
+            return Success(envelope)
+        if validate:
+            result = validate_manifest_boundaries(
+                envelope, manifest, set(envelope.payload.keys())
+            )
+            if isinstance(result, Failure):
+                return self._rollback_with_reason(result.reason)
+        return Success(envelope.with_manifest_hash(manifest.compute_hash()))
 
     def _rollback_on_contradiction(
         self, proposed_envelope: ContextEnvelope, validation: ValidationResult
@@ -261,7 +244,9 @@ class CoreRelayPipeline:
         reason = validation.contradiction_details or "Contradiction detected"
         return self._rollback_with_reason(reason)
 
-    def _rollback_with_reason(self, reason: str) -> Result[ContextEnvelope]:
+    def _rollback_with_reason(
+        self, reason: str, consume_history: bool = False
+    ) -> Result[ContextEnvelope]:
         """Rollback to previous envelope with explicit reason.
 
         REQUIRES: caller holds self._state._lock via transaction() context manager.
@@ -273,20 +258,13 @@ class CoreRelayPipeline:
                 code=ErrorCode.NO_ROLLBACK_AVAILABLE,
             )
 
-        return self._do_rollback(reason, consume_history=False)
-
-    def _do_rollback(self, reason: str, consume_history: bool) -> Result[ContextEnvelope]:
-        """Execute rollback to previous envelope.
-
-        REQUIRES: caller holds self._state._lock via transaction() context manager.
-        Must NOT call self._state.transaction() — lock is non-reentrant.
-        """
         previous_envelope = self._state.peek_last()
         if previous_envelope is None:
             return Failure(
                 reason="No previous envelope to rollback to",
                 code=ErrorCode.INVALID_STATE,
             )
+
         result = self._rollback_handler.restore_to_previous(
             previous_envelope,
             self._state.snapshot_ids,
@@ -308,7 +286,6 @@ class CoreRelayPipeline:
         REQUIRES: caller holds self._state._lock via transaction() context manager.
         Must NOT call self._state.transaction() — lock is non-reentrant.
         """
-        """Advance pipeline to new envelope, saving snapshot and cleaning up old."""
         oldest_in_history = self._state.peek_last()
         save_result = self._snapshot_manager.save(new_envelope)
         if isinstance(save_result, Failure):
@@ -338,7 +315,7 @@ class CoreRelayPipeline:
                     reason="No previous envelope to rollback to",
                     code=ErrorCode.NO_ROLLBACK_AVAILABLE,
                 )
-            return self._do_rollback("Manual rollback", consume_history=True)
+            return self._rollback_with_reason("Manual rollback", consume_history=True)
 
     def get_current_envelope(self) -> ContextEnvelope | None:
         """Get the current envelope."""
