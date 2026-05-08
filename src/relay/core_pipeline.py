@@ -56,9 +56,7 @@ class CoreRelayPipeline:
         )
         self._handoff_validator = HandoffValidator()
         self._snapshot_store = SnapshotStore(storage_path=self.storage_path)
-        self._snapshot_manager = SnapshotManager(
-            self._snapshot_store, self._state.snapshot_ids
-        )
+        self._snapshot_manager = SnapshotManager(self._snapshot_store)
         self._rollback_handler = RollbackHandler()
         if self.token_counter is not None:
             self._enforcer = HardCapEnforcer(self._pipeline_id, self.token_counter)
@@ -181,9 +179,10 @@ class CoreRelayPipeline:
         """Save snapshot, validate handoff, and advance pipeline."""
         self._state.archive_and_set(new_envelope)
 
-        save_result = self._snapshot_manager.save_and_register(current_envelope)
+        save_result = self._snapshot_manager.save(current_envelope)
         if isinstance(save_result, Failure):
             return save_result
+        self._state.snapshot_ids[current_envelope.step] = save_result.value
 
         validation_result = self._handoff_validator.validate_handoff(
             previous_envelope=current_envelope, current_envelope=new_envelope
@@ -268,11 +267,12 @@ class CoreRelayPipeline:
     ) -> Result[ContextEnvelope]:
         """Advance pipeline to new envelope, saving snapshot and cleaning up old."""
         oldest_in_history = self._state.peek_last()
-        advance_result = self._snapshot_manager.advance(
-            new_envelope, oldest_in_history
-        )
-        if isinstance(advance_result, Failure):
-            return advance_result
+        save_result = self._snapshot_manager.save(new_envelope)
+        if isinstance(save_result, Failure):
+            return save_result
+        self._state.snapshot_ids[new_envelope.step] = save_result.value
+        if oldest_in_history is not None:
+            self._state.snapshot_ids.pop(oldest_in_history.step, None)
 
         return Success(new_envelope)
 
