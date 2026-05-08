@@ -206,9 +206,6 @@ def validate_manifest_boundaries(
     Returns:
         Success(None) if validation passes, Failure if agent wrote outside manifest.
     """
-    from relay.slicer.manifest import AgentManifest
-    from relay.types import HandoffValidationFailure
-
     violations = []
     for section in written_sections:
         if section not in manifest.writes:

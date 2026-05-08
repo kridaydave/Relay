@@ -66,44 +66,6 @@ class TestArchiveAndSet:
         assert state.has_history() is False
 
 
-class TestRollbackToLast:
-    def test_pops_last_envelope_from_history(self, state):
-        env1 = create_mock_envelope(1)
-        env2 = create_mock_envelope(2)
-        state.set_current(env1)
-        state.archive_and_set(env2)
-
-        previous, history = state.rollback_to_last()
-
-        assert previous == env1
-        assert len(history) == 0
-
-    def test_has_history_reflects_state(self, state):
-        assert state.has_history() is False
-        env1 = create_mock_envelope(1)
-        env2 = create_mock_envelope(2)
-        state.set_current(env1)
-        state.archive_and_set(env2)
-        assert state.has_history() is True
-        state.rollback_to_last()
-        assert state.has_history() is False
-
-
-class TestLastEnvelope:
-    def test_returns_none_when_no_history(self, state):
-        assert state.last_envelope() is None
-
-    def test_returns_last_envelope_in_history(self, state):
-        env1 = create_mock_envelope(1)
-        env2 = create_mock_envelope(2)
-        env3 = create_mock_envelope(3)
-        state.set_current(env1)
-        state.archive_and_set(env2)
-        state.archive_and_set(env3)
-
-        assert state.last_envelope() == env2
-
-
 class TestSnapshotIds:
     def test_snapshot_ids_is_empty_initially(self, state):
         assert state.snapshot_ids == {}

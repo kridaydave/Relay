@@ -69,19 +69,6 @@ class PipelineState:
         """Remove and return the last envelope from history. Must be called AFTER successful restore."""
         return self._previous_envelopes.pop()
 
-    def rollback_to_last(self) -> tuple[ContextEnvelope, list[ContextEnvelope]]:
-        """Remove and return the last envelope from history. Caller holds lock.
-
-        Returns:
-            The envelope to restore and the updated previous list.
-        """
-        previous_envelope = self._previous_envelopes.pop()
-        return previous_envelope, list(self._previous_envelopes)
-
     def has_history(self) -> bool:
         """Check if there are previous envelopes to rollback to."""
         return len(self._previous_envelopes) > 0
-
-    def last_envelope(self) -> ContextEnvelope | None:
-        """Return the last envelope in history, or None."""
-        return self._previous_envelopes[-1] if self._previous_envelopes else None
