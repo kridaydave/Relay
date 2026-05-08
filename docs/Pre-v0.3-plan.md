@@ -1,551 +1,777 @@
-# Relay — Bug & Code Fixes Plan
-> Prioritised fix list derived from the May 2026 audit, codebase review, and rule violations.
-> Each fix is scoped to a single atomic commit. Fixes are ordered: do them top to bottom.
+# Relay — Fix Implementation Plan
+
+> Derived from the code review: 7 bugs, 5 dead code items, 6 complexity issues, 8 design violations.
+> Each entry is one atomic commit. Do them in order — later commits depend on earlier ones.
+> Run `mypy --strict src/` and `pytest tests/ -v` after every commit before moving on.
 
 ---
 
-## Severity Legend
+## Severity legend
 
 | Symbol | Meaning |
-|---|---|
-| 🔴 CRITICAL | Runtime crash or security hole. Fix before any other work. |
-| 🟠 HIGH | Incorrect behaviour, broken contract, or R-rule violation that affects correctness. |
-| 🟡 MEDIUM | Quality degradation, test gap, or architectural smell that will compound. |
-| 🟢 LOW | Style, naming, or minor documentation issue. |
+|--------|---------|
+| 🔴 | Runtime crash or security hole. Fix before anything else. |
+| 🟠 | Incorrect behaviour or broken contract. Fix before v0.3. |
+| 🟡 | Quality / maintainability. Fix before cutting the v0.3 branch. |
+| 🟢 | Polish. Fine to do alongside v0.3 work. |
 
 ---
 
-## 🔴 CRITICAL FIXES
+## Schedule overview
+
+| Week | Theme | Commits |
+|------|-------|---------|
+| 1 | Stop the bleeding — runtime crashes and broken type system | C-01 → C-04 |
+| 2 | Ownership and contracts — dead code, shared state, lock model | C-05 → C-08 |
+| 3 | Design rule compliance — docstrings, validation boundary, tests | C-09 → C-12 |
+| 4 | Polish — complexity reduction, slicer correctness | C-13 → C-14 |
 
 ---
 
-### FIX-001 — Wrong dict key type in `_snapshot_ids` causes runtime crash
+## Week 1 — Runtime crashes and broken type system
 
-**File:** `src/relay/core_pipeline.py`
-**Severity:** 🔴 CRITICAL — mypy reports 5 errors; will crash at runtime if step is accessed with int key against a `dict[str, str]`
+---
 
-**Root cause:** The field is declared `dict[str, str]` but the step number (`int`) is used as the key throughout.
+### C-01 — Fix import order causing `NameError` in `envelope.py` 🔴
+
+**Fixes:** B-02
+
+**Root cause.**
+`_validate_pipeline_id` is defined near the top of `envelope.py` and references `Result`, `Failure`, `Success`, and `ErrorCode` — but those names are imported from `relay.types` in a block that appears *after* the function definition. Python executes module bodies top-to-bottom; calling `_validate_pipeline_id` raises `NameError: name 'Result' is not defined` at runtime.
 
 **Current (broken):**
 ```python
-_snapshot_ids: dict[str, str] = field(default_factory=dict, init=False, repr=False)
-```
+# envelope.py — top of file
+PIPELINE_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{1,128}$")
 
-**Fix:**
-```python
-_snapshot_ids: dict[int, str] = field(default_factory=dict, init=False, repr=False)
-```
-
-**Also fix in `pipeline_state.py`:**
-```python
-# Change:
-self._snapshot_ids: dict[int, str] = {}
-# (already correct here — verify the type flows through to core_pipeline's property)
-```
-
-**Commit message:** `fix(pipeline): correct _snapshot_ids type from dict[str,str] to dict[int,str]`
-
----
-
-### FIX-002 — `pipeline_id` is not sanitised before filesystem use — path traversal risk
-
-**File:** `src/relay/snapshot.py`, `src/relay/envelope.py`
-**Severity:** 🔴 CRITICAL — `pipeline_id` becomes a directory name. A value like `../../etc/passwd` would traverse outside the storage root.
-
-**Fix — add validation in `create_initial_envelope` before any filesystem operation:**
-```python
-import re
-_SAFE_PIPELINE_ID = re.compile(r'^[a-zA-Z0-9_-]{1,128}$')
-
-def _validate_pipeline_id(pipeline_id: str) -> Result[str]:
+def _validate_pipeline_id(pipeline_id: str) -> Result[str]:   # NameError: Result
     if not pipeline_id:
-        return Failure(reason="pipeline_id cannot be empty", code="INVALID_PIPELINE_ID")
-    if not _SAFE_PIPELINE_ID.match(pipeline_id):
-        return Failure(
-            reason="pipeline_id contains unsafe characters — only [a-zA-Z0-9_-] allowed",
-            code="INVALID_PIPELINE_ID"
-        )
-    return Success(pipeline_id)
-```
-
-Call `_validate_pipeline_id` at the top of both `create_initial_envelope` and `SnapshotStore.save_snapshot`.
-
-**Commit message:** `fix(security): validate pipeline_id before filesystem use to prevent path traversal`
-
----
-
-### FIX-003 — Default signing secret `"default-secret"` is a security hole
-
-**File:** `src/relay/envelope.py`
-**Severity:** 🔴 CRITICAL — a function with a default insecure secret will be called with it in production.
-
-**Current (broken):**
-```python
-def create_initial_envelope(
+        return Failure(reason="...", code=ErrorCode.INVALID_PIPELINE_ID)
     ...
-    secret: str = "default-secret",
-) -> Result[ContextEnvelope]:
+
+from relay.types import ErrorCode, Failure, Result, Success   # too late
 ```
 
-**Fix — remove the default entirely:**
+**Fix — move all imports above every function definition:**
 ```python
-def create_initial_envelope(
-    pipeline_id: str,
-    initial_payload: dict[str, Any],
-    secret: str,                      # required, no default
-    token_budget_total: int = 8000,
-    manifest_hash: str = "",
-) -> Result[ContextEnvelope]:
+# envelope.py — correct order
+import hashlib
+import hmac
+import json
+import re
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from typing import Any
+
+from relay.types import ErrorCode, Failure, Result, Success   # FIRST
+
+RELAY_VERSION = "0.2.0"
+PIPELINE_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{1,128}$")
+
+def _validate_pipeline_id(pipeline_id: str) -> Result[str]:  # now safe
+    ...
 ```
 
-Update all callers. Test files that relied on the default must now pass an explicit test secret (`"a" * 32`).
+**Test to add** in `tests/unit/test_envelope.py`:
+```python
+def test_envelope_module_imports_without_error():
+    """Import must not raise NameError regardless of call order."""
+    import importlib
+    import relay.envelope
+    importlib.reload(relay.envelope)
+```
 
-**Commit message:** `fix(security): remove default signing secret from create_initial_envelope`
+**Commit message:** `fix(envelope): move relay.types imports above function definitions to prevent NameError`
 
 ---
 
-### FIX-004 — `snapshot.py` raises `RuntimeError` instead of returning `Failure`
+### C-02 — Fix broken `Result` TypeAlias — T is unbound 🔴
 
-**File:** `src/relay/snapshot.py`
-**Severity:** 🔴 CRITICAL — breaks the Result-type contract (R4). Any caller that doesn't wrap in try/except will crash.
+**Fixes:** B-01
 
-**Current (broken) — `_add_to_index`:**
-```python
-except Exception as e:
-    raise RuntimeError(f"Failed to update index: {e}")
-```
-
-**Fix:**
-```python
-except Exception as e:
-    return Failure(reason=f"Failed to update index: {e}", code="INDEX_UPDATE_FAILED")
-```
-
-Also audit `save_snapshot` — if the index update fails after the snapshot file is written, the snapshot exists on disk but is not indexed. This inconsistent state must be handled:
-
-```python
-# After os.replace(temp_path, snapshot_path) succeeds:
-index_result = self._add_to_index(pipeline_id, snapshot_id)
-if isinstance(index_result, Failure):
-    # Snapshot written but not indexed — clean up the orphan
-    try:
-        snapshot_path.unlink(missing_ok=True)
-    except OSError:
-        pass  # best-effort cleanup
-    return index_result
-```
-
-**Commit message:** `fix(snapshot): return Failure instead of raising RuntimeError on index update failure`
-
----
-
-## 🟠 HIGH PRIORITY FIXES
-
----
-
-### FIX-005 — `_dict_to_envelope` uses `_require_field` inconsistently
-
-**File:** `src/relay/snapshot.py`
-**Severity:** 🟠 HIGH — `manifest_hash` skips validation entirely and falls back to `""` silently. If a snapshot is corrupted, other fields may also have wrong types that slip through.
-
-**Current (inconsistent):**
-```python
-manifest_hash = data.get("manifest_hash", "")   # no type check
-```
-
-**Fix — apply `_require_field` to all fields or add explicit type guard:**
-```python
-raw_hash = data.get("manifest_hash", "")
-manifest_hash = raw_hash if isinstance(raw_hash, str) else ""
-```
-
-Or extend `_require_field` to support an optional-with-default pattern:
-
-```python
-def _optional_field(self, data: dict[str, Any], key: str, expected_type: type, default: Any) -> Any:
-    value = data.get(key, default)
-    return value if isinstance(value, expected_type) else default
-```
-
-**Commit message:** `fix(snapshot): apply consistent type validation to manifest_hash in _dict_to_envelope`
-
----
-
-### FIX-006 — Broken `Result` generic type alias
-
-**File:** `src/relay/types.py`
-**Severity:** 🟠 HIGH — `T` is unbound in the `TypeAlias` definition. mypy accepts it, but it provides false type safety.
-
-**Current (broken):**
+**Root cause.**
 ```python
 T = TypeVar("T")
 Result: TypeAlias = Union[Success[T], RollbackSuccess[T], Failure]
 ```
+`T` is a module-level `TypeVar` but is not bound at the alias definition site. mypy accepts the syntax but `Result[str]` does not actually constrain `Success` or `RollbackSuccess` to hold `str`. The alias provides false type safety throughout the entire codebase.
 
-**Fix for Python 3.11 compatibility:**
-```python
-from typing import TypeVar, Union, TypeAlias
+**Decision to make before implementing:** check your Python version floor.
 
-_T = TypeVar("_T")
-
-# Keep Success, Failure, RollbackSuccess as before.
-# Provide a generic alias that mypy can reason about:
-def Result(t: type[_T]) -> type[Union[Success[_T], RollbackSuccess[_T], Failure]]:
-    ...  # runtime stub only — used as annotation: Result[str]
-```
-
-Or use the simpler Python 3.12 syntax if you target 3.12+:
+If targeting **Python 3.12+** (cleanest — update `requires-python` in `pyproject.toml`):
 ```python
 type Result[T] = Success[T] | RollbackSuccess[T] | Failure
 ```
 
-Pick one and enforce it in `pyproject.toml` via `requires-python`.
+If staying on **Python 3.11**:
+```python
+from typing import TypeVar, Union, TypeAlias
+
+_T = TypeVar("_T")
+Result: TypeAlias = Union[Success[_T], RollbackSuccess[_T], Failure]
+```
+
+Either way, rename the module-level `T` to `_T` to mark it as internal and avoid shadowing at call sites.
+
+**Verify:** `mypy --strict src/relay/types.py` must pass with zero errors.
 
 **Commit message:** `fix(types): correct unbound TypeVar in Result generic alias`
 
 ---
 
-### FIX-007 — `manifest_hash` backward-compat default `""` was never removed
+### C-03 — Add secret strength validation inside `_sign_envelope` 🔴
 
-**File:** `src/relay/envelope.py`, `src/relay/context_broker.py`
-**Severity:** 🟠 HIGH — the design plan (PR 5 in `relay-0.2-plan.md`) explicitly states this default must be removed before tagging v0.2 final. It was not removed.
+**Fixes:** B-03
 
-**Fix:**
+**Root cause.**
+`ContextBroker.__post_init__` validates `signing_secret >= 32 chars`, but `create_initial_envelope` and `create_next_envelope` in `envelope.py` accept any `secret: str` with no validation. Any caller that bypasses `ContextBroker` and calls `envelope.py` directly (including all existing test helpers that pass `"secret"` or `"test-secret"`) gets no protection.
+
+**Fix — add the check inside `_sign_envelope`**, the single choke-point all signing passes through:
 ```python
-# In create_initial_envelope and create_next_envelope:
-# Remove: manifest_hash: str = ""
-# Change to: manifest_hash: str
+_MIN_SECRET_LENGTH = 32
+
+def _sign_envelope(envelope: ContextEnvelope, secret: str) -> ContextEnvelope:
+    """Create a signed copy of the envelope.
+
+    Raises:
+        ValueError: If secret is shorter than _MIN_SECRET_LENGTH characters.
+            Weak secrets are a programmer error, not an operational failure.
+    """
+    if len(secret) < _MIN_SECRET_LENGTH:
+        raise ValueError(
+            f"signing_secret must be at least {_MIN_SECRET_LENGTH} characters, "
+            f"got {len(secret)}. Weak secrets compromise envelope integrity."
+        )
+    signature = _compute_signature(envelope, secret)
+    return envelope.with_signature(signature)
 ```
 
-Every call site that omits `manifest_hash` must now pass `""` explicitly or a real hash. This surfaces all callers and makes the intent visible.
+`ValueError` is correct here per coding rule R3.1 — a weak secret is a programmer error.
+`ContextBroker.__post_init__` keeps its own check as an earlier, friendlier gate.
 
-**Commit message:** `fix(envelope): remove manifest_hash backward-compat default — field is now required`
+All existing tests that pass a short secret (e.g. `"secret"`, `"test-secret"`) must be updated to use `"a" * 32` or a shared fixture.
+
+**Tests to add** in `tests/unit/test_envelope.py`:
+```python
+def test_create_initial_envelope_raises_on_weak_secret():
+    with pytest.raises(ValueError, match="32 characters"):
+        create_initial_envelope(
+            pipeline_id="pipe-1",
+            initial_payload={"x": 1},
+            secret="short",
+            manifest_hash="",
+        )
+
+def test_create_next_envelope_raises_on_weak_secret():
+    first = create_initial_envelope(
+        pipeline_id="pipe-1", initial_payload={"x": 1},
+        secret="a" * 32, manifest_hash=""
+    ).value
+    with pytest.raises(ValueError, match="32 characters"):
+        create_next_envelope(
+            previous_envelope=first,
+            secret="weak",
+            agent_output={"y": 2},
+            manifest_hash="",
+        )
+```
+
+**Commit message:** `fix(envelope): validate secret strength in _sign_envelope to prevent bypass via direct calls`
 
 ---
 
-### FIX-008 — `RelayPipeline` empty subclass adds confusion with zero value
+### C-04 — Replace `Any`-typed `_require_field` with typed helpers 🔴
 
-**File:** `src/relay/pipeline.py`
-**Severity:** 🟠 HIGH — an empty subclass that adds no behaviour causes reader confusion ("what does this add?") and creates a second import path for the same object.
+**Fixes:** B-04
 
-**Fix — two options, pick one:**
+**Root cause.**
+`_require_field` returns `Any`. mypy cannot detect a caller that skips the `isinstance(result, Failure)` guard and passes a `Failure` object downstream as valid data — a silent type corruption.
 
-Option A (recommended): Delete `pipeline.py`. Update any imports to use `CoreRelayPipeline` directly. Add a `# Relay public API` comment block in `__init__.py`.
-
-Option B: Give it real behaviour — e.g. convenience constructor that generates a secure random secret:
+**Fix — replace with three typed helpers:**
 ```python
-@classmethod
-def create(cls, token_budget: int = 8000, storage_path: str = "./relay_data") -> "RelayPipeline":
-    """Create a pipeline with a secure random signing secret."""
-    import secrets
-    return cls(signing_secret=secrets.token_hex(32), token_budget=token_budget, storage_path=storage_path)
+# snapshot.py
+
+def _require_str(self, data: dict[str, Any], key: str) -> "Result[str]":
+    value = data.get(key)
+    if value is None or not isinstance(value, str):
+        return Failure(reason=f"Missing or invalid {key}", code=ErrorCode.INVALID_SNAPSHOT)
+    return Success(value)
+
+def _require_int(self, data: dict[str, Any], key: str) -> "Result[int]":
+    value = data.get(key)
+    if value is None or not isinstance(value, int):
+        return Failure(reason=f"Missing or invalid {key}", code=ErrorCode.INVALID_SNAPSHOT)
+    return Success(value)
+
+def _require_dict(self, data: dict[str, Any], key: str) -> "Result[dict[str, Any]]":
+    value = data.get(key)
+    if value is None or not isinstance(value, dict):
+        return Failure(reason=f"Missing or invalid {key}", code=ErrorCode.INVALID_SNAPSHOT)
+    return Success(value)
 ```
 
-**Commit message:** `refactor(pipeline): remove empty RelayPipeline subclass — use CoreRelayPipeline directly`
+Update `_dict_to_envelope` to use these. Delete `_require_field`. mypy can now verify every call site.
+
+**Commit message:** `fix(snapshot): replace Any-typed _require_field with typed helpers for mypy correctness`
 
 ---
 
-### FIX-009 — `_estimate_tokens` accuracy claim is undocumented and untested against ground truth
-
-**File:** `src/relay/envelope.py`, `tests/unit/test_envelope.py`
-**Severity:** 🟠 HIGH — R17 violation. The docstring says "~50% accuracy in typical cases" but no test verifies this.
-
-**Fix — replace the existing weak test with a real benchmark:**
-```python
-class TestTokenEstimationAccuracy:
-    def test_estimate_within_2x_of_character_based_ground_truth(self):
-        """Benchmark _estimate_tokens against a character-based reference.
-
-        Ground truth: English prose averages ~4 chars/token (BPE, GPT-4 family).
-        Our formula: len(json) // 3 ≈ 0.33 tokens/char.
-        Acceptable: within 2x of the 4-char/token baseline on representative payloads.
-
-        This test would catch a completely wrong implementation (e.g. returning 0 or 1).
-        """
-        payloads = [
-            {"summary": "Apple reported strong Q4 results.", "step": 1},
-            {"entities": ["Alice", "Bob"], "facts": ["revenue up", "costs flat"]},
-            {"data": "x" * 200},  # repetitive content — tokenizers compress this
-        ]
-        for payload in payloads:
-            estimate = _estimate_tokens(payload)
-            json_len = len(json.dumps(payload, sort_keys=True))
-            # Baseline: 1 token per 4 chars
-            baseline = json_len // 4
-            # Accept within 3x of baseline (our heuristic is rough)
-            assert estimate >= baseline // 3, f"Estimate {estimate} too low vs baseline {baseline}"
-            assert estimate <= baseline * 3, f"Estimate {estimate} too high vs baseline {baseline}"
-```
-
-Also update the docstring to say "within 3x of a 4-chars/token BPE baseline" rather than "~50% accuracy."
-
-**Commit message:** `test(envelope): add ground-truth benchmark for _estimate_tokens per R17`
+## Week 2 — Ownership and contracts
 
 ---
 
-### FIX-010 — Hallucination detector has no ground-truth test
+### C-05 — Remove dead code: `rollback_to_last`, `last_envelope`, `RelayPipeline`, unused imports 🟠
 
-**File:** `src/relay/validator.py`, `tests/unit/test_validator.py`
-**Severity:** 🟠 HIGH — R17 violation. The 2.0× ratio threshold has no empirical basis documented or tested.
+**Fixes:** D-01, D-02, D-03, D-05, V-07
 
-**Fix — add to `test_validator.py`:**
+Four dead-code items small enough to clean up together.
+
+**1. Delete `src/relay/pipeline.py`** — the empty `RelayPipeline` subclass adds a second import path with no behaviour. If you want a public alias, add one line to `src/relay/__init__.py`:
 ```python
-class TestHallucinationGroundTruth:
-    """Ground-truth cases for the hallucination heuristic.
+from relay.core_pipeline import CoreRelayPipeline as RelayPipeline
+```
 
-    Known limitation: the 2.0x entity ratio threshold was chosen arbitrarily.
-    These tests document what it catches and what it misses so the threshold
-    can be tuned with evidence.
+**2. Delete `PipelineState.rollback_to_last()`** — no production code calls it. `core_pipeline.py` uses `peek_last()` + `consume_last()` directly. Remove the method and delete `TestRollbackToLast` from `test_pipeline_state.py`.
+
+**3. Delete `PipelineState.last_envelope()`** — identical implementation to `peek_last()`, zero production callers. Remove the method. Rename `TestLastEnvelope` to `TestPeekLast` and keep the assertions unchanged.
+
+**4. Remove the two unused inline imports inside `validate_manifest_boundaries`** in `validator.py`:
+```python
+# Delete both of these lines from inside the function body:
+from relay.slicer.manifest import AgentManifest    # already imported via TYPE_CHECKING
+from relay.types import HandoffValidationFailure   # never used anywhere
+```
+
+**Commit message:** `refactor: remove dead code — RelayPipeline subclass, rollback_to_last, last_envelope, unused inline imports`
+
+---
+
+### C-06 — Remove unused value types `HandoffValidationFailure` and `ManifestHashMismatch` 🟡
+
+**Fixes:** D-04
+
+**Before acting:** run `grep -r "HandoffValidationFailure\|ManifestHashMismatch" src/` to confirm zero production usage. If confirmed unused:
+
+- Delete both dataclasses from `types.py`
+- Remove from any `__all__` export list if present
+- Delete any tests that exist solely to test these types
+
+If you intend to use them in v0.3, add a comment and keep them:
+```python
+# TODO(v0.3): used by relay.runners adapter layer for structured error values
+@dataclass(frozen=True)
+class HandoffValidationFailure:
+    ...
+```
+But they must be used within that milestone or deleted again at v0.3 time.
+
+**Commit message:** `refactor(types): remove unused HandoffValidationFailure and ManifestHashMismatch dataclasses`
+
+---
+
+### C-07 — Make `SnapshotManager` stateless — remove shared dict reference 🟠
+
+**Fixes:** V-08, C-04 (complexity)
+
+**Root cause.**
+`CoreRelayPipeline.__post_init__` passes `self._state.snapshot_ids` (a live `dict` reference) into `SnapshotManager.__init__`. Both objects now hold the same dict. Mutations from either are immediately visible in the other — shared mutable state between two objects, violating R2. Ownership is invisible without tracing object identity.
+
+**Fix — make `SnapshotManager` stateless. It saves snapshots and returns IDs; the caller registers them:**
+```python
+# pipeline_snapshot.py
+class SnapshotManager:
+    """Manages snapshot persistence for the pipeline.
+
+    Owns: snapshot save/load logic.
+    Does NOT: own snapshot_id state — callers update their own registries.
     """
 
-    def test_obvious_fabrication_is_detected(self):
-        """10 new entities vs 1 removed is clear fabrication."""
-        validator = HandoffValidator(hallucination_ratio_threshold=2.0)
-        prev = {"entity": "Alice"}
-        curr = {
-            "entity": "Alice",
-            "name": "Bob", "id": "C1", "subject": "D2", "identifier": "E3",
-            "object": "F4",  # 5 new entity-keyed values
-        }
-        result = validator._detect_hallucination(prev, curr)
-        assert result is not None, "Should detect obvious entity fabrication"
+    def __init__(self, snapshot_store: SnapshotStore) -> None:
+        self._snapshot_store = snapshot_store
 
-    def test_legitimate_enrichment_is_not_flagged(self):
-        """Adding one entity to an existing set is normal enrichment."""
-        validator = HandoffValidator(hallucination_ratio_threshold=2.0)
-        prev = {"entities": ["Alice", "Bob"]}
-        curr = {"entities": ["Alice", "Bob", "Charlie"]}
-        result = validator._detect_hallucination(prev, curr)
-        assert result is None, "Single new entity should not be flagged as hallucination"
+    def save(self, envelope: ContextEnvelope) -> Result[str]:
+        """Save snapshot. Returns the snapshot ID. Caller registers it."""
+        return self._snapshot_store.save_snapshot(envelope)
 
-    def test_complete_entity_loss_is_detected(self):
-        """Losing all entities with zero new ones is suspicious deletion."""
-        validator = HandoffValidator(hallucination_ratio_threshold=2.0)
-        prev = {"entity": "A", "name": "B", "id": "C"}  # 3 entity-keyed
-        curr = {"summary": "done"}
-        result = validator._detect_hallucination(prev, curr)
-        assert result is not None, "Complete entity loss should be flagged"
+    def load(self, snapshot_id: str) -> Result[ContextEnvelope]:
+        return self._snapshot_store.load_snapshot(snapshot_id)
 ```
 
-**Commit message:** `test(validator): add ground-truth cases for hallucination heuristic per R17`
-
----
-
-### FIX-011 — `CoreRelayPipeline` should implement context manager protocol
-
-**File:** `src/relay/core_pipeline.py`
-**Severity:** 🟠 HIGH — R15 violation. `close()` exists but callers have no language-enforced way to call it.
-
-**Fix:**
+**Update `core_pipeline.py` to own all `snapshot_ids` mutations explicitly:**
 ```python
-def __enter__(self) -> "CoreRelayPipeline":
-    return self
+# __post_init__ — no dict passed in
+self._snapshot_manager = SnapshotManager(self._snapshot_store)
 
-def __exit__(self, *_: object) -> None:
-    self.close()
+# _finalize_step — explicit registration
+save_result = self._snapshot_manager.save(current_envelope)
+if isinstance(save_result, Failure):
+    return save_result
+self._state.snapshot_ids[current_envelope.step] = save_result.value
+
+# _advance_to_new_envelope — explicit registration + explicit cleanup
+save_result = self._snapshot_manager.save(new_envelope)
+if isinstance(save_result, Failure):
+    return save_result
+self._state.snapshot_ids[new_envelope.step] = save_result.value
+if oldest_in_history is not None:
+    self._state.snapshot_ids.pop(oldest_in_history.step, None)
 ```
 
-Update README example to show `with CoreRelayPipeline(...) as pipeline:`.
+**Update `test_pipeline_snapshot.py`** — remove the `snapshot_ids` fixture parameter from `SnapshotManager` construction. Tests for ID registration move to `test_pipeline.py` where state ownership actually lives.
 
-**Commit message:** `feat(pipeline): implement __enter__/__exit__ for context manager protocol per R15`
-
----
-
-## 🟡 MEDIUM PRIORITY FIXES
+**Commit message:** `refactor(snapshot): make SnapshotManager stateless — callers own snapshot_id registration`
 
 ---
 
-### FIX-012 — Missing dedicated unit tests for `pipeline_state.py`, `pipeline_snapshot.py`, `pipeline_rollback.py`
+### C-08 — Document non-reentrant lock contract and add debug assertions 🟠
 
-**Severity:** 🟡 MEDIUM — R5 violation. These modules were split out of `core_pipeline.py` but have no test files of their own. They are only tested indirectly through integration tests.
+**Fixes:** C-01 (complexity), B-07
 
-**Fix:** Create:
-- `tests/unit/test_pipeline_state.py` — test `set_current`, `archive_and_set`, `peek_last`, `consume_last`, `has_history`, thread safety of the lock
-- `tests/unit/test_pipeline_snapshot.py` — test `save_and_register`, `advance`
-- `tests/unit/test_pipeline_rollback.py` — test `restore_to_previous` with mock snapshot store
+**Root cause.**
+`PipelineState.transaction()` acquires a non-reentrant `threading.Lock`. `execute_step_with_manifest` holds that lock for the entire step duration. All helpers it calls (`_handle_initial_step`, `_finalize_step`, etc.) call `self._state.*` mutation methods directly — correct because the outer call already holds the lock, but this contract is completely invisible. If any helper ever calls `transaction()` again, it deadlocks silently with no error message.
 
-**Commit message:** `test: add unit tests for pipeline_state, pipeline_snapshot, pipeline_rollback per R5`
+**Fix — three parts:**
 
----
-
-### FIX-013 — Concurrent tests only assert "no exception" — must assert state consistency (R18)
-
-**File:** `tests/unit/test_pipeline.py`
-**Severity:** 🟡 MEDIUM — a passing concurrent test that doesn't check final state is not evidence of thread safety.
-
-**Fix — extend `test_concurrent_step_execution_produces_consistent_results`:**
+**Part 1: Pass the captured envelope into helpers** instead of re-reading state mid-step. This resolves B-07 (stale yield) and removes any reason for helpers to call `transaction()` themselves:
 ```python
-# After all threads complete:
-final = pipeline.get_current_envelope()
-assert final is not None
-# The final envelope's payload must be one of the submitted payloads, not a blend
-submitted_payloads = [{"step": i, "data": f"data-{i}"} for i in range(3)]
-assert final.payload in submitted_payloads, (
-    f"Final payload {final.payload} is not one of the submitted payloads — "
-    "possible state corruption from concurrent writes"
-)
+def execute_step_with_manifest(self, agent_output, manifest=None):
+    with self._state.transaction() as current_envelope:
+        if current_envelope is None:
+            return self._handle_initial_step(agent_output, manifest)
+        # Pass the captured value — helpers must not re-read from state
+        return self._handle_subsequent_step(agent_output, manifest, current_envelope)
 ```
 
-**Commit message:** `test(pipeline): strengthen concurrent tests to assert final state consistency per R18`
-
----
-
-### FIX-014 — `SnapshotStore.list_snapshots` has no dedicated test
-
-**File:** `tests/unit/test_snapshot.py`
-**Severity:** 🟡 MEDIUM — R5 violation. The method exists and is used in production code but no test directly verifies it for empty pipelines, single snapshots, or ordering.
-
-**Fix — add to `TestSnapshotStore`:**
+**Part 2: Add a debug assertion to every state mutation method:**
 ```python
-def test_list_snapshots_returns_empty_for_unknown_pipeline(self):
-    result = self.store.list_snapshots("does-not-exist")
-    assert isinstance(result, Success)
-    assert result.value == []
+# pipeline_state.py
+def _assert_lock_held(self) -> None:
+    """Assert _lock is held by the calling thread. Active only when __debug__ is True.
 
-def test_list_snapshots_returns_ids_in_step_order(self):
-    env1 = self._create_envelope(step=1)
-    env3 = self._create_envelope(step=3)
-    env2 = self._create_envelope(step=2)
-    self.store.save_snapshot(env1)
-    self.store.save_snapshot(env3)
-    self.store.save_snapshot(env2)
-    result = self.store.list_snapshots("pipeline-123")
-    assert isinstance(result, Success)
-    steps = [int(sid.split("@")[1].split("_")[0]) for sid in result.value]
-    assert steps == sorted(steps), "Snapshots must be ordered by step"
+    Call at the top of every method that requires the lock.
+    Disappears under python -O. Cost-free in tests.
+    """
+    if __debug__:
+        acquired = self._lock.acquire(blocking=False)
+        if acquired:
+            self._lock.release()
+            raise AssertionError(
+                f"{self.__class__.__name__} mutation called without holding _lock. "
+                "Wrap the call site in `with self._state.transaction()`."
+            )
+
+def set_current(self, envelope: ContextEnvelope) -> None:
+    self._assert_lock_held()
+    self._current_envelope = envelope
+
+def archive_and_set(self, new_envelope: ContextEnvelope) -> None:
+    self._assert_lock_held()
+    ...
+
+def peek_last(self) -> ContextEnvelope | None:
+    self._assert_lock_held()
+    ...
+
+def consume_last(self) -> ContextEnvelope:
+    self._assert_lock_held()
+    ...
 ```
 
-**Commit message:** `test(snapshot): add dedicated tests for list_snapshots per R5`
-
----
-
-### FIX-015 — `unwrap_or`, `map_result`, `map_error` only tested for happy path
-
-**File:** `tests/unit/test_types.py`
-**Severity:** 🟡 MEDIUM — failure paths and `RollbackSuccess` cases are untested.
-
-**Fix — add:**
+**Part 3: Add docstring contracts to every helper in `core_pipeline.py`:**
 ```python
-def test_unwrap_or_returns_default_for_rollback_success():
-    result: Result[str] = RollbackSuccess(value="restored", reason="contradiction")
-    # RollbackSuccess is not Success — unwrap_or should return default
-    assert unwrap_or(result, "default") == "default"
+def _handle_subsequent_step(self, agent_output, manifest, current_envelope):
+    """Handle a subsequent pipeline step.
 
-def test_map_result_leaves_rollback_success_unchanged():
-    result: Result[int] = RollbackSuccess(value=5, reason="rollback")
-    mapped = map_result(result, lambda x: x * 2)
-    # map_result only transforms Success, not RollbackSuccess
-    assert mapped is result
+    REQUIRES: caller holds self._state._lock via transaction() context manager.
+    Must NOT call self._state.transaction() — lock is non-reentrant.
+    """
 ```
 
-**Commit message:** `test(types): add failure-path and RollbackSuccess cases for unwrap_or, map_result`
+**Commit message:** `fix(pipeline): document non-reentrant lock contract, add debug assertions, pass captured envelope to helpers`
 
 ---
 
-### FIX-016 — `StructuralSlicePacker` silently uses unordered `frozenset` iteration
+## Week 3 — Design rule compliance
 
-**File:** `src/relay/slicer/packers.py`
-**Severity:** 🟡 MEDIUM — `{key: payload[key] for key in manifest.reads}` iterates a `frozenset`, which has no guaranteed order. The returned dict's key order is non-deterministic, making the sliced context non-deterministic across runs. This matters for signature computation and debugging.
+---
 
-**Fix:**
+### C-09 — Remove duplicate `PIPELINE_ID_PATTERN` — validate at the boundary only 🟡
+
+**Fixes:** V-03, R16
+
+**Current state:** `PIPELINE_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{1,128}$")` exists independently in both `envelope.py` and `snapshot.py`. `SnapshotStore.save_snapshot` re-validates a `pipeline_id` that was already validated when the `ContextEnvelope` was constructed. Per R16, validate once at the entry boundary and trust internally.
+
+**Fix:** keep the pattern and `_validate_pipeline_id` in `envelope.py` only. In `snapshot.py`, delete the duplicate constant and remove the validation block from `save_snapshot`:
 ```python
-return Success({key: payload[key] for key in sorted(manifest.reads)})
+def save_snapshot(self, envelope: ContextEnvelope) -> Result[str]:
+    """Save an envelope as a snapshot.
+
+    Trusts that envelope.pipeline_id is valid — validated at construction
+    time by create_initial_envelope via _validate_pipeline_id.
+    """
+    # No pipeline_id re-validation here.
+    pipeline_path = self._storage_path / envelope.pipeline_id
+    ...
 ```
 
-**Commit message:** `fix(slicer): sort manifest.reads keys in StructuralSlicePacker for deterministic output`
+**Commit message:** `refactor(snapshot): remove duplicate pipeline_id validation — trust envelope boundary per R16`
 
 ---
 
-### FIX-017 — `core_pipeline.py` module docstring is inaccurate (R19)
+### C-10 — Fix module docstrings to match actual behaviour 🟡
 
-**File:** `src/relay/core_pipeline.py`
-**Severity:** 🟡 MEDIUM — docstring says "v0.1" and does not mention budget enforcement or slicer.
+**Fixes:** V-01, V-06, V-04, R19, R14
 
-**Fix:**
+Three module docstrings lie about what the module owns or does.
+
+**`envelope.py`** claims "Does NOT: create envelopes" but contains `create_initial_envelope`, `create_next_envelope`, and `_sign_envelope`:
 ```python
-"""Core pipeline orchestration for Relay.
+"""Context envelope data model and factory functions for Relay.
 
-Owns: pipeline lifecycle, component coordination, budget enforcement hooks, slicer dispatch.
-Does NOT: define agent behaviour, manage prompts, implement token counting, or implement slicing strategies.
+Owns: ContextEnvelope data model, envelope construction, HMAC signing.
+Does NOT: persist envelopes, manage pipeline state, or validate agent output.
+
+Note: signing lives here rather than in context_broker because the signature
+covers fields that only envelope.py knows how to serialise canonically.
+context_broker.py decides *when* to create envelopes; envelope.py owns *how*.
 """
 ```
 
-**Commit message:** `docs(pipeline): update module docstring to reflect v0.2 responsibilities per R19`
-
----
-
-## 🟢 LOW PRIORITY FIXES
-
----
-
-### FIX-018 — `TiktokenCounter` has no `__enter__`/`__exit__`
-
-`close()` exists but the counter is not usable as a context manager. Minor inconsistency with the R15 pattern. Add `__enter__`/`__exit__` to match `CoreRelayPipeline`.
-
----
-
-### FIX-019 — `pipeline_state.py` exposes `current_and_lock()` marked as deprecated but still used
-
-`current_and_lock()` is docstring-deprecated in favour of `transaction()` but `core_pipeline.py` still calls it in two places. Migrate to `transaction()` and delete `current_and_lock()`.
-
----
-
-### FIX-020 — Error codes should be an `Enum` to prevent typos
-
-Ad-hoc string codes like `"BUDGET_EXCEEDED"` and `"PIPELINE_NOT_FOUND"` are invisible to mypy. An `Enum` makes them exhaustively checkable:
-
+**`context_broker.py`** claims to own "cryptographic signing" but delegates entirely to `envelope.py`:
 ```python
-class ErrorCode(str, Enum):
-    INVALID_PIPELINE_ID   = "INVALID_PIPELINE_ID"
-    INVALID_PAYLOAD       = "INVALID_PAYLOAD"
-    BUDGET_EXCEEDED       = "BUDGET_EXCEEDED"
-    INVALID_TOKEN_COUNT   = "INVALID_TOKEN_COUNT"
-    MANIFEST_VIOLATION    = "MANIFEST_BOUNDARY_VIOLATION"
-    PIPELINE_MISMATCH     = "PIPELINE_MISMATCH"
-    INVALID_STEP          = "INVALID_STEP"
-    SNAPSHOT_NOT_FOUND    = "SNAPSHOT_NOT_FOUND"
-    SNAPSHOT_SAVE_FAILED  = "SNAPSHOT_SAVE_FAILED"
-    INDEX_UPDATE_FAILED   = "INDEX_UPDATE_FAILED"
-    NO_ROLLBACK_AVAILABLE = "NO_ROLLBACK_AVAILABLE"
-    INVALID_STATE         = "INVALID_STATE"
-    CORRUPTED_INDEX       = "CORRUPTED_INDEX"
-    INDEX_NOT_FOUND       = "INDEX_NOT_FOUND"
-    PIPELINE_NOT_FOUND    = "PIPELINE_NOT_FOUND"
-    NO_SNAPSHOTS          = "NO_SNAPSHOTS"
+"""Context envelope lifecycle management for Relay.
+
+Owns: deciding when to create envelopes, enforcing secret strength,
+      coordinating construction via relay.envelope.
+Does NOT: implement signing (owned by relay.envelope), persist envelopes,
+          validate agent output, or manage pipeline state.
+"""
 ```
 
-This is a larger refactor — schedule it for a dedicated PR after the critical fixes are done.
+**`slicer/packers.py`** has no module docstring at all:
+```python
+"""Slice packer implementations for context selection strategies.
+
+Owns: RecencySlicePacker, StructuralSlicePacker, RelevanceSlicePacker.
+Does NOT: define SliceStrategy enum, own EmbeddingProvider protocol,
+          or count tokens precisely (delegates to envelope._estimate_tokens).
+"""
+```
+
+**Commit message:** `docs: fix module docstrings in envelope.py, context_broker.py, slicer/packers.py per R19/R14`
 
 ---
 
-## Implementation Order
+### C-11 — Replace tautological token estimation test with a real benchmark 🟡
+
+**Fixes:** V-05, R17
+
+**Current test — a tautology that always passes regardless of correctness:**
+```python
+def test_token_estimate_within_realistic_tolerance(self):
+    payload = {"key": "value" * 50}
+    estimate = _estimate_tokens(payload)
+    json_str = json.dumps(payload, sort_keys=True)
+    assert estimate == len(json_str) // 3   # just re-runs the formula
+```
+
+This would pass even if `_estimate_tokens` returned 0.
+
+**Fix — replace with a ground-truth benchmark:**
+```python
+class TestTokenEstimationAccuracy:
+    """Ground-truth benchmark for _estimate_tokens per R17.
+
+    Ground truth: English prose and JSON tokenise at roughly 0.25–0.40
+    tokens/char under BPE tokenisers (GPT-4 family, cl100k_base).
+    Our formula: len(json) // 3 ≈ 0.33 tokens/char — within that range.
+
+    The 3x tolerance is intentionally wide because the heuristic is coarse.
+    For precise counting, use TiktokenCounter. These tests catch a completely
+    broken implementation (returning 0, returning len, etc.).
+    """
+
+    PAYLOADS = [
+        {"summary": "Apple reported strong Q4 revenue growth.", "step": 1},
+        {"entities": ["Alice", "Bob", "Charlie"], "facts": ["revenue up", "costs flat"]},
+        {"data": "x" * 200},
+        {"nested": {"a": {"b": {"c": "deep"}}}},
+    ]
+
+    def test_estimate_is_positive_for_all_representative_payloads(self):
+        for payload in self.PAYLOADS:
+            assert _estimate_tokens(payload) > 0, f"Zero estimate for {payload}"
+
+    def test_estimate_stays_within_3x_of_char_based_reference(self):
+        for payload in self.PAYLOADS:
+            estimate = _estimate_tokens(payload)
+            json_len = len(json.dumps(payload, sort_keys=True))
+            baseline = max(1, json_len // 4)
+            assert estimate >= baseline // 3, (
+                f"Estimate {estimate} too low vs baseline {baseline} for {payload}"
+            )
+            assert estimate <= baseline * 3, (
+                f"Estimate {estimate} too high vs baseline {baseline} for {payload}"
+            )
+
+    def test_larger_payload_produces_larger_estimate(self):
+        small = {"x": "a" * 10}
+        large = {"x": "a" * 1000}
+        assert _estimate_tokens(large) > _estimate_tokens(small)
+```
+
+Also update the `_estimate_tokens` docstring: replace "~50% accuracy" with "within 3x of a 4-chars/token BPE baseline; see TestTokenEstimationAccuracy for the benchmark".
+
+**Commit message:** `test(envelope): replace tautological token estimate test with ground-truth benchmark per R17`
+
+---
+
+### C-12 — Cross-check envelope body step against snapshot filename 🟠
+
+**Fixes:** B-06
+
+**Root cause.**
+`load_snapshot` extracts `step = int(parts[0])` from the snapshot ID to validate the format, but then never uses `step` again. It loads the envelope from disk without checking that `envelope.step` matches the step encoded in the filename. A tampered snapshot file with a modified `step` field in the body passes silently.
+
+**Fix — cross-check after loading:**
+```python
+try:
+    expected_step = int(parts[0])
+except ValueError:
+    return Failure(
+        reason="Invalid step in snapshot ID", code=ErrorCode.INVALID_SNAPSHOT_ID
+    )
+
+snapshot_path = self._storage_path / pipeline_id / f"{snapshot_id}.json"
+try:
+    with open(snapshot_path, "r") as f:
+        data = json.load(f)
+    envelope_result = self._dict_to_envelope(data)
+    if isinstance(envelope_result, Failure):
+        return envelope_result
+    envelope = envelope_result.value
+
+    if envelope.step != expected_step:
+        return Failure(
+            reason=(
+                f"Snapshot integrity error: filename indicates step {expected_step} "
+                f"but envelope body contains step {envelope.step}"
+            ),
+            code=ErrorCode.INVALID_SNAPSHOT,
+        )
+
+    return Success(envelope)
+```
+
+**Test to add** in `tests/unit/test_snapshot.py`:
+```python
+def test_load_snapshot_fails_when_body_step_mismatches_filename(self):
+    """Tampered snapshot where body step differs from filename is rejected."""
+    env = self._create_envelope(step=1)
+    snapshot_id = self.store.save_snapshot(env).value
+
+    path = Path(self.temp_dir) / env.pipeline_id / f"{snapshot_id}.json"
+    data = json.loads(path.read_text())
+    data["step"] = 99
+    path.write_text(json.dumps(data))
+
+    result = self.store.load_snapshot(snapshot_id)
+    assert isinstance(result, Failure)
+    assert result.code == "INVALID_SNAPSHOT"
+```
+
+**Commit message:** `fix(snapshot): cross-check envelope body step against snapshot filename for integrity`
+
+---
+
+## Week 4 — Complexity reduction and slicer correctness
+
+---
+
+### C-13 — Consolidate `CoreRelayPipeline` step-execution helpers 🟡
+
+**Fixes:** C-02, C-03, C-05
+
+The current pipeline has 7 private helpers for a single step execution path, most 4–6 lines each. The indirection makes thread-safety reasoning harder without adding clarity. Three targeted reductions:
+
+**1. Inline `_create_next_envelope`** — it is a single-line wrapper with no independent value:
+```python
+# Before (pointless indirection):
+result = self._create_next_envelope(current_envelope, agent_output)
+
+# After (inline directly in _handle_subsequent_step):
+result = self._context_broker.create_next_envelope(
+    previous_envelope=current_envelope, agent_output=agent_output
+)
+```
+
+**2. Merge `_apply_manifest` and `_apply_manifest_validation`** into one method with a `validate` flag:
+```python
+def _apply_manifest(
+    self,
+    envelope: ContextEnvelope,
+    manifest: Optional[AgentManifest],
+    validate: bool = False,
+) -> Result[ContextEnvelope]:
+    """Apply manifest hash to envelope, optionally validating write boundaries.
+
+    Args:
+        validate: True for subsequent steps (has prior payload to diff against).
+                  False for the initial step.
+    REQUIRES: caller holds self._state._lock.
+    """
+    if manifest is None:
+        return Success(envelope)
+    if validate:
+        result = validate_manifest_boundaries(
+            envelope, manifest, set(envelope.payload.keys())
+        )
+        if isinstance(result, Failure):
+            return self._rollback_internal(result.reason)
+    return Success(envelope.with_manifest_hash(manifest.compute_hash()))
+```
+
+**3. Replace `_rollback_with_reason` + `_do_rollback(consume_history=bool)` with two clearly named methods** — the boolean flag is the tell that two different things needed two different names:
+```python
+def _rollback_internal(self, reason: str) -> Result[ContextEnvelope]:
+    """Rollback triggered by contradiction or validation failure.
+
+    Does NOT consume history. REQUIRES: caller holds self._state._lock.
+    """
+    if not self._state.has_history():
+        return Failure(
+            reason="No previous envelope to rollback to",
+            code=ErrorCode.NO_ROLLBACK_AVAILABLE,
+        )
+    previous_envelope = self._state.peek_last()
+    if previous_envelope is None:
+        return Failure(reason="No previous envelope", code=ErrorCode.INVALID_STATE)
+    result = self._rollback_handler.restore_to_previous(
+        previous_envelope, self._state.snapshot_ids, self._snapshot_store, reason
+    )
+    if isinstance(result, RollbackSuccess):
+        self._state.set_current(result.value)
+    return result
+
+def rollback(self) -> Result[ContextEnvelope]:
+    """Manual rollback. Consumes history so repeated calls step back further."""
+    with self._state.transaction():
+        if not self._state.has_history():
+            return Failure(
+                reason="No previous envelope to rollback to",
+                code=ErrorCode.NO_ROLLBACK_AVAILABLE,
+            )
+        previous_envelope = self._state.peek_last()
+        if previous_envelope is None:
+            return Failure(reason="No previous envelope", code=ErrorCode.INVALID_STATE)
+        result = self._rollback_handler.restore_to_previous(
+            previous_envelope, self._state.snapshot_ids, self._snapshot_store,
+            "Manual rollback"
+        )
+        if isinstance(result, RollbackSuccess):
+            self._state.consume_last()
+            self._state.set_current(result.value)
+        return result
+```
+
+After this commit the private helper count for step execution drops from 7 to 4, and the happy path is readable in a single scroll.
+
+**Commit message:** `refactor(pipeline): consolidate step-execution helpers — inline one-liners, merge manifest methods, replace consume_history bool`
+
+---
+
+### C-14 — Fix slicer token estimation crash on non-string payload values 🟠
+
+**Fixes:** C-06
+
+**Root cause.**
+`RecencySlicePacker` and `RelevanceSlicePacker` both do:
+```python
+section_tokens = len(section_text) // 3
+```
+where `section_text = payload[key]`. Since `payload: dict[str, Any]`, a value can be a list, dict, int, or bool. `len()` on an `int` raises `TypeError`. `len()` on a `list` returns item count, not character length — a meaningless token estimate.
+
+**Fix — call `_estimate_tokens` from `envelope.py`**, which handles all types correctly via JSON serialisation:
+```python
+# packers.py — add import
+from relay.envelope import _estimate_tokens as _estimate_section_tokens
+
+# RecencySlicePacker.pack — replace:
+section_tokens = len(section_text) // 3
+# with:
+section_tokens = _estimate_section_tokens({key: payload[key]})
+
+# RelevanceSlicePacker.pack — replace:
+section_tokens = len(payload[key]) // 3
+# with:
+section_tokens = _estimate_section_tokens({key: payload[key]})
+```
+
+Wrapping in a single-key dict ensures the full JSON-serialised cost is measured, including structural overhead from keys and brackets.
+
+**Tests to add** in `tests/unit/test_slicer.py`:
+```python
+def test_recency_packer_handles_non_string_section_values():
+    """Packer must not raise TypeError when payload values are lists, dicts, or ints."""
+    packer = RecencySlicePacker()
+    payload = {
+        "section_1": ["item1", "item2", "item3"],
+        "section_2": {"nested": "dict"},
+        "section_3": 42,
+    }
+    manifest = AgentManifest("a1", frozenset(), frozenset(), 10000)
+    result = packer.pack(payload, manifest)
+    assert isinstance(result, Success)
+
+def test_relevance_packer_handles_non_string_section_values():
+    """Packer must not raise TypeError when payload values are non-strings."""
+    provider = FixedEmbeddingProvider([1.0, 0.0])
+    packer = RelevanceSlicePacker(provider)
+    payload = {"section_1": [1, 2, 3], "section_2": {"k": "v"}}
+    manifest = AgentManifest("a1", frozenset(), frozenset(), 10000)
+    result = packer.pack(payload, manifest)
+    assert isinstance(result, Success)
+```
+
+**Commit message:** `fix(slicer): use _estimate_tokens for section cost — fixes TypeError on non-string payload values`
+
+---
+
+## Commit order and dependency map
 
 ```
-Week 1 — Critical fixes (block release)
-  FIX-001  dict key type
-  FIX-002  path traversal
-  FIX-003  default secret
-  FIX-004  RuntimeError → Failure
+C-01  fix import order in envelope.py           (no deps)
+C-02  fix Result TypeAlias                      (no deps — run mypy after)
+C-03  secret validation in _sign_envelope       (depends on C-01)
+C-04  typed _require_field helpers              (no deps)
 
-Week 1 — High priority (same sprint)
-  FIX-005  _dict_to_envelope consistency
-  FIX-006  Result TypeAlias
-  FIX-007  manifest_hash default removal
-  FIX-008  RelayPipeline removal
-  FIX-009  _estimate_tokens benchmark
-  FIX-010  hallucination ground-truth test
-  FIX-011  context manager protocol
+C-05  remove dead code                          (depends on C-04)
+C-06  remove unused value types                 (depends on C-05)
+C-07  stateless SnapshotManager                 (depends on C-05)
+C-08  lock contract + debug assertions          (depends on C-07)
 
-Week 2 — Medium (before v0.3 branch)
-  FIX-012  missing unit test files
-  FIX-013  concurrent state-consistency assertions
-  FIX-014  list_snapshots tests
-  FIX-015  Result utility tests
-  FIX-016  StructuralSlicePacker ordering
-  FIX-017  docstring accuracy
+C-09  remove duplicate pipeline_id validation   (depends on C-03)
+C-10  fix module docstrings                     (no deps)
+C-11  replace tautological benchmark            (no deps)
+C-12  load_snapshot integrity cross-check       (depends on C-04)
 
-Week 3 — Low (can be PRs during v0.3 work)
-  FIX-018  TiktokenCounter context manager
-  FIX-019  remove current_and_lock
-  FIX-020  ErrorCode enum
+C-13  consolidate pipeline helpers              (depends on C-07, C-08)
+C-14  fix slicer token estimation               (no deps)
 ```
+
+---
+
+## Pre-commit checklist
+
+Run this after every commit before moving to the next one.
+
+- [ ] `mypy --strict src/` — zero errors
+- [ ] `pytest tests/unit -v` — all passing
+- [ ] `pytest tests/integration -v` — all passing
+- [ ] No new `# type: ignore` added
+- [ ] Every new public function has at least one test
+- [ ] Every new `Result`-returning function has a test for each `Failure` code it can return
+- [ ] Docstring updated if behaviour changed
+- [ ] No bare `except:` or `except Exception:` added
+- [ ] Commit message follows `type(scope): imperative sentence` format
+- [ ] If shared state was touched: concurrent test extended
