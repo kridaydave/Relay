@@ -1,6 +1,6 @@
 """Token counting interfaces and implementations for budget enforcement."""
 
-from typing import Protocol, runtime_checkable
+from typing import Optional, Protocol, runtime_checkable
 
 
 @runtime_checkable
@@ -14,6 +14,7 @@ class TokenCounter(Protocol):
 
 try:
     import tiktoken
+    from tiktoken import Encoding
 
     class TiktokenCounter:
         """Token counter using tiktoken library.
@@ -24,11 +25,11 @@ try:
         Must call close() to release encoding resource.
         """
 
-        def __init__(self, encoding: str = "cl100k_base"):
+        def __init__(self, encoding: str = "cl100k_base") -> None:
             self._encoding = encoding
-            self._enc = None
+            self._enc: Optional[Encoding] = None
 
-        def _get_encoder(self):
+        def _get_encoder(self) -> Encoding:
             if self._enc is None:
                 self._enc = tiktoken.get_encoding(self._encoding)
             return self._enc

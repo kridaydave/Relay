@@ -7,9 +7,24 @@ Does NOT: create envelopes, sign envelopes, persist data, or manage pipeline sta
 import hashlib
 import hmac
 import json
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
+
+PIPELINE_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{1,128}$")
+
+
+def _validate_pipeline_id(pipeline_id: str) -> Result[str]:
+    """Validate pipeline_id format."""
+    if not pipeline_id:
+        return Failure(reason="pipeline_id cannot be empty", code="INVALID_PIPELINE_ID")
+    if not PIPELINE_ID_PATTERN.match(pipeline_id):
+        return Failure(
+            reason="Invalid pipeline_id: must match pattern ^[a-zA-Z0-9_-]{1,128}$",
+            code="INVALID_PIPELINE_ID",
+        )
+    return Success(pipeline_id)
 
 from relay.types import Failure, Result, Success
 
@@ -108,8 +123,9 @@ def create_initial_envelope(
             Do NOT use default or placeholder values in production.
         manifest_hash: Optional hash of the agent manifest.
     """
-    if not pipeline_id:
-        return Failure(reason="pipeline_id cannot be empty", code="INVALID_PIPELINE_ID")
+    validation_result = _validate_pipeline_id(pipeline_id)
+    if isinstance(validation_result, Failure):
+        return validation_result
     if not initial_payload:
         return Failure(reason="initial_payload cannot be empty", code="INVALID_PAYLOAD")
 

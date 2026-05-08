@@ -6,10 +6,13 @@ Does NOT: execute agents or manage pipeline state.
 
 import json
 import os
+import re
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+PIPELINE_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{1,128}$")
 
 from relay.envelope import ContextEnvelope
 from relay.types import Failure, Result, Success
@@ -57,6 +60,11 @@ class SnapshotStore:
     def save_snapshot(self, envelope: ContextEnvelope) -> Result[str]:
         """Save an envelope as a snapshot and return the snapshot ID."""
         pipeline_id = envelope.pipeline_id
+        if not PIPELINE_ID_PATTERN.match(pipeline_id):
+            return Failure(
+                reason="Invalid pipeline_id: must match pattern ^[a-zA-Z0-9_-]{1,128}$",
+                code="INVALID_PIPELINE_ID",
+            )
         pipeline_path = self._storage_path / pipeline_id
         pipeline_path.mkdir(parents=True, exist_ok=True)
 

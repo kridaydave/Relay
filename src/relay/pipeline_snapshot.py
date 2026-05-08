@@ -6,7 +6,7 @@ Does NOT: manage pipeline state, create envelopes, or validate handoffs.
 
 from relay.envelope import ContextEnvelope
 from relay.snapshot import SnapshotStore
-from relay.types import Failure, Result
+from relay.types import Failure, Result, Success
 
 
 class SnapshotManager:
@@ -66,7 +66,7 @@ class SnapshotManager:
         if previous_envelope is not None:
             self._snapshot_ids.pop(previous_envelope.step, None)
 
-        return save_result
+        return Success(None)
 
     def load(self, step: int) -> Result[ContextEnvelope]:
         """Load an envelope from a snapshot by step number.
