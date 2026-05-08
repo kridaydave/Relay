@@ -25,7 +25,7 @@ def temp_storage():
 @pytest.fixture
 def pipeline(temp_storage):
     return CoreRelayPipeline(
-        signing_secret="test-secret",
+        signing_secret="a" * 32,
         token_budget=8000,
         storage_path=temp_storage
     )
@@ -143,4 +143,4 @@ class TestEdgeCases:
         assert envelope.signature != ""
 
         from relay.envelope import verify_signature
-        assert verify_signature(envelope, "test-secret")
+        assert verify_signature(envelope, "a" * 32)

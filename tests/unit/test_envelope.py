@@ -19,7 +19,7 @@ from relay.envelope import (
 
 @pytest.fixture
 def secret():
-    return "test-secret"
+    return "a" * 32
 
 
 @pytest.fixture

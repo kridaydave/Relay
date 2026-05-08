@@ -98,7 +98,7 @@ class TestValidateHandoff:
         previous_result = create_initial_envelope(
             pipeline_id="pipeline-123",
             initial_payload={"entities": ["a"], "actions": ["b"], "facts": ["c"]},
-            secret="secret",
+            secret="a" * 32,
             manifest_hash=""
         )
         previous_envelope = previous_result.value
@@ -126,7 +126,7 @@ class TestValidateHandoff:
         previous_result = create_initial_envelope(
             pipeline_id="pipeline-123",
             initial_payload={"entities": ["a"], "actions": ["b"], "facts": ["c"], "constraints": ["x"]},
-            secret="secret",
+            secret="a" * 32,
             manifest_hash=""
         )
         previous_envelope = previous_result.value
@@ -184,7 +184,7 @@ class TestComputeDiff:
         previous_result = create_initial_envelope(
             pipeline_id="pipeline-123",
             initial_payload={"entities": ["a"], "actions": ["b"], "facts": ["c"]},
-            secret="secret",
+            secret="a" * 32,
             manifest_hash=""
         )
         previous_envelope = previous_result.value
