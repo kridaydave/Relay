@@ -43,6 +43,7 @@ class ContextBroker:
             initial_payload=initial_payload,
             secret=self.signing_secret,
             token_budget_total=self.token_budget_total,
+            manifest_hash="",
         )
 
     def create_next_envelope(
@@ -55,4 +56,5 @@ class ContextBroker:
             previous_envelope=previous_envelope,
             secret=self.signing_secret,
             agent_output=agent_output,
+            manifest_hash="",
         )

@@ -267,7 +267,8 @@ class SnapshotStore:
         if isinstance(payload, Failure):
             return payload
 
-        manifest_hash = data.get("manifest_hash", "")
+        raw_hash = data.get("manifest_hash", "")
+        manifest_hash = raw_hash if isinstance(raw_hash, str) else ""
 
         signature = self._require_field(data, "signature", str)
         if isinstance(signature, Failure):

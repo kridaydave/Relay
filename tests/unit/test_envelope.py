@@ -38,6 +38,7 @@ class TestCreateInitialEnvelope:
             pipeline_id="pipeline-123",
             initial_payload=initial_payload,
             secret=secret,
+            manifest_hash="",
         )
 
         assert isinstance(result.value, ContextEnvelope)
@@ -64,7 +65,7 @@ class TestCreateInitialEnvelope:
         self, secret, initial_payload
     ):
         result = create_initial_envelope(
-            pipeline_id="", initial_payload=initial_payload, secret=secret
+            pipeline_id="", initial_payload=initial_payload, secret=secret, manifest_hash=""
         )
 
         assert isinstance(result.reason, str)
@@ -73,7 +74,7 @@ class TestCreateInitialEnvelope:
 
     def test_create_initial_envelope_fails_on_empty_payload(self, secret, initial_payload):
         result = create_initial_envelope(
-            pipeline_id="pipeline-123", initial_payload={}, secret=secret
+            pipeline_id="pipeline-123", initial_payload={}, secret=secret, manifest_hash=""
         )
 
         assert isinstance(result.reason, str)
@@ -84,10 +85,10 @@ class TestCreateInitialEnvelope:
 class TestCreateNextEnvelope:
     def test_create_next_envelope_increments_step(self, secret, initial_payload, next_payload):
         first = create_initial_envelope(
-            pipeline_id="pipeline-123", initial_payload=initial_payload, secret=secret
+            pipeline_id="pipeline-123", initial_payload=initial_payload, secret=secret, manifest_hash=""
         )
         second = create_next_envelope(
-            previous_envelope=first.value, secret=secret, agent_output=next_payload
+            previous_envelope=first.value, secret=secret, agent_output=next_payload, manifest_hash=""
         )
 
         assert second.value.step == 2
@@ -101,11 +102,13 @@ class TestCreateNextEnvelope:
             initial_payload=initial_payload,
             secret=secret,
             token_budget_total=8000,
+            manifest_hash="",
         )
         second = create_next_envelope(
             previous_envelope=first.value,
             secret=secret,
             agent_output=next_payload,
+            manifest_hash="",
         )
 
         assert second.value.token_budget_used >= first.value.token_budget_used
@@ -117,11 +120,13 @@ class TestCreateNextEnvelope:
             pipeline_id="pipeline-123",
             initial_payload=initial_payload,
             secret=secret,
+            manifest_hash="",
         )
         second = create_next_envelope(
             previous_envelope=first.value,
             secret=secret,
             agent_output=next_payload,
+            manifest_hash="",
         )
 
         assert second.value.pipeline_id == first.value.pipeline_id
@@ -135,11 +140,12 @@ class TestCreateNextEnvelope:
             initial_payload=initial_payload,
             secret=secret,
             token_budget_total=100,
+            manifest_hash="",
         )
         large_payload = {"data": "x" * 1000}
 
         second = create_next_envelope(
-            previous_envelope=first.value, secret=secret, agent_output=large_payload
+            previous_envelope=first.value, secret=secret, agent_output=large_payload, manifest_hash=""
         )
 
         assert isinstance(second.reason, str)
@@ -148,11 +154,11 @@ class TestCreateNextEnvelope:
 
     def test_create_next_envelope_fails_on_empty_agent_output(self, secret, initial_payload):
         first = create_initial_envelope(
-            pipeline_id="pipeline-123", initial_payload=initial_payload, secret=secret
+            pipeline_id="pipeline-123", initial_payload=initial_payload, secret=secret, manifest_hash=""
         )
 
         second = create_next_envelope(
-            previous_envelope=first.value, secret=secret, agent_output={}
+            previous_envelope=first.value, secret=secret, agent_output={}, manifest_hash=""
         )
 
         assert isinstance(second.reason, str)
@@ -168,6 +174,7 @@ class TestVerifySignature:
             pipeline_id="pipeline-123",
             initial_payload=initial_payload,
             secret=secret,
+            manifest_hash="",
         ).value
 
         assert verify_signature(envelope, secret) is True
@@ -179,6 +186,7 @@ class TestVerifySignature:
             pipeline_id="pipeline-123",
             initial_payload=initial_payload,
             secret=secret,
+            manifest_hash="",
         ).value
 
         assert verify_signature(envelope, "wrong-secret") is False
@@ -190,6 +198,7 @@ class TestVerifySignature:
             pipeline_id="pipeline-123",
             initial_payload=initial_payload,
             secret=secret,
+            manifest_hash="",
         ).value
 
         tampered = ContextEnvelope(

@@ -73,6 +73,14 @@ class CoreRelayPipeline:
         if self.token_counter is not None and hasattr(self.token_counter, "close"):
             self.token_counter.close()
 
+    def __enter__(self) -> "CoreRelayPipeline":
+        """Enter the pipeline context."""
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        """Exit the pipeline context and release resources."""
+        self.close()
+
     def execute_step(self, agent_output: dict[str, Any]) -> Result[ContextEnvelope]:
         """Execute a pipeline step with agent output."""
         return self.execute_step_with_manifest(agent_output, manifest=None)

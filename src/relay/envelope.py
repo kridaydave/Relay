@@ -113,15 +113,15 @@ def create_initial_envelope(
     pipeline_id: str,
     initial_payload: dict[str, Any],
     secret: str,
+    manifest_hash: str,
     token_budget_total: int = 8000,
-    manifest_hash: str = "",
 ) -> Result[ContextEnvelope]:
     """Create the first envelope for a pipeline.
 
     Args:
         secret: HMAC signing secret. REQUIRED - must be provided by caller.
             Do NOT use default or placeholder values in production.
-        manifest_hash: Optional hash of the agent manifest.
+        manifest_hash: Optional hash of the agent manifest. Pass "" if not using manifests.
     """
     validation_result = _validate_pipeline_id(pipeline_id)
     if isinstance(validation_result, Failure):
@@ -150,14 +150,14 @@ def create_next_envelope(
     previous_envelope: ContextEnvelope,
     secret: str,
     agent_output: dict[str, Any],
-    manifest_hash: str = "",
+    manifest_hash: str,
 ) -> Result[ContextEnvelope]:
     """Create a subsequent envelope for the next step.
 
     Args:
         secret: HMAC signing secret. REQUIRED - must be provided by caller.
             Do NOT use default or placeholder values in production.
-        manifest_hash: Optional hash of the agent manifest.
+        manifest_hash: Optional hash of the agent manifest. Pass "" if not using manifests.
     """
     if not agent_output:
         return Failure(reason="agent_output cannot be empty", code="INVALID_PAYLOAD")

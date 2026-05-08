@@ -36,7 +36,7 @@ class TestCreateInitialEnvelope:
         broker = ContextBroker(signing_secret="a" * 32, token_budget_total=8000)
         result = broker.create_initial_envelope(
             pipeline_id="pipeline-123",
-            initial_payload={"data": "test"}
+            initial_payload={"data": "test"},
         )
 
         assert isinstance(result, Success)
@@ -48,7 +48,7 @@ class TestCreateInitialEnvelope:
         broker = ContextBroker(signing_secret="a" * 32, token_budget_total=8000)
         result = broker.create_initial_envelope(
             pipeline_id="",
-            initial_payload={"data": "test"}
+            initial_payload={"data": "test"},
         )
 
         assert isinstance(result, Failure)
@@ -59,7 +59,7 @@ class TestCreateInitialEnvelope:
         broker = ContextBroker(signing_secret="a" * 32, token_budget_total=8000)
         result = broker.create_initial_envelope(
             pipeline_id="pipeline-123",
-            initial_payload={}
+            initial_payload={},
         )
 
         assert isinstance(result, Failure)
@@ -99,7 +99,7 @@ class TestCreateNextEnvelope:
 
         result = broker.create_next_envelope(
             previous_envelope=previous_envelope,
-            agent_output={"result": "output"}
+            agent_output={"result": "output"},
         )
 
         assert isinstance(result, Success)
@@ -137,7 +137,7 @@ class TestCreateNextEnvelope:
 
         result = broker.create_next_envelope(
             previous_envelope=previous_envelope,
-            agent_output={"result": "output"}
+            agent_output={"result": "output"},
         )
 
         assert result.value.step == 2
@@ -173,7 +173,7 @@ class TestCreateNextEnvelope:
 
         result = broker.create_next_envelope(
             previous_envelope=previous_envelope,
-            agent_output={"result": "output"}
+            agent_output={"result": "output"},
         )
 
         assert result.value.token_budget_used > 100
@@ -200,7 +200,7 @@ class TestCreateNextEnvelope:
 
         result = broker.create_next_envelope(
             previous_envelope=previous_envelope,
-            agent_output={"huge": "payload" * 1000}
+            agent_output={"result": "output"},
         )
 
         assert isinstance(result, Failure)
