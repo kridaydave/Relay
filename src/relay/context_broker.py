@@ -1,7 +1,9 @@
-"""Context envelope creation, signing, and lifecycle management for Relay.
+"""Context envelope lifecycle management for Relay.
 
-Owns: envelope lifecycle, cryptographic signing, and verification.
-Does NOT: persist snapshots, validate content, or manage pipeline state.
+Owns: deciding when to create envelopes, enforcing secret strength,
+      coordinating construction via relay.envelope.
+Does NOT: implement signing (owned by relay.envelope), persist envelopes,
+          validate agent output, or manage pipeline state.
 """
 
 from dataclasses import dataclass

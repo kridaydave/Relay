@@ -1,7 +1,11 @@
-"""Context envelope data model for Relay.
+"""Context envelope data model and factory functions for Relay.
 
-Owns: ContextEnvelope data model only.
-Does NOT: create envelopes, sign envelopes, persist data, or manage pipeline state.
+Owns: ContextEnvelope data model, envelope construction, HMAC signing.
+Does NOT: persist envelopes, manage pipeline state, or validate agent output.
+
+Note: signing lives here rather than in context_broker because the signature
+covers fields that only envelope.py knows how to serialise canonically.
+context_broker.py decides *when* to create envelopes; envelope.py owns *how*.
 """
 
 import hashlib
