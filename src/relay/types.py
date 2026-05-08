@@ -10,6 +10,7 @@ from typing import TypeVar, Generic, Union, Callable, overload, TypeAlias
 
 
 T = TypeVar("T")
+_T = TypeVar("_T")
 
 
 class ErrorCode(str, Enum):
@@ -87,7 +88,7 @@ class RollbackSuccess(Generic[T]):
     reason: str
 
 
-Result: TypeAlias = Union[Success[T], RollbackSuccess[T], Failure]
+Result: TypeAlias = Union[Success[_T], RollbackSuccess[_T], Failure]
 
 
 def is_success(result: Result[T]) -> bool:
