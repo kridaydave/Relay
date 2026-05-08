@@ -231,23 +231,48 @@ class SnapshotStore:
             return Failure(reason=f"Missing or invalid {key}", code=ErrorCode.INVALID_SNAPSHOT)
         return value
 
+    def _require_str(self, data: dict[str, Any], key: str) -> "Result[str]":
+        """Validate and return a string field from data dict."""
+        value = data.get(key)
+        if value is None or not isinstance(value, str):
+            return Failure(reason=f"Missing or invalid {key}", code=ErrorCode.INVALID_SNAPSHOT)
+        return Success(value)
+
+    def _require_int(self, data: dict[str, Any], key: str) -> "Result[int]":
+        """Validate and return an int field from data dict."""
+        value = data.get(key)
+        if value is None or not isinstance(value, int):
+            return Failure(reason=f"Missing or invalid {key}", code=ErrorCode.INVALID_SNAPSHOT)
+        return Success(value)
+
+    def _require_dict(self, data: dict[str, Any], key: str) -> "Result[dict[str, Any]]":
+        """Validate and return a dict field from data dict."""
+        value = data.get(key)
+        if value is None or not isinstance(value, dict):
+            return Failure(reason=f"Missing or invalid {key}", code=ErrorCode.INVALID_SNAPSHOT)
+        return Success(value)
+
     def _dict_to_envelope(self, data: dict[str, Any]) -> Result[ContextEnvelope]:
         """Convert dict back to ContextEnvelope."""
-        relay_version = self._require_field(data, "relay_version", str)
-        if isinstance(relay_version, Failure):
-            return relay_version
+        rv_result = self._require_str(data, "relay_version")
+        if isinstance(rv_result, Failure):
+            return rv_result
+        relay_version: str = rv_result.value
 
-        pipeline_id = self._require_field(data, "pipeline_id", str)
-        if isinstance(pipeline_id, Failure):
-            return pipeline_id
+        pid_result = self._require_str(data, "pipeline_id")
+        if isinstance(pid_result, Failure):
+            return pid_result
+        pipeline_id: str = pid_result.value
 
-        step = self._require_field(data, "step", int)
-        if isinstance(step, Failure):
-            return step
+        step_result = self._require_int(data, "step")
+        if isinstance(step_result, Failure):
+            return step_result
+        step: int = step_result.value
 
-        timestamp_str = self._require_field(data, "timestamp", str)
-        if isinstance(timestamp_str, Failure):
-            return timestamp_str
+        ts_result = self._require_str(data, "timestamp")
+        if isinstance(ts_result, Failure):
+            return ts_result
+        timestamp_str: str = ts_result.value
         try:
             timestamp = datetime.fromisoformat(timestamp_str)
             if timestamp.tzinfo is None:
@@ -255,24 +280,28 @@ class SnapshotStore:
         except (ValueError, TypeError):
             return Failure(reason="Invalid timestamp format", code=ErrorCode.INVALID_SNAPSHOT)
 
-        token_budget_used = self._require_field(data, "token_budget_used", int)
-        if isinstance(token_budget_used, Failure):
-            return token_budget_used
+        used_result = self._require_int(data, "token_budget_used")
+        if isinstance(used_result, Failure):
+            return used_result
+        token_budget_used: int = used_result.value
 
-        token_budget_total = self._require_field(data, "token_budget_total", int)
-        if isinstance(token_budget_total, Failure):
-            return token_budget_total
+        total_result = self._require_int(data, "token_budget_total")
+        if isinstance(total_result, Failure):
+            return total_result
+        token_budget_total: int = total_result.value
 
-        payload = self._require_field(data, "payload", dict)
-        if isinstance(payload, Failure):
-            return payload
+        payload_result = self._require_dict(data, "payload")
+        if isinstance(payload_result, Failure):
+            return payload_result
+        payload: dict[str, Any] = payload_result.value
 
         raw_hash = data.get("manifest_hash", "")
         manifest_hash = raw_hash if isinstance(raw_hash, str) else ""
 
-        signature = self._require_field(data, "signature", str)
-        if isinstance(signature, Failure):
-            return signature
+        sig_result = self._require_str(data, "signature")
+        if isinstance(sig_result, Failure):
+            return sig_result
+        signature: str = sig_result.value
 
         return Success(ContextEnvelope(
             relay_version=relay_version,
