@@ -42,7 +42,8 @@ class TestInitialization:
 class TestSetCurrent:
     def test_sets_current_envelope(self, state):
         env = create_mock_envelope(1)
-        state.set_current(env)
+        with state.transaction() as _:
+            state.set_current(env)
         assert state.current() == env
 
 
@@ -50,9 +51,11 @@ class TestArchiveAndSet:
     def test_archives_current_and_sets_new(self, state):
         env1 = create_mock_envelope(1)
         env2 = create_mock_envelope(2)
-        state.set_current(env1)
+        with state.transaction() as _:
+            state.set_current(env1)
 
-        state.archive_and_set(env2)
+        with state.transaction() as _:
+            state.archive_and_set(env2)
 
         assert state.current() == env2
         history = state.get_previous_envelopes()
@@ -61,7 +64,8 @@ class TestArchiveAndSet:
 
     def test_first_envelope_has_no_archive(self, state):
         env1 = create_mock_envelope(1)
-        state.archive_and_set(env1)
+        with state.transaction() as _:
+            state.archive_and_set(env1)
         assert state.current() == env1
         assert state.has_history() is False
 
