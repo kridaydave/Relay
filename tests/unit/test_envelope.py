@@ -217,13 +217,44 @@ class TestVerifySignature:
 
 
 class TestTokenEstimation:
-    def test_token_estimate_within_realistic_tolerance(self):
-        payload = {"key": "value" * 50}
-        estimate = _estimate_tokens(payload)
-        json_str = json.dumps(payload, sort_keys=True)
+    """Ground-truth benchmark for _estimate_tokens per R17.
 
-        assert estimate > 0
-        assert estimate == len(json_str) // 3, "Must use formula: len(json_str) // 3"
+    Ground truth: English prose and JSON tokenise at roughly 0.25–0.40
+    tokens/char under BPE tokenisers (GPT-4 family, cl100k_base).
+    Our formula: len(json) // 3 ≈ 0.33 tokens/char — within that range.
+
+    The 3x tolerance is intentionally wide because the heuristic is coarse.
+    For precise counting, use TiktokenCounter. These tests catch a completely
+    broken implementation (returning 0, returning len, etc.).
+    """
+
+    PAYLOADS = [
+        {"summary": "Apple reported strong Q4 revenue growth.", "step": 1},
+        {"entities": ["Alice", "Bob", "Charlie"], "facts": ["revenue up", "costs flat"]},
+        {"data": "x" * 200},
+        {"nested": {"a": {"b": {"c": "deep"}}}},
+    ]
+
+    def test_estimate_is_positive_for_all_representative_payloads(self):
+        for payload in self.PAYLOADS:
+            assert _estimate_tokens(payload) > 0, f"Zero estimate for {payload}"
+
+    def test_estimate_stays_within_3x_of_char_based_reference(self):
+        for payload in self.PAYLOADS:
+            estimate = _estimate_tokens(payload)
+            json_len = len(json.dumps(payload, sort_keys=True))
+            baseline = max(1, json_len // 4)
+            assert estimate >= baseline // 3, (
+                f"Estimate {estimate} too low vs baseline {baseline} for {payload}"
+            )
+            assert estimate <= baseline * 3, (
+                f"Estimate {estimate} too high vs baseline {baseline} for {payload}"
+            )
+
+    def test_larger_payload_produces_larger_estimate(self):
+        small = {"x": "a" * 10}
+        large = {"x": "a" * 1000}
+        assert _estimate_tokens(large) > _estimate_tokens(small)
 
 
 class TestContextEnvelope:

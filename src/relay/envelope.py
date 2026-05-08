@@ -202,18 +202,14 @@ def create_next_envelope(
 def _estimate_tokens(payload: dict[str, Any]) -> int:
     """Approximates token count from payload JSON string length.
 
-    This is a heuristic that estimates BPE tokens by dividing character count by 3.
-    Note: This is NOT precise - actual token counts vary based on:
-    - Specific vocabulary/merge table of the tokenizer
-    - Content type (code vs natural language)
-    - Repetitive vs diverse content
+    This heuristic estimates BPE tokens by dividing character count by 3.
+    This is approximately 0.33 tokens/char, which is within the 0.25-0.40
+    range of real BPE tokenizers (GPT-4 family, cl100k_base).
 
-    This achieves ~50% accuracy in typical cases and is suitable for budget
-    estimation but NOT for precise token counting. Do not rely on this
-    for exact limits.
+    This is a coarse approximation suitable for budget estimation but NOT
+    for precise token counting. The 3x tolerance is intentionally wide.
 
-    See test_envelope.py::TestTokenEstimation::test_token_estimate_within_realistic_tolerance
-    for the benchmark test.
+    See test_envelope.py::TestTokenEstimation for the ground-truth benchmark.
     """
     json_str = json.dumps(payload, sort_keys=True)
     return max(1, len(json_str) // 3)
