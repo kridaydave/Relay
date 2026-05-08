@@ -5,7 +5,7 @@ from math import sqrt
 
 from relay.slicer.manifest import AgentManifest
 from relay.slicer.providers import EmbeddingProvider
-from relay.types import Failure, Result, Success
+from relay.types import ErrorCode, Failure, Result, Success
 
 
 def _cosine_similarity(a: list[float], b: list[float]) -> float:
@@ -100,7 +100,7 @@ class StructuralSlicePacker(SlicePacker):
         if missing:
             return Failure(
                 reason=f"Manifest declares read for sections {missing} but they do not exist in payload",
-                code="MISSING_SECTIONS",
+                code=ErrorCode.MISSING_SECTIONS,
             )
         return Success({key: payload[key] for key in sorted(manifest.reads)})
 

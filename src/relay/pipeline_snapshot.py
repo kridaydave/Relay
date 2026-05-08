@@ -6,7 +6,7 @@ Does NOT: manage pipeline state, create envelopes, or validate handoffs.
 
 from relay.envelope import ContextEnvelope
 from relay.snapshot import SnapshotStore
-from relay.types import Failure, Result, Success
+from relay.types import ErrorCode, Failure, Result, Success
 
 
 class SnapshotManager:
@@ -81,7 +81,7 @@ class SnapshotManager:
         if snapshot_id is None:
             return Failure(
                 reason="No snapshot registered for step",
-                code="NO_SNAPSHOT_REGISTERED",
+                code=ErrorCode.NO_SNAPSHOT_REGISTERED,
             )
 
         return self._snapshot_store.load_snapshot(snapshot_id)

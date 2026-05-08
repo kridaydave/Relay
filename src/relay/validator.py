@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from relay.envelope import ContextEnvelope
-from relay.types import Failure, Result, Success
+from relay.types import ErrorCode, Failure, Result, Success
 
 if TYPE_CHECKING:
     from relay.slicer.manifest import AgentManifest
@@ -55,10 +55,10 @@ class HandoffValidator:
     ) -> Result[ValidationResult]:
         """Validate a handoff between two envelopes."""
         if previous_envelope.pipeline_id != current_envelope.pipeline_id:
-            return Failure(reason="Pipeline ID mismatch", code="PIPELINE_MISMATCH")
+            return Failure(reason="Pipeline ID mismatch", code=ErrorCode.PIPELINE_MISMATCH)
 
         if previous_envelope.step >= current_envelope.step:
-            return Failure(reason="Step must increase", code="INVALID_STEP")
+            return Failure(reason="Step must increase", code=ErrorCode.INVALID_STEP)
 
         contradiction_details: str | None = None
         has_contradiction = False
@@ -217,7 +217,7 @@ def validate_manifest_boundaries(
     if violations:
         return Failure(
             reason=f"Agent {manifest.agent_id} wrote to sections not in manifest: {violations}",
-            code="MANIFEST_BOUNDARY_VIOLATION",
+            code=ErrorCode.MANIFEST_BOUNDARY_VIOLATION,
         )
 
     return Success(None)

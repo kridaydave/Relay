@@ -18,15 +18,15 @@ PIPELINE_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{1,128}$")
 def _validate_pipeline_id(pipeline_id: str) -> Result[str]:
     """Validate pipeline_id format."""
     if not pipeline_id:
-        return Failure(reason="pipeline_id cannot be empty", code="INVALID_PIPELINE_ID")
+        return Failure(reason="pipeline_id cannot be empty", code=ErrorCode.INVALID_PIPELINE_ID)
     if not PIPELINE_ID_PATTERN.match(pipeline_id):
         return Failure(
             reason="Invalid pipeline_id: must match pattern ^[a-zA-Z0-9_-]{1,128}$",
-            code="INVALID_PIPELINE_ID",
+            code=ErrorCode.INVALID_PIPELINE_ID,
         )
     return Success(pipeline_id)
 
-from relay.types import Failure, Result, Success
+from relay.types import ErrorCode, Failure, Result, Success
 
 RELAY_VERSION = "0.2.0"
 
@@ -127,7 +127,7 @@ def create_initial_envelope(
     if isinstance(validation_result, Failure):
         return validation_result
     if not initial_payload:
-        return Failure(reason="initial_payload cannot be empty", code="INVALID_PAYLOAD")
+        return Failure(reason="initial_payload cannot be empty", code=ErrorCode.INVALID_PAYLOAD)
 
     token_used = _estimate_tokens(initial_payload)
     envelope = ContextEnvelope(
@@ -160,13 +160,13 @@ def create_next_envelope(
         manifest_hash: Optional hash of the agent manifest. Pass "" if not using manifests.
     """
     if not agent_output:
-        return Failure(reason="agent_output cannot be empty", code="INVALID_PAYLOAD")
+        return Failure(reason="agent_output cannot be empty", code=ErrorCode.INVALID_PAYLOAD)
 
     token_used = previous_envelope.token_budget_used + _estimate_tokens(agent_output)
     if token_used > previous_envelope.token_budget_total:
         return Failure(
             reason=f"Token budget exceeded: {token_used} > {previous_envelope.token_budget_total}",
-            code="TOKEN_BUDGET_EXCEEDED",
+            code=ErrorCode.TOKEN_BUDGET_EXCEEDED,
         )
 
     envelope = ContextEnvelope(

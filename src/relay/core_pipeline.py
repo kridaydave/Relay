@@ -17,7 +17,7 @@ from relay.pipeline_snapshot import SnapshotManager
 from relay.pipeline_state import PipelineState
 from relay.slicer import AgentManifest, SlicePacker
 from relay.snapshot import SnapshotStore
-from relay.types import Failure, Result, RollbackSuccess, Success
+from relay.types import ErrorCode, Failure, Result, RollbackSuccess, Success
 from relay.validator import (
     HandoffValidator,
     ValidationResult,
@@ -123,7 +123,7 @@ class CoreRelayPipeline:
         if current_envelope is None:
             return Failure(
                 reason="Current envelope is None - invalid state",
-                code="INVALID_STATE",
+                code=ErrorCode.INVALID_STATE,
             )
 
         budget_result = self._check_budget(manifest, current_envelope)
@@ -237,7 +237,7 @@ class CoreRelayPipeline:
         if not self._state.has_history():
             return Failure(
                 reason="No previous envelope to rollback to",
-                code="NO_ROLLBACK_AVAILABLE",
+                code=ErrorCode.NO_ROLLBACK_AVAILABLE,
             )
 
         return self._do_rollback(reason, consume_history=False)
@@ -248,7 +248,7 @@ class CoreRelayPipeline:
         if previous_envelope is None:
             return Failure(
                 reason="No previous envelope to rollback to",
-                code="INVALID_STATE",
+                code=ErrorCode.INVALID_STATE,
             )
         result = self._rollback_handler.restore_to_previous(
             previous_envelope,
@@ -293,7 +293,7 @@ class CoreRelayPipeline:
             if not self._state.has_history():
                 return Failure(
                     reason="No previous envelope to rollback to",
-                    code="NO_ROLLBACK_AVAILABLE",
+                    code=ErrorCode.NO_ROLLBACK_AVAILABLE,
                 )
             return self._do_rollback("Manual rollback", consume_history=True)
 

@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from relay.budget.token_counter import TokenCounter
 from relay.envelope import ContextEnvelope
-from relay.types import BudgetExceeded, Failure, Result, Success
+from relay.types import BudgetExceeded, ErrorCode, Failure, Result, Success
 
 
 @dataclass(frozen=True)
@@ -32,13 +32,13 @@ class HardCapEnforcer:
         if projected_cost < 0:
             return Failure(
                 reason=f"TokenCounter returned negative value: {projected_cost}",
-                code="INVALID_TOKEN_COUNT",
+                code=ErrorCode.INVALID_TOKEN_COUNT,
             )
 
         if envelope.token_budget_used + projected_cost > envelope.token_budget_total:
             return Failure(
                 reason=f"Budget exceeded: used {envelope.token_budget_used}, projected {projected_cost}, limit {envelope.token_budget_total}",
-                code="BUDGET_EXCEEDED",
+                code=ErrorCode.BUDGET_EXCEEDED,
             )
 
         return Success(None)
