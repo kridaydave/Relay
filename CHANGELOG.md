@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+## [0.3.0] - 2026-05-08
+
+### Fixed (Critical)
+
+- **Security: Path traversal prevention** — Added regex validation for `pipeline_id` in `create_initial_envelope()` and `save_snapshot()` to prevent path traversal attacks
+- **Security: Default signing secret removed** — `secret` parameter is now required in `create_initial_envelope()` and `create_next_envelope()`
+- **Runtime crash fix** — Fixed `FrozenInstanceError` in `CoreRelayPipeline` by removing frozen=True from the service class
+- **Type safety** — Fixed mypy --strict errors in `token_counter.py` and `pipeline_snapshot.py`
+
+### Fixed (High)
+
+- **R16 (Validate at boundary)** — Added type validation for `manifest_hash` in `_dict_to_envelope()` with isinstance check
+- **Backward compatibility cleanup** — Removed `manifest_hash` default "" from `create_initial_envelope()` and `create_next_envelope()` to surface all callers
+- **R15 (Resource lifecycle)** — Added `__enter__/__exit__` context manager protocol to `CoreRelayPipeline` and `TiktokenCounter`
+
+### Fixed (Medium)
+
+- **R18 (Concurrent testing)** — Strengthened concurrent tests to assert final state consistency, not just "no exception"
+- **Deterministic output** — Fixed `StructuralSlicePacker` to sort manifest.reads keys for deterministic payload slicing
+- **R19 (Docstring accuracy)** — Updated `core_pipeline.py` module docstring to reflect v0.2 responsibilities (budget enforcement, slicer dispatch)
+- **Deprecation removal** — Removed deprecated `current_and_lock()` method, migrated to `transaction()` context manager
+
+### Changed
+
+- **Error codes** — Added `ErrorCode(str, Enum)` with 25 error codes for type-safe error handling and exhaustive switch matching
+- **All string error codes** replaced with `ErrorCode` enum values across the codebase
+
+### Testing
+
+- Added `test_list_snapshots_returns_empty_for_unknown_pipeline`
+- Added `test_unwrap_or_returns_default_for_rollback_success`
+- Added `test_map_result_leaves_rollback_success_unchanged`
+
+---
+
 ## [0.2.1] - 2026-05-07
 
 ### Fixed (per Relay Coding Rules)
