@@ -53,22 +53,6 @@ class BudgetExceeded:
 
 
 @dataclass(frozen=True)
-class HandoffValidationFailure:
-    """Represents an agent boundary violation error value."""
-    agent_id: str
-    offending_section: str
-    step: int
-
-
-@dataclass(frozen=True)
-class ManifestHashMismatch:
-    """Represents a manifest hash mismatch error value."""
-    expected_hash: str
-    actual_hash: str
-    step: int
-
-
-@dataclass(frozen=True)
 class Success(Generic[T]):
     """Represents a successful result with a value."""
     value: T
