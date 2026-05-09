@@ -6,8 +6,7 @@ Does NOT: handle specific domain errors, validate data, or make decisions.
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import TypeVar, Generic, Callable, overload, TypeAlias
-
+from typing import Callable, Generic, TypeAlias, TypeVar
 
 T = TypeVar("T")
 ResultT = TypeVar("ResultT")
@@ -46,6 +45,7 @@ class ErrorCode(str, Enum):
 @dataclass(frozen=True)
 class BudgetExceeded:
     """Represents a budget exceeded error value."""
+
     used: int
     projected: int
     limit: int
@@ -55,12 +55,14 @@ class BudgetExceeded:
 @dataclass(frozen=True)
 class Success(Generic[T]):
     """Represents a successful result with a value."""
+
     value: T
 
 
 @dataclass(frozen=True)
 class Failure:
     """Represents a failed result with a reason and error code."""
+
     reason: str
     code: str = "UNKNOWN_ERROR"
 
@@ -68,6 +70,7 @@ class Failure:
 @dataclass(frozen=True)
 class RollbackSuccess(Generic[T]):
     """Represents a successful rollback result with restored value and reason."""
+
     value: T
     reason: str
 
@@ -99,14 +102,19 @@ def unwrap_or(result: Result[T], default: T) -> T:
     return default
 
 
-def map_result(result: Result[T], fn: Callable[[T], T]) -> Result[T]:
+U = TypeVar("U")
+
+
+def map_result(result: "Result[T]", fn: Callable[[T], U]) -> "Result[U]":
     """Apply function to Success value, leave Failure unchanged."""
     if isinstance(result, Success):
         return Success(fn(result.value))
+    if isinstance(result, RollbackSuccess):
+        return RollbackSuccess(fn(result.value), result.reason)
     return result
 
 
-def map_error(result: Result[T], fn: Callable[[Failure], Failure]) -> Result[T]:
+def map_error(result: "Result[T]", fn: Callable[[Failure], Failure]) -> "Result[T]":
     """Apply function to Failure, leave Success unchanged."""
     if isinstance(result, Failure):
         return fn(result)

@@ -22,6 +22,7 @@ __all__ = [
 
 class InvalidSnapshotIdError(Exception):
     """Raised when snapshot ID format is invalid."""
+
     pass
 
 
@@ -42,9 +43,7 @@ def _extract_step_from_snapshot_id(s_id: str) -> int:
             return int(rest.split("_")[0])
         return int(s_id.split("_")[0])
     except (ValueError, IndexError):
-        raise InvalidSnapshotIdError(
-            f"Invalid snapshot ID format: {s_id}"
-        )
+        raise InvalidSnapshotIdError(f"Invalid snapshot ID format: {s_id}")
 
 
 class SnapshotStore:
@@ -86,7 +85,7 @@ class SnapshotStore:
         index_result = self._add_to_index(pipeline_id, snapshot_id)
         if isinstance(index_result, Failure):
             return index_result
-        
+
         return Success(snapshot_id)
 
     def load_snapshot(self, snapshot_id: str) -> Result[ContextEnvelope]:
@@ -132,7 +131,8 @@ class SnapshotStore:
             return Success(envelope)
         except FileNotFoundError:
             return Failure(
-                reason=f"Snapshot not found: {snapshot_id}", code=ErrorCode.SNAPSHOT_NOT_FOUND
+                reason=f"Snapshot not found: {snapshot_id}",
+                code=ErrorCode.SNAPSHOT_NOT_FOUND,
             )
         except Exception as e:
             return Failure(reason=str(e), code=ErrorCode.SNAPSHOT_LOAD_FAILED)
@@ -186,14 +186,19 @@ class SnapshotStore:
                 index_data["snapshots"].sort(key=_extract_step_from_snapshot_id)
 
             temp_index_path = index_path.parent / "index.tmp"
-            with open(temp_index_path, "w") as f:
-                json.dump(index_data, f, indent=2)
-            os.replace(temp_index_path, index_path)
-        except json.JSONDecodeError as e:
-            return Failure(reason=f"Corrupted index JSON: {e}", code=ErrorCode.CORRUPTED_INDEX)
-        except OSError as e:
-            return Failure(reason=f"Failed to update index: {e}", code=ErrorCode.INDEX_UPDATE_FAILED)
-        
+            try:
+                with open(temp_index_path, "w") as f:
+                    json.dump(index_data, f, indent=2)
+                os.replace(temp_index_path, index_path)
+            finally:
+                if temp_index_path.exists():
+                    temp_index_path.unlink()
+        except Exception as e:
+            return Failure(
+                reason=f"Failed to update index: {e}",
+                code=ErrorCode.INDEX_UPDATE_FAILED,
+            )
+
         return Success(None)
 
     def _load_index(self, pipeline_id: str) -> Result[dict[str, Any]]:
@@ -245,21 +250,27 @@ class SnapshotStore:
         """Validate and return a string field from data dict."""
         value = data.get(key)
         if value is None or not isinstance(value, str):
-            return Failure(reason=f"Missing or invalid {key}", code=ErrorCode.INVALID_SNAPSHOT)
+            return Failure(
+                reason=f"Missing or invalid {key}", code=ErrorCode.INVALID_SNAPSHOT
+            )
         return Success(value)
 
     def _require_int(self, data: dict[str, Any], key: str) -> "Result[int]":
         """Validate and return an int field from data dict."""
         value = data.get(key)
         if value is None or not isinstance(value, int):
-            return Failure(reason=f"Missing or invalid {key}", code=ErrorCode.INVALID_SNAPSHOT)
+            return Failure(
+                reason=f"Missing or invalid {key}", code=ErrorCode.INVALID_SNAPSHOT
+            )
         return Success(value)
 
     def _require_dict(self, data: dict[str, Any], key: str) -> "Result[dict[str, Any]]":
         """Validate and return a dict field from data dict."""
         value = data.get(key)
         if value is None or not isinstance(value, dict):
-            return Failure(reason=f"Missing or invalid {key}", code=ErrorCode.INVALID_SNAPSHOT)
+            return Failure(
+                reason=f"Missing or invalid {key}", code=ErrorCode.INVALID_SNAPSHOT
+            )
         return Success(value)
 
     def _dict_to_envelope(self, data: dict[str, Any]) -> Result[ContextEnvelope]:
@@ -288,7 +299,9 @@ class SnapshotStore:
             if timestamp.tzinfo is None:
                 timestamp = timestamp.replace(tzinfo=timezone.utc)
         except (ValueError, TypeError):
-            return Failure(reason="Invalid timestamp format", code=ErrorCode.INVALID_SNAPSHOT)
+            return Failure(
+                reason="Invalid timestamp format", code=ErrorCode.INVALID_SNAPSHOT
+            )
 
         used_result = self._require_int(data, "token_budget_used")
         if isinstance(used_result, Failure):
@@ -313,14 +326,16 @@ class SnapshotStore:
             return sig_result
         signature: str = sig_result.value
 
-        return Success(ContextEnvelope(
-            relay_version=relay_version,
-            pipeline_id=pipeline_id,
-            step=step,
-            timestamp=timestamp,
-            token_budget_used=token_budget_used,
-            token_budget_total=token_budget_total,
-            payload=payload,
-            manifest_hash=manifest_hash,
-            signature=signature,
-        ))
+        return Success(
+            ContextEnvelope(
+                relay_version=relay_version,
+                pipeline_id=pipeline_id,
+                step=step,
+                timestamp=timestamp,
+                token_budget_used=token_budget_used,
+                token_budget_total=token_budget_total,
+                payload=payload,
+                manifest_hash=manifest_hash,
+                signature=signature,
+            )
+        )
