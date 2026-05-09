@@ -16,6 +16,14 @@ if TYPE_CHECKING:
 
 MAX_EXTRACTION_DEPTH = 50
 
+__all__ = [
+    "MAX_EXTRACTION_DEPTH",
+    "MaxDepthExceededError",
+    "ValidationResult",
+    "HandoffValidator",
+    "validate_manifest_boundaries",
+]
+
 
 class MaxDepthExceededError(Exception):
     """Raised when JSON depth exceeds maximum allowed."""
@@ -126,7 +134,12 @@ class HandoffValidator:
         return None
 
     def _extract_entities(self, payload: dict[str, Any]) -> frozenset[str]:
-        """Extract entity mentions from payload using iterative traversal."""
+        """Extract entity mentions from payload using iterative traversal.
+
+        Tracks nesting depth from root (not stack size). A flat list of 60 strings
+        has items at depth 1 and passes. A dict nested 50 levels deep fails with
+        MaxDepthExceededError.
+        """
         entities: set[str] = set()
         stop_words = {"the", "and", "but", "for", "nor", "yet", "so", "a", "an", "of", "to", "in", "on", "at", "by", "with", "from", "is", "are", "was", "were", "be", "been", "being"}
 
