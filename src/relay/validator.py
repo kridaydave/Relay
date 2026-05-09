@@ -27,12 +27,14 @@ __all__ = [
 
 class MaxDepthExceededError(Exception):
     """Raised when JSON depth exceeds maximum allowed."""
+
     pass
 
 
 @dataclass(frozen=True)
 class ValidationResult:
     """Result of validating a handoff between envelopes."""
+
     has_contradiction: bool
     diff: dict[str, Any]
     contradiction_details: str | None
@@ -45,7 +47,37 @@ class HandoffValidator:
     Does NOT: sign envelopes, persist data, execute agents.
     """
 
-    CRITICAL_KEYS: frozenset[str] = frozenset({"entities", "actions", "facts", "constraints", "requirements"})
+    CRITICAL_KEYS: frozenset[str] = frozenset(
+        {"entities", "actions", "facts", "constraints", "requirements"}
+    )
+    STOP_WORDS: frozenset[str] = frozenset(
+        {
+            "the",
+            "and",
+            "but",
+            "for",
+            "nor",
+            "yet",
+            "so",
+            "a",
+            "an",
+            "of",
+            "to",
+            "in",
+            "on",
+            "at",
+            "by",
+            "with",
+            "from",
+            "is",
+            "are",
+            "was",
+            "were",
+            "be",
+            "been",
+            "being",
+        }
+    )
 
     def __init__(self, hallucination_ratio_threshold: float | None = 2.0) -> None:
         """Initialize the validator.
@@ -57,13 +89,13 @@ class HandoffValidator:
         self._hallucination_ratio_threshold = hallucination_ratio_threshold
 
     def validate_handoff(
-        self,
-        previous_envelope: ContextEnvelope,
-        current_envelope: ContextEnvelope
+        self, previous_envelope: ContextEnvelope, current_envelope: ContextEnvelope
     ) -> Result[ValidationResult]:
         """Validate a handoff between two envelopes."""
         if previous_envelope.pipeline_id != current_envelope.pipeline_id:
-            return Failure(reason="Pipeline ID mismatch", code=ErrorCode.PIPELINE_MISMATCH)
+            return Failure(
+                reason="Pipeline ID mismatch", code=ErrorCode.PIPELINE_MISMATCH
+            )
 
         if previous_envelope.step >= current_envelope.step:
             return Failure(reason="Step must increase", code=ErrorCode.INVALID_STEP)
@@ -71,7 +103,9 @@ class HandoffValidator:
         contradiction_details: str | None = None
         has_contradiction = False
 
-        hallucination_result = self._detect_hallucination(previous_envelope.payload, current_envelope.payload)
+        hallucination_result = self._detect_hallucination(
+            previous_envelope.payload, current_envelope.payload
+        )
         if hallucination_result:
             has_contradiction = True
             contradiction_details = hallucination_result
@@ -84,22 +118,24 @@ class HandoffValidator:
                 f"{contradiction_details}; " if contradiction_details else ""
             ) + critical_missing
 
-        has_contradiction_str: str | None = contradiction_details if has_contradiction else None
+        has_contradiction_str: str | None = (
+            contradiction_details if has_contradiction else None
+        )
 
-        return Success(ValidationResult(
-            has_contradiction=has_contradiction,
-            diff=diff,
-            contradiction_details=has_contradiction_str
-        ))
+        return Success(
+            ValidationResult(
+                has_contradiction=has_contradiction,
+                diff=diff,
+                contradiction_details=has_contradiction_str,
+            )
+        )
 
     def should_rollback(self, validation_result: ValidationResult) -> bool:
         """Determine if validation result requires rollback."""
         return validation_result.has_contradiction
 
     def _detect_hallucination(
-        self,
-        previous_payload: dict[str, Any],
-        current_payload: dict[str, Any]
+        self, previous_payload: dict[str, Any], current_payload: dict[str, Any]
     ) -> str | None:
         """Detect hallucination by checking entity fabrication ratio.
 
@@ -141,7 +177,6 @@ class HandoffValidator:
         MaxDepthExceededError.
         """
         entities: set[str] = set()
-        stop_words = {"the", "and", "but", "for", "nor", "yet", "so", "a", "an", "of", "to", "in", "on", "at", "by", "with", "from", "is", "are", "was", "were", "be", "been", "being"}
 
         stack: list[tuple[Any, int]] = [(payload, 0)]
         while stack:
@@ -153,7 +188,15 @@ class HandoffValidator:
 
             if isinstance(obj, dict):
                 for key, value in obj.items():
-                    if key in {"entity", "entities", "subject", "object", "name", "id", "identifier"}:
+                    if key in {
+                        "entity",
+                        "entities",
+                        "subject",
+                        "object",
+                        "name",
+                        "id",
+                        "identifier",
+                    }:
                         if isinstance(value, str):
                             entities.add(value.lower())
                     stack.append((value, depth + 1))
@@ -161,22 +204,20 @@ class HandoffValidator:
                 for item in obj:
                     stack.append((item, depth + 1))
             elif isinstance(obj, str):
-                if len(obj) > 2 and len(obj) < 100 and obj.lower() not in stop_words:
+                if (
+                    len(obj) > 2
+                    and len(obj) < 100
+                    and obj.lower() not in self.STOP_WORDS
+                ):
                     entities.add(obj.lower())
 
         return frozenset(entities)
 
     def _compute_diff(
-        self,
-        previous_payload: dict[str, Any],
-        current_payload: dict[str, Any]
+        self, previous_payload: dict[str, Any], current_payload: dict[str, Any]
     ) -> dict[str, Any]:
         """Compute structural diff of payload keys."""
-        diff: dict[str, Any] = {
-            "added": [],
-            "removed": [],
-            "modified": []
-        }
+        diff: dict[str, Any] = {"added": [], "removed": [], "modified": []}
 
         prev_keys = set(previous_payload.keys())
         curr_keys = set(current_payload.keys())

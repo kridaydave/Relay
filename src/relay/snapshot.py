@@ -86,7 +86,7 @@ class SnapshotStore:
         index_result = self._add_to_index(pipeline_id, snapshot_id)
         if isinstance(index_result, Failure):
             return index_result
-        
+
         return Success(snapshot_id)
 
     def load_snapshot(self, snapshot_id: str) -> Result[ContextEnvelope]:
@@ -186,14 +186,19 @@ class SnapshotStore:
                 index_data["snapshots"].sort(key=_extract_step_from_snapshot_id)
 
             temp_index_path = index_path.parent / "index.tmp"
-            with open(temp_index_path, "w") as f:
-                json.dump(index_data, f, indent=2)
-            os.replace(temp_index_path, index_path)
-        except json.JSONDecodeError as e:
-            return Failure(reason=f"Corrupted index JSON: {e}", code=ErrorCode.CORRUPTED_INDEX)
+            try:
+                with open(temp_index_path, "w") as f:
+                    json.dump(index_data, f, indent=2)
+                os.replace(temp_index_path, index_path)
+            finally:
+                if temp_index_path.exists():
+                    temp_index_path.unlink()
+        except Exception as e:
+            return Failure(reason=f"Failed to update index: {e}", code=ErrorCode.INDEX_UPDATE_FAILED)
+
         except OSError as e:
             return Failure(reason=f"Failed to update index: {e}", code=ErrorCode.INDEX_UPDATE_FAILED)
-        
+
         return Success(None)
 
     def _load_index(self, pipeline_id: str) -> Result[dict[str, Any]]:
