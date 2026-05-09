@@ -23,6 +23,28 @@ from relay.validator import (
     ValidationResult,
     validate_manifest_boundaries,
 )
+from relay.runners import AdapterRegistry, AgentOutput, AgentRunner
+from relay.runners.protocol import _estimate_tokens, ContextSlice
+
+
+def _agent_output_to_payload(
+    output: AgentOutput,
+    manifest: AgentManifest,
+) -> dict[str, Any]:
+    """Convert AgentOutput to a payload dict suitable for execute_step_with_manifest.
+
+    Merges text and structured fields. Only includes keys that are in manifest.writes.
+    Keys produced by the adapter that are NOT in manifest.writes are silently dropped
+    here; the manifest boundary validator in execute_step_with_manifest will catch
+    any that slip through.
+
+    This function does NOT validate — it only shapes the payload. Validation is
+    the responsibility of validate_manifest_boundaries inside execute_step_with_manifest.
+    """
+    raw: dict[str, Any] = {"text": output.text, **output.structured}
+    if output.tool_calls:
+        raw["tool_calls"] = output.tool_calls
+    return raw
 
 
 @dataclass
@@ -38,6 +60,7 @@ class CoreRelayPipeline:
     storage_path: str = "./relay_data/snapshots"
     token_counter: Optional[TokenCounter] = None
     slice_packer: Optional[SlicePacker] = None
+    registry: Optional[AdapterRegistry] = None
 
     _pipeline_id: str = field(init=False, repr=False)
     _state: PipelineState = field(init=False, repr=False)
@@ -62,6 +85,7 @@ class CoreRelayPipeline:
             self._enforcer = HardCapEnforcer(self._pipeline_id, self.token_counter)
         else:
             self._enforcer = None
+        # registry is set directly from __init__ field, no additional setup needed
 
     def close(self) -> None:
         """Release pipeline resources.
@@ -316,6 +340,95 @@ class CoreRelayPipeline:
         """Get the current envelope."""
         with self._state.transaction() as envelope:
             return envelope
+
+    async def execute_step_with_runner(
+        self,
+        adapter_name: str,
+        manifest: AgentManifest,
+    ) -> Result[ContextEnvelope]:
+        """Execute a pipeline step by running the named adapter.
+
+        Pipeline sequence:
+          1. Look up adapter in registry.
+          2. Build ContextSlice from current envelope filtered by manifest.reads.
+          3. Check token budget (via _check_budget using manifest + current envelope).
+          4. Call adapter.run(slice, manifest) — any exception → Failure.
+          5. Merge AgentOutput into payload dict.
+          6. Call execute_step_with_manifest(payload, manifest=manifest) to handle
+             signing, validation, snapshotting, and rollback as normal.
+
+        Args:
+            adapter_name: Name of the adapter in the registry to invoke.
+            manifest: Agent manifest defining read/write permissions.
+
+        Returns:
+            Success, Failure, or RollbackSuccess — same contract as execute_step.
+
+        Raises:
+            Nothing. All errors are returned as Failure.
+        """
+        if self.registry is None:
+            return Failure(
+                reason="No AdapterRegistry configured on this pipeline",
+                code=ErrorCode.NO_REGISTRY,
+            )
+
+        adapter_result = self.registry.get(adapter_name)
+        if isinstance(adapter_result, Failure):
+            return adapter_result
+        adapter = adapter_result.value
+
+        with self._state.transaction() as current_envelope:
+            slice_ = self._build_context_slice(current_envelope, manifest)
+            if current_envelope is not None:
+                budget_result = self._check_budget(manifest, current_envelope)
+                if isinstance(budget_result, Failure):
+                    return budget_result
+
+        try:
+            agent_output = await adapter.run(slice_, manifest)
+        except Exception as e:
+            return Failure(
+                reason=f"Adapter '{adapter_name}' raised: {type(e).__name__}: {e}",
+                code=ErrorCode.ADAPTER_EXECUTION_FAILED,
+            )
+
+        payload = _agent_output_to_payload(agent_output, manifest)
+        return self.execute_step_with_manifest(payload, manifest=manifest)
+
+    def _build_context_slice(
+        self,
+        current_envelope: ContextEnvelope | None,
+        manifest: AgentManifest,
+    ) -> ContextSlice:
+        """Build a ContextSlice from the current envelope, filtered to manifest.reads.
+
+        If current_envelope is None (first step), returns an empty slice.
+        Sections not declared in manifest.reads are excluded regardless of
+        whether they exist in the payload.
+
+        REQUIRES: no lock needed — reads only from immutable envelope.
+        """
+        if current_envelope is None:
+            return ContextSlice(
+                pipeline_id=self._pipeline_id,
+                step=0,
+                agent_id=manifest.agent_id,
+                sections={},
+                token_count=0,
+                manifest_hash=manifest.compute_hash(),
+            )
+        permitted = manifest.reads & set(current_envelope.payload.keys())
+        sections = {k: current_envelope.payload[k] for k in permitted}
+        token_count = _estimate_tokens(sections) if sections else 0
+        return ContextSlice(
+            pipeline_id=current_envelope.pipeline_id,
+            step=current_envelope.step,
+            agent_id=manifest.agent_id,
+            sections=sections,
+            token_count=token_count,
+            manifest_hash=manifest.compute_hash(),
+        )
 
     # Backward-compatible accessors for tests
     @property

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "relay-middleware"
-version = "0.2.3"
+version = "0.3.0"
 description = "Context-driven data pipeline with budget enforcement and pluggable context slicing"
 readme = "README.md"
 authors = [
@@ -34,6 +34,17 @@ dependencies = [
 
 [project.optional-dependencies]
 tiktoken = ["tiktoken"]
+langchain = ["langchain-core>=0.1"]
+crewai    = ["crewai>=0.30"]
+autogen   = ["pyautogen>=0.2"]
+local     = ["httpx>=0.27"]
+all       = [
+    "tiktoken",
+    "langchain-core>=0.1",
+    "crewai>=0.30",
+    "pyautogen>=0.2",
+    "httpx>=0.27",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
