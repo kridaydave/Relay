@@ -11,6 +11,9 @@ from typing import Generator
 from relay.envelope import ContextEnvelope
 
 
+_tls = threading.local()
+
+
 class PipelineState:
     """Thread-safe manager of pipeline state.
 
@@ -40,9 +43,7 @@ class PipelineState:
         Disappears under python -O. Cost-free in tests.
         """
         if __debug__:
-            acquired = self._lock.acquire(blocking=False)
-            if acquired:
-                self._lock.release()
+            if not getattr(_tls, "in_transaction", False):
                 raise AssertionError(
                     f"{self.__class__.__name__} mutation called without holding _lock. "
                     "Wrap the call site in `with self._state.transaction()`."
@@ -60,7 +61,11 @@ class PipelineState:
         Automatically acquires and releases the lock.
         """
         with self._lock:
-            yield self._current_envelope
+            _tls.in_transaction = True
+            try:
+                yield self._current_envelope
+            finally:
+                _tls.in_transaction = False
 
     def get_previous_envelopes(self) -> list[ContextEnvelope]:
         """Return a copy of the previous envelopes list."""
