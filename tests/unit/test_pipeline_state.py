@@ -99,13 +99,6 @@ class TestThreadSafety:
             except Exception as e:
                 errors.append(e)
 
-        def archive_and_set():
-            try:
-                with state.transaction():
-                    state.archive_and_set(env2)
-            except Exception as e:
-                errors.append(e)
-
         t1 = threading.Thread(target=set_current)
         t2 = threading.Thread(target=archive_and_set)
         t1.start()

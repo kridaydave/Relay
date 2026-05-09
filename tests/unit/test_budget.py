@@ -7,7 +7,7 @@ import pytest
 
 from relay.budget import HardCapEnforcer, TokenCounter
 from relay.envelope import ContextEnvelope
-from relay.types import BudgetExceeded, Failure, Success
+from relay.types import Failure, Success
 from tests.conftest import FixedCounter
 
 

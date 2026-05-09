@@ -43,16 +43,6 @@ class ErrorCode(str, Enum):
 
 
 @dataclass(frozen=True)
-class BudgetExceeded:
-    """Represents a budget exceeded error value."""
-
-    used: int
-    projected: int
-    limit: int
-    step: int
-
-
-@dataclass(frozen=True)
 class Success(Generic[T]):
     """Represents a successful result with a value."""
 

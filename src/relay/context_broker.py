@@ -8,12 +8,9 @@ Does NOT: implement signing (owned by relay.envelope), persist envelopes,
 
 from dataclasses import dataclass
 from typing import Any
-from typing import TYPE_CHECKING
 
 from relay.envelope import ContextEnvelope, create_initial_envelope, create_next_envelope
-
-if TYPE_CHECKING:
-    from relay.types import Result
+from relay.types import Result
 
 __all__ = ["ContextBroker"]
 

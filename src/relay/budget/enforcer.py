@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from relay.budget.token_counter import TokenCounter
 from relay.envelope import ContextEnvelope
-from relay.types import BudgetExceeded, ErrorCode, Failure, Result, Success
+from relay.types import ErrorCode, Failure, Result, Success
 
 
 @dataclass(frozen=True)
