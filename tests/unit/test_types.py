@@ -101,7 +101,7 @@ class TestUnwrap:
     def test_unwrap_raises_on_failure(self):
         """Verify unwrap raises ValueError when called on Failure."""
         result: Result[str] = Failure(reason="error", code="ERR")
-        with pytest.raises(ValueError, match="Unwrap called on Failure"):
+        with pytest.raises(ValueError, match="Unwrap called on non-Success"):
             unwrap(result)
 
 

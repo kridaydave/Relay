@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+## [0.2.3] - 2026-05-09
+
+### Fixed (Critical)
+
+- **Security: Path traversal prevention** — Added regex validation for `pipeline_id` in `create_initial_envelope()` and `save_snapshot()` to prevent path traversal attacks
+- **Security: Default signing secret removed** — `secret` parameter is now required in `create_initial_envelope()` and `create_next_envelope()`
+- **Runtime crash fix** — Fixed `FrozenInstanceError` in `CoreRelayPipeline` by removing frozen=True from the service class
+- **Type safety** — Fixed mypy --strict errors in `token_counter.py` and `pipeline_snapshot.py`
+
+### Fixed (High)
+
+- **R4 (Validate on initial step)** — `_handle_initial_step` now validates manifest boundaries when a manifest is provided (changed `validate=False` to `validate=True`)
+- **R16 (Validate at boundary)** — Removed duplicate `signing_secret` length check in `_sign_envelope`; boundary is `ContextBroker.__post_init__` only
+- **R19 (Docstring accuracy)** — Fixed copy-paste docstring in `_apply_manifest_if_present` that incorrectly documented a non-existent `validate` parameter
+- **R17 (Ground-truth benchmarks)** — Hallucination detection tests now use entity strings of 3+ characters that `_extract_entities` actually parses (alice, bob, charlie vs. a, b, c)
+- **TOCTOU fix** — `_load_index` now catches `FileNotFoundError` inline instead of check-then-open
+- **R6 (unwrap handles RollbackSuccess)** — `unwrap()` now raises on `RollbackSuccess`, forcing callers to explicitly handle rollback
+- **R3.2 (Specific exception types)** — `_add_to_index` now catches `JSONDecodeError` and `OSError` instead of bare `except Exception`
+- **R2.2 (Result type alias)** — `Result` type alias now uses `ResultT` TypeVar with proper binding
+
+### Fixed (Medium)
+
+- **R18 (Concurrent testing)** — Strengthened concurrent tests to assert final state consistency, not just "no exception"
+- **Deterministic output** — Fixed `StructuralSlicePacker` to sort manifest.reads keys for deterministic payload slicing
+- **R19 (Docstring accuracy)** — Updated `core_pipeline.py` module docstring to reflect v0.2 responsibilities (budget enforcement, slicer dispatch)
+- **Deprecation removal** — Removed deprecated `current_and_lock()` method, migrated to `transaction()` context manager
+
+### Changed
+
+- **Error codes** — Added `ErrorCode(str, Enum)` with 25 error codes for type-safe error handling and exhaustive switch matching
+- **All string error codes** replaced with `ErrorCode` enum values across the codebase
+
+### Testing
+
+- Added `test_list_snapshots_returns_empty_for_unknown_pipeline`
+- Added `test_unwrap_or_returns_default_for_rollback_success`
+- Added `test_map_result_leaves_rollback_success_unchanged`
+- Added ground-truth hallucination detection tests with human-meaningful entity strings
+
+---
+
 ## [0.2.2] - 2026-05-08
 
 ### Fixed (Critical)

@@ -5,12 +5,9 @@ from unittest.mock import patch
 
 import pytest
 
-from relay.envelope import ContextEnvelope, create_initial_envelope
+from relay.envelope import RELAY_VERSION, ContextEnvelope, create_initial_envelope
 from relay.validator import HandoffValidator, ValidationResult
 from relay.types import Success, Failure
-
-
-RELAY_VERSION = "0.2.0"
 
 
 def _make_envelope(
