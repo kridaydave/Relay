@@ -719,7 +719,7 @@ def test_recency_packer_handles_non_string_section_values():
         "section_2": {"nested": "dict"},
         "section_3": 42,
     }
-    manifest = AgentManifest("a1", frozenset(), frozenset(), 10000)
+    manifest = AgentManifest("a1", "test task", frozenset(), frozenset(), 10000)
     result = packer.pack(payload, manifest)
     assert isinstance(result, Success)
 
@@ -728,7 +728,7 @@ def test_relevance_packer_handles_non_string_section_values():
     provider = FixedEmbeddingProvider([1.0, 0.0])
     packer = RelevanceSlicePacker(provider)
     payload = {"section_1": [1, 2, 3], "section_2": {"k": "v"}}
-    manifest = AgentManifest("a1", frozenset(), frozenset(), 10000)
+    manifest = AgentManifest("a1", "test task", frozenset(), frozenset(), 10000)
     result = packer.pack(payload, manifest)
     assert isinstance(result, Success)
 ```

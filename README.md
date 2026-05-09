@@ -108,6 +108,7 @@ from relay.slicer import AgentManifest, RecencySlicePacker
 # Create manifest defining agent permissions
 manifest = AgentManifest(
     agent_id="agent-1",
+    task_description="Analyze entities and summarize findings",
     reads=frozenset({"entities", "summary"}),
     writes=frozenset({"analysis"}),
     max_tokens=4000

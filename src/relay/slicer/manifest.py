@@ -11,12 +11,14 @@ class AgentManifest:
 
     Attributes:
         agent_id: Unique identifier for the agent.
+        task_description: Description of the agent's task for relevance scoring.
         reads: Set of section keys the agent may read.
         writes: Set of section keys the agent may write.
         max_tokens: Maximum tokens allowed for this agent's context.
     """
 
     agent_id: str
+    task_description: str
     reads: frozenset[str]
     writes: frozenset[str]
     max_tokens: int
@@ -30,6 +32,7 @@ class AgentManifest:
         canonical = json.dumps(
             {
                 "agent_id": self.agent_id,
+                "task_description": self.task_description,
                 "reads": sorted(self.reads),
                 "writes": sorted(self.writes),
                 "max_tokens": self.max_tokens,

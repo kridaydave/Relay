@@ -17,21 +17,21 @@ from tests.conftest import FixedEmbeddingProvider
 class TestAgentManifest:
     def test_compute_hash_deterministic(self):
         """Hash must be deterministic across calls and object reconstruction."""
-        m1 = AgentManifest("a1", frozenset({"x", "y"}), frozenset({"z"}), 1000)
-        m2 = AgentManifest("a1", frozenset({"y", "x"}), frozenset({"z"}), 1000)
+        m1 = AgentManifest("a1", "test task", frozenset({"x", "y"}), frozenset({"z"}), 1000)
+        m2 = AgentManifest("a1", "test task", frozenset({"y", "x"}), frozenset({"z"}), 1000)
         assert m1.compute_hash() == m2.compute_hash()
         assert m1.compute_hash() == m1.compute_hash()
 
     def test_manifest_is_hashable(self):
         """Frozen dataclass with frozenset fields must be hashable."""
-        m = AgentManifest("a1", frozenset({"x"}), frozenset({"y"}), 1000)
+        m = AgentManifest("a1", "test task", frozenset({"x"}), frozenset({"y"}), 1000)
         d = {m: "value"}
         assert d[m] == "value"
 
     def test_compute_hash_differs_for_different_manifests(self):
         """Different manifests must produce different hashes."""
-        m1 = AgentManifest("a1", frozenset({"x"}), frozenset({"y"}), 1000)
-        m2 = AgentManifest("a2", frozenset({"x"}), frozenset({"y"}), 1000)
+        m1 = AgentManifest("a1", "test task", frozenset({"x"}), frozenset({"y"}), 1000)
+        m2 = AgentManifest("a2", "test task different", frozenset({"x"}), frozenset({"y"}), 1000)
         assert m1.compute_hash() != m2.compute_hash()
 
 
@@ -40,7 +40,7 @@ class TestRecencySlicePacker:
         """Empty payload returns Success with empty dict."""
         packer = RecencySlicePacker()
         payload: dict[str, str] = {}
-        manifest = AgentManifest("a1", frozenset(), frozenset(), 100)
+        manifest = AgentManifest("a1", "test task", frozenset(), frozenset(), 100)
         result = packer.pack(payload, manifest)
         assert isinstance(result, Success)
         assert result.value == {}
@@ -48,7 +48,7 @@ class TestRecencySlicePacker:
         """Single section exceeding max_tokens returns empty slice, not truncated."""
         packer = RecencySlicePacker()
         payload = {"section_1": "x" * 10000}
-        manifest = AgentManifest("a1", frozenset(), frozenset(), 100)
+        manifest = AgentManifest("a1", "test task", frozenset(), frozenset(), 100)
         result = packer.pack(payload, manifest)
         assert isinstance(result, Success)
         assert result.value == {}
@@ -61,7 +61,7 @@ class TestRecencySlicePacker:
             "section_2": "b",
             "section_3": "c",
         }
-        manifest = AgentManifest("a1", frozenset(), frozenset(), 20)
+        manifest = AgentManifest("a1", "test task", frozenset(), frozenset(), 20)
         result = packer.pack(payload, manifest)
         assert isinstance(result, Success)
         assert "section_1" in result.value
@@ -72,7 +72,7 @@ class TestStructuralSlicePacker:
         """Selecting permitted sections passes without error."""
         packer = StructuralSlicePacker()
         payload = {"section_a": "content", "section_b": "content2"}
-        manifest = AgentManifest("a1", frozenset(["section_a", "section_b"]), frozenset(), 1000)
+        manifest = AgentManifest("a1", "test task", frozenset(["section_a", "section_b"]), frozenset(), 1000)
         result = packer.pack(payload, manifest)
         assert isinstance(result, Success)
         assert result.value == payload
@@ -81,7 +81,7 @@ class TestStructuralSlicePacker:
         """Missing declared read section must return Failure."""
         packer = StructuralSlicePacker()
         payload = {"section_a": "content"}
-        manifest = AgentManifest("a1", frozenset(["section_a", "section_b"]), frozenset(), 1000)
+        manifest = AgentManifest("a1", "test task", frozenset(["section_a", "section_b"]), frozenset(), 1000)
         result = packer.pack(payload, manifest)
         assert isinstance(result, Failure)
         assert "section_b" in result.reason
@@ -99,7 +99,7 @@ class TestRelevanceSlicePacker:
         provider = FixedEmbeddingProvider([1.0, 0.0])
         packer = RelevanceSlicePacker(provider)
         payload = {"section_1": "content1", "section_2": "content2"}
-        manifest = AgentManifest("a1", frozenset(), frozenset(), 1000)
+        manifest = AgentManifest("a1", "test task", frozenset(), frozenset(), 1000)
         result = packer.pack(payload, manifest)
         assert isinstance(result, Success)
         assert len(result.value) == 2
