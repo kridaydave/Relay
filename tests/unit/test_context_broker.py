@@ -177,32 +177,3 @@ class TestCreateNextEnvelope:
         )
 
         assert result.value.token_budget_used > 100
-
-    @patch("relay.context_broker.create_next_envelope")
-    def test_broker_next_envelope_fails_on_token_budget_exceeded(self, mock_create):
-        mock_create.return_value = Failure(
-            reason="Token budget exceeded: 9000 > 8000",
-            code="TOKEN_BUDGET_EXCEEDED"
-        )
-
-        broker = ContextBroker(signing_secret="a" * 32, token_budget_total=8000)
-        previous_envelope = ContextEnvelope(
-            relay_version=RELAY_VERSION,
-            pipeline_id="pipeline-123",
-            step=1,
-            timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
-            token_budget_used=7500,
-            token_budget_total=8000,
-            payload={"data": "initial"},
-            manifest_hash="",
-            signature="sig1"
-        )
-
-        result = broker.create_next_envelope(
-            previous_envelope=previous_envelope,
-            agent_output={"result": "output"},
-        )
-
-        assert isinstance(result, Failure)
-        assert result.code == "TOKEN_BUDGET_EXCEEDED"
-        assert "Token budget exceeded" in result.reason

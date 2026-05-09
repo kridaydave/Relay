@@ -19,6 +19,14 @@ from typing import Any
 from relay.types import ErrorCode, Failure, Result, Success
 
 RELAY_VERSION = "0.2.0"
+
+__all__ = [
+    "RELAY_VERSION",
+    "ContextEnvelope",
+    "create_initial_envelope",
+    "create_next_envelope",
+    "verify_signature",
+]
 PIPELINE_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{1,128}$")
 _MIN_SECRET_LENGTH = 32
 
@@ -167,6 +175,9 @@ def create_next_envelope(
 ) -> Result[ContextEnvelope]:
     """Create a subsequent envelope for the next step.
 
+    Budget validation is performed by HardCapEnforcer before envelope creation.
+    This function trusts that the budget check has already been done.
+
     Args:
         secret: HMAC signing secret. REQUIRED - must be provided by caller.
             Do NOT use default or placeholder values in production.
@@ -176,11 +187,6 @@ def create_next_envelope(
         return Failure(reason="agent_output cannot be empty", code=ErrorCode.INVALID_PAYLOAD)
 
     token_used = previous_envelope.token_budget_used + _estimate_tokens(agent_output)
-    if token_used > previous_envelope.token_budget_total:
-        return Failure(
-            reason=f"Token budget exceeded: {token_used} > {previous_envelope.token_budget_total}",
-            code=ErrorCode.TOKEN_BUDGET_EXCEEDED,
-        )
 
     envelope = ContextEnvelope(
         relay_version=RELAY_VERSION,

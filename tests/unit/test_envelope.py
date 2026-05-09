@@ -132,26 +132,6 @@ class TestCreateNextEnvelope:
         assert second.value.pipeline_id == first.value.pipeline_id
         assert second.value.token_budget_total == first.value.token_budget_total
 
-    def test_create_next_envelope_fails_on_token_budget_exceeded(
-        self, secret, initial_payload
-    ):
-        first = create_initial_envelope(
-            pipeline_id="pipeline-123",
-            initial_payload=initial_payload,
-            secret=secret,
-            token_budget_total=100,
-            manifest_hash="",
-        )
-        large_payload = {"data": "x" * 1000}
-
-        second = create_next_envelope(
-            previous_envelope=first.value, secret=secret, agent_output=large_payload, manifest_hash=""
-        )
-
-        assert isinstance(second.reason, str)
-        assert "budget" in second.reason.lower()
-        assert second.code == "TOKEN_BUDGET_EXCEEDED"
-
     def test_create_next_envelope_fails_on_empty_agent_output(self, secret, initial_payload):
         first = create_initial_envelope(
             pipeline_id="pipeline-123", initial_payload=initial_payload, secret=secret, manifest_hash=""
