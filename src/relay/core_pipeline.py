@@ -93,7 +93,7 @@ class CoreRelayPipeline:
             if current_envelope is None:
                 return self._handle_initial_step(agent_output, manifest)
 
-            return self._handle_subsequent_step(agent_output, manifest)
+            return self._handle_subsequent_step(current_envelope, agent_output, manifest)
 
     def _handle_initial_step(
         self,
@@ -120,6 +120,7 @@ class CoreRelayPipeline:
 
     def _handle_subsequent_step(
         self,
+        current_envelope: ContextEnvelope,
         agent_output: dict[str, Any],
         manifest: Optional[AgentManifest],
     ) -> Result[ContextEnvelope]:
@@ -128,13 +129,6 @@ class CoreRelayPipeline:
         REQUIRES: caller holds self._state._lock via transaction() context manager.
         Must NOT call self._state.transaction() — lock is non-reentrant.
         """
-        current_envelope = self._state.current()
-        if current_envelope is None:
-            return Failure(
-                reason="Current envelope is None - invalid state",
-                code=ErrorCode.INVALID_STATE,
-            )
-
         budget_result = self._check_budget(manifest, current_envelope)
         if isinstance(budget_result, Failure):
             return budget_result
