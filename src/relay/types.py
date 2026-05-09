@@ -6,10 +6,11 @@ Does NOT: handle specific domain errors, validate data, or make decisions.
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import TypeVar, Generic, Callable, overload
+from typing import TypeVar, Generic, Callable, overload, TypeAlias
 
 
 T = TypeVar("T")
+ResultT = TypeVar("ResultT")
 
 
 class ErrorCode(str, Enum):
@@ -71,7 +72,7 @@ class RollbackSuccess(Generic[T]):
     reason: str
 
 
-Result = Success[T] | RollbackSuccess[T] | Failure
+Result: TypeAlias = Success[ResultT] | RollbackSuccess[ResultT] | Failure
 
 
 def is_success(result: Result[T]) -> bool:
@@ -85,10 +86,10 @@ def is_failure(result: Result[T]) -> bool:
 
 
 def unwrap(result: Result[T]) -> T:
-    """Extract value from Success or RollbackSuccess, raise on Failure."""
-    if isinstance(result, (Success, RollbackSuccess)):
+    """Extract value from Success, raise on Failure or RollbackSuccess."""
+    if isinstance(result, Success):
         return result.value
-    raise ValueError(f"Unwrap called on Failure: {result.reason}")
+    raise ValueError(f"Unwrap called on non-Success: {result}")
 
 
 def unwrap_or(result: Result[T], default: T) -> T:

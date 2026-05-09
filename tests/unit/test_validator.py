@@ -210,20 +210,30 @@ class TestComputeDiff:
 
 class TestHallucinationDetection:
     def test_hallucination_detection_at_threshold(self):
-        """Test that exactly 2.0x ratio is not flagged (boundary case)."""
+        """Test that exactly 2.0x ratio is not flagged (boundary case).
+
+        Uses 3+ char entity names that _extract_entities actually parses.
+        Previous: 2 entities (alice, bob), Current: 4 entities (alice, bob, charlie, david)
+        Ratio: new=2, removed=0 -> replaced with 1 -> ratio=2.0 exactly (not > threshold).
+        """
         validator = HandoffValidator()
-        previous_payload = {"entities": ["a", "b"]}
-        current_payload = {"entities": ["a", "b", "c", "d"]}
+        previous_payload = {"entities": ["alice", "bob"]}
+        current_payload = {"entities": ["alice", "bob", "charlie", "david"]}
 
         result = validator._detect_hallucination(previous_payload, current_payload)
 
         assert result is None
 
     def test_hallucination_detection_above_threshold(self):
-        """Test that ratio above 2.0x triggers detection."""
+        """Test that ratio above 2.0x triggers detection.
+
+        Uses 3+ char entity names in keys that _extract_entities recognizes.
+        Previous: 2 entities (alice, bob), Current: 5 entities (alice, bob, charlie, david, eve)
+        Ratio: new=3, removed=0 -> replaced with 1 -> ratio=3.0 > 2.0 threshold.
+        """
         validator = HandoffValidator()
-        previous_payload = {"entity": "a", "id": "b"}
-        current_payload = {"entity": "a", "id": "b", "name": "c", "identifier": "d", "subject": "e"}
+        previous_payload = {"entity": "alice", "id": "bob"}
+        current_payload = {"entity": "alice", "id": "bob", "name": "charlie", "identifier": "david", "subject": "eve"}
 
         result = validator._detect_hallucination(previous_payload, current_payload)
 
@@ -231,10 +241,15 @@ class TestHallucinationDetection:
         assert "Entity fabrication detected" in result
 
     def test_hallucination_detection_below_threshold(self):
-        """Test that ratio below 2.0x does not trigger detection."""
+        """Test that ratio below 2.0x does not trigger detection.
+
+        Uses 3+ char entity names that _extract_entities extracts from list values.
+        Previous: 3 entities (alice, bob, charlie), Current: 4 entities (alice, bob, charlie, david)
+        Ratio: new=1, removed=0 -> replaced with 1 -> ratio=1.0 < 2.0 threshold.
+        """
         validator = HandoffValidator()
-        previous_payload = {"entities": ["a", "b", "c"]}
-        current_payload = {"entities": ["a", "b", "c", "d"]}
+        previous_payload = {"entities": ["alice", "bob", "charlie"]}
+        current_payload = {"entities": ["alice", "bob", "charlie", "david"]}
 
         result = validator._detect_hallucination(previous_payload, current_payload)
 

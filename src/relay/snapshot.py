@@ -184,7 +184,9 @@ class SnapshotStore:
             with open(temp_index_path, "w") as f:
                 json.dump(index_data, f, indent=2)
             os.replace(temp_index_path, index_path)
-        except Exception as e:
+        except json.JSONDecodeError as e:
+            return Failure(reason=f"Corrupted index JSON: {e}", code=ErrorCode.CORRUPTED_INDEX)
+        except OSError as e:
             return Failure(reason=f"Failed to update index: {e}", code=ErrorCode.INDEX_UPDATE_FAILED)
         
         return Success(None)
@@ -192,11 +194,6 @@ class SnapshotStore:
     def _load_index(self, pipeline_id: str) -> Result[dict[str, Any]]:
         """Load the index for a pipeline."""
         index_path = self._storage_path / pipeline_id / "index.json"
-        if not index_path.exists():
-            return Failure(
-                reason=f"Index not found for pipeline: {pipeline_id}",
-                code=ErrorCode.INDEX_NOT_FOUND,
-            )
         try:
             with open(index_path, "r") as f:
                 data = json.load(f)
@@ -206,6 +203,11 @@ class SnapshotStore:
                     reason="Invalid index format - expected dict",
                     code=ErrorCode.INVALID_INDEX,
                 )
+        except FileNotFoundError:
+            return Failure(
+                reason=f"Index not found for pipeline: {pipeline_id}",
+                code=ErrorCode.INDEX_NOT_FOUND,
+            )
         except json.JSONDecodeError as e:
             return Failure(
                 reason=f"Corrupted index JSON: {e}",

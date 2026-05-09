@@ -117,17 +117,7 @@ def verify_signature(envelope: ContextEnvelope, secret: str) -> bool:
 
 
 def _sign_envelope(envelope: ContextEnvelope, secret: str) -> ContextEnvelope:
-    """Create a signed copy of the envelope.
-
-    Raises:
-        ValueError: If secret is shorter than _MIN_SECRET_LENGTH characters.
-            Weak secrets are a programmer error, not an operational failure.
-    """
-    if len(secret) < _MIN_SECRET_LENGTH:
-        raise ValueError(
-            f"signing_secret must be at least {_MIN_SECRET_LENGTH} characters, "
-            f"got {len(secret)}. Weak secrets compromise envelope integrity."
-        )
+    """Create a signed copy of the envelope."""
     signature = _compute_signature(envelope, secret)
     return envelope.with_signature(signature)
 

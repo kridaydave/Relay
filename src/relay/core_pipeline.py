@@ -111,7 +111,7 @@ class CoreRelayPipeline:
         if isinstance(result, Failure):
             return result
 
-        apply_result = self._apply_manifest(result.value, manifest, validate=False)
+        apply_result = self._apply_manifest(result.value, manifest, validate=True)
         if isinstance(apply_result, Failure):
             return apply_result
         new_envelope = apply_result.value
@@ -163,11 +163,12 @@ class CoreRelayPipeline:
         envelope: ContextEnvelope,
         manifest: Optional[AgentManifest],
     ) -> Result[ContextEnvelope]:
-        """Apply manifest hash to envelope, optionally validating write boundaries.
+        """Apply manifest hash to envelope when manifest is provided.
 
-        Args:
-            validate: True for subsequent steps (has prior payload to diff against).
-                      False for the initial step.
+        Validates write boundaries (agent can only write to sections in
+        manifest.writes). Returns Success with the updated envelope if no
+        manifest, or if manifest is valid.
+
         REQUIRES: caller holds self._state._lock.
         """
         if manifest is None:
@@ -213,9 +214,9 @@ class CoreRelayPipeline:
         """Apply manifest hash to envelope, optionally validating write boundaries.
 
         Args:
-            validate: True for subsequent steps (has prior payload to diff against).
-                      False for the initial step.
-            REQUIRES: caller holds self._state._lock.
+            validate: True to validate write boundaries against manifest. Should be
+                      True when a manifest is provided to catch boundary violations.
+        REQUIRES: caller holds self._state._lock.
         """
         if manifest is None:
             return Success(envelope)
