@@ -33,6 +33,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Deterministic output** — Fixed `StructuralSlicePacker` to sort manifest.reads keys for deterministic payload slicing
 - **R19 (Docstring accuracy)** — Updated `core_pipeline.py` module docstring to reflect v0.2 responsibilities (budget enforcement, slicer dispatch)
 - **Deprecation removal** — Removed deprecated `current_and_lock()` method, migrated to `transaction()` context manager
+- **Budget gate integration** — Removed duplicate budget check from `create_next_envelope` - budget validation now done only by `HardCapEnforcer` to prevent out-of-sync thresholds
+- **Depth tracking semantics** — Clarified in `_extract_entities` docstring that depth tracks nesting depth from root (not stack size)
+- **SlicePacker base class** — Changed from `NotImplementedError` to `abc.ABC` with `@abstractmethod` to catch missing overrides at class definition time
+- **RelevanceSlicePacker query** — Fixed to use `task_description` instead of `agent_id` for semantic cosine similarity against section content
+- **Module exports** — Added `__all__` to `envelope.py`, `snapshot.py`, `validator.py`, `context_broker.py` to prevent leaking private helpers
+- **R7 violation fix** — `test_validator.py` now uses `_make_envelope` instead of `create_initial_envelope` to stay unit-isolated
+- **R18 invariant test** — Added final-state invariant check to `test_concurrent_rollback_access` to catch inconsistent rollback states
 
 ### Changed
 
