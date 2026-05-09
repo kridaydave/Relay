@@ -5,17 +5,17 @@ from unittest.mock import patch
 
 import pytest
 
-from relay.context_broker import ContextBroker
+from relay.context_broker import ContextBroker, create_context_broker
 from relay.envelope import ContextEnvelope, RELAY_VERSION
 from relay.types import Failure, Success
 
 
 class TestCreateInitialEnvelope:
-    def test_short_secret_raises_on_init(self):
-        """ContextBroker must reject secrets shorter than 32 characters."""
-        with pytest.raises(ValueError) as exc_info:
-            ContextBroker(signing_secret="short", token_budget_total=8000)
-        assert "32 characters" in str(exc_info.value)
+    def test_short_secret_returns_failure(self):
+        """ContextBroker factory must return Failure for secrets shorter than 32 characters."""
+        result = create_context_broker(signing_secret="short", token_budget_total=8000)
+        assert isinstance(result, Failure)
+        assert "32 characters" in result.reason
 
     @patch("relay.context_broker.create_initial_envelope")
     def test_broker_creates_initial_envelope_with_valid_inputs(self, mock_create):
@@ -33,7 +33,9 @@ class TestCreateInitialEnvelope:
             )
         )
 
-        broker = ContextBroker(signing_secret="a" * 32, token_budget_total=8000)
+        broker_result = create_context_broker(signing_secret="a" * 32, token_budget_total=8000)
+        assert isinstance(broker_result, Success)
+        broker = broker_result.value
         result = broker.create_initial_envelope(
             pipeline_id="pipeline-123",
             initial_payload={"data": "test"},

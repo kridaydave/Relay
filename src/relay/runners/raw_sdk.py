@@ -7,6 +7,7 @@ Does NOT: manage retries, streaming, tool parsing, or LLM sessions.
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import time
 from dataclasses import dataclass
@@ -41,12 +42,10 @@ class RawSDKAdapter:
         """Execute the callable and return normalised output."""
         messages = self._build_messages(slice)
         start = time.monotonic()
-        result = self.callable(messages)
-        if asyncio.iscoroutine(result):
-            text = await result
+        if inspect.iscoroutinefunction(self.callable):
+            text = await self.callable(messages)
         else:
-            sync_result = cast(str, result)
-            text = await asyncio.to_thread(self._run_sync, sync_result)
+            text = await asyncio.to_thread(self.callable, messages)
         latency_ms = int((time.monotonic() - start) * 1000)
         return AgentOutput(
             text=text,
@@ -56,7 +55,3 @@ class RawSDKAdapter:
             latency_ms=latency_ms,
             adapter=self.adapter_name,
         )
-
-    def _run_sync(self, result: str) -> str:
-        """Helper to run sync result in thread pool."""
-        return result

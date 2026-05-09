@@ -10,9 +10,38 @@ from dataclasses import dataclass
 from typing import Any
 
 from relay.envelope import ContextEnvelope, create_initial_envelope, create_next_envelope
-from relay.types import Result
+from relay.types import ErrorCode, Failure, Result, Success
 
-__all__ = ["ContextBroker"]
+__all__ = ["ContextBroker", "create_context_broker"]
+
+
+_MIN_SECRET_LENGTH = 32
+
+
+def create_context_broker(
+    signing_secret: str,
+    token_budget_total: int = 8000,
+) -> Result[ContextBroker]:
+    """Factory function to create a ContextBroker with validation.
+
+    Validates signing_secret strength at boundary entry per R16.
+
+    Args:
+        signing_secret: HMAC signing secret. Must be at least 32 characters.
+        token_budget_total: Maximum token budget for envelopes.
+
+    Returns:
+        Success with ContextBroker, or Failure if validation fails.
+    """
+    if len(signing_secret) < _MIN_SECRET_LENGTH:
+        return Failure(
+            reason=(
+                f"signing_secret must be at least {_MIN_SECRET_LENGTH} characters, "
+                f"got {len(signing_secret)}. Weak secrets compromise envelope integrity."
+            ),
+            code=ErrorCode.INVALID_SECRET,
+        )
+    return Success(ContextBroker(signing_secret=signing_secret, token_budget_total=token_budget_total))
 
 
 @dataclass(frozen=True)
@@ -21,17 +50,12 @@ class ContextBroker:
 
     Owns: envelope lifecycle, cryptographic signing, and verification.
     Does NOT: persist snapshots, validate content, or manage pipeline state.
+
+    Note: Use create_context_broker() factory function to construct instances.
+    Direct construction bypasses validation - use the factory for boundary entry.
     """
     signing_secret: str
     token_budget_total: int
-
-    def __post_init__(self) -> None:
-        """Validate the signing secret at boundary entry per R16."""
-        if len(self.signing_secret) < 32:
-            raise ValueError(
-                f"signing_secret must be at least 32 characters, got {len(self.signing_secret)}. "
-                "Weak secrets compromise envelope integrity."
-            )
 
     def create_initial_envelope(
         self,

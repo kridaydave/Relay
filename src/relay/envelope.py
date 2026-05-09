@@ -214,7 +214,10 @@ def _estimate_tokens(payload: dict[str, Any]) -> int:
     This is a coarse approximation suitable for budget estimation but NOT
     for precise token counting. The 3x tolerance is intentionally wide.
 
+    Uses separators=(",", ":") to match the canonical serialization used
+    for signature computation, ensuring token estimate matches actual wire size.
+
     See test_envelope.py::TestTokenEstimation for the ground-truth benchmark.
     """
-    json_str = json.dumps(payload, sort_keys=True)
+    json_str = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return max(1, len(json_str) // 3)

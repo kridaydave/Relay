@@ -144,7 +144,8 @@ class RelevanceSlicePacker(SlicePacker):
         similarities = []
         for key, embedding in section_embeddings.items():
             sim = _cosine_similarity(query_embedding, embedding)
-            similarities.append((key, sim, len(payload[key]) // 3))
+            section_tokens = _estimate_tokens({key: payload[key]})
+            similarities.append((key, sim, section_tokens))
 
         similarities.sort(key=lambda x: x[1], reverse=True)
 

@@ -10,16 +10,10 @@ import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
+from relay.envelope import _estimate_tokens
+
 if TYPE_CHECKING:
     from relay.slicer.manifest import AgentManifest
-
-
-def _estimate_tokens(data: dict[str, Any]) -> int:
-    """Estimate token count by serialised JSON length divided by 4.
-
-    This is a heuristic. Actual token counts vary by model and content.
-    """
-    return len(json.dumps(data, sort_keys=True)) // 4
 
 
 @dataclass(frozen=True)

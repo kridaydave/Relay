@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from relay.budget import HardCapEnforcer, TokenCounter
-from relay.context_broker import ContextBroker
+from relay.context_broker import ContextBroker, create_context_broker
 from relay.envelope import ContextEnvelope
 from relay.pipeline_rollback import RollbackHandler
 from relay.pipeline_snapshot import SnapshotManager
@@ -24,7 +24,8 @@ from relay.validator import (
     validate_manifest_boundaries,
 )
 from relay.runners import AdapterRegistry, AgentOutput, AgentRunner
-from relay.runners.protocol import _estimate_tokens, ContextSlice
+from relay.envelope import _estimate_tokens
+from relay.runners.protocol import ContextSlice
 
 
 def _agent_output_to_payload(
@@ -74,9 +75,12 @@ class CoreRelayPipeline:
     def __post_init__(self) -> None:
         self._pipeline_id = uuid.uuid4().hex
         self._state = PipelineState(pipeline_id=self._pipeline_id)
-        self._context_broker = ContextBroker(
+        broker_result = create_context_broker(
             signing_secret=self.signing_secret, token_budget_total=self.token_budget
         )
+        if isinstance(broker_result, Failure):
+            raise ValueError(broker_result.reason)
+        self._context_broker = broker_result.value
         self._handoff_validator = HandoffValidator()
         self._snapshot_store = SnapshotStore(storage_path=self.storage_path)
         self._snapshot_manager = SnapshotManager(self._snapshot_store)
