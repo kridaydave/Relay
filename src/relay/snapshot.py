@@ -14,6 +14,11 @@ from typing import Any
 from relay.envelope import ContextEnvelope
 from relay.types import ErrorCode, Failure, Result, Success
 
+__all__ = [
+    "SnapshotStore",
+    "InvalidSnapshotIdError",
+]
+
 
 class InvalidSnapshotIdError(Exception):
     """Raised when snapshot ID format is invalid."""

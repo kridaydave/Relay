@@ -15,6 +15,8 @@ from relay.envelope import ContextEnvelope, create_initial_envelope, create_next
 if TYPE_CHECKING:
     from relay.types import Result
 
+__all__ = ["ContextBroker"]
+
 
 @dataclass(frozen=True)
 class ContextBroker:
