@@ -123,13 +123,14 @@ class TestValidateHandoff:
     def test_validator_detects_contradiction_when_critical_key_missing(self, mock_datetime):
         mock_datetime.now.return_value = datetime(2024, 1, 1, tzinfo=timezone.utc)
 
-        previous_result = create_initial_envelope(
+        previous_envelope = _make_envelope(
             pipeline_id="pipeline-123",
-            initial_payload={"entities": ["a"], "actions": ["b"], "facts": ["c"], "constraints": ["x"]},
-            secret="a" * 32,
-            manifest_hash=""
+            step=1,
+            payload={"entities": ["a"], "actions": ["b"], "facts": ["c"], "constraints": ["x"]},
+            token_budget_used=100,
+            token_budget_total=8000,
+            timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc)
         )
-        previous_envelope = previous_result.value
 
         current_envelope = _make_envelope(
             pipeline_id="pipeline-123",
