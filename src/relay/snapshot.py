@@ -194,17 +194,10 @@ class SnapshotStore:
                 if temp_index_path.exists():
                     temp_index_path.unlink()
         except Exception as e:
-<<<<<<< HEAD
             return Failure(
                 reason=f"Failed to update index: {e}",
                 code=ErrorCode.INDEX_UPDATE_FAILED,
             )
-=======
-            return Failure(reason=f"Failed to update index: {e}", code=ErrorCode.INDEX_UPDATE_FAILED)
-
-        except OSError as e:
-            return Failure(reason=f"Failed to update index: {e}", code=ErrorCode.INDEX_UPDATE_FAILED)
->>>>>>> 5cf30ab460b46cfc6a6135babbb0db9784cb8a5b
 
         return Success(None)
 

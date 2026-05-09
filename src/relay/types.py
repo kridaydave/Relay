@@ -6,11 +6,7 @@ Does NOT: handle specific domain errors, validate data, or make decisions.
 
 from dataclasses import dataclass
 from enum import Enum
-<<<<<<< HEAD
 from typing import Callable, Generic, TypeAlias, TypeVar
-=======
-from typing import Callable, Generic, TypeAlias, TypeVar, overload
->>>>>>> 5cf30ab460b46cfc6a6135babbb0db9784cb8a5b
 
 T = TypeVar("T")
 ResultT = TypeVar("ResultT")
