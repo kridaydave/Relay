@@ -90,6 +90,15 @@ class ContextEnvelope:
         )
 
 
+def _canonical_timestamp(dt: datetime) -> str:
+    """Return ISO-8601 timestamp with seconds precision, always with UTC offset +00:00.
+
+    Uses timespec='seconds' so Python 3.11 (which may emit Z) and 3.12 (which may
+    emit +00:00) produce identical output. Both normalise to +00:00 with this spec.
+    """
+    return dt.isoformat(timespec="seconds")
+
+
 def _compute_signature(envelope: ContextEnvelope, secret: str) -> str:
     """Compute HMAC-SHA256 signature for an envelope.
 
@@ -97,7 +106,7 @@ def _compute_signature(envelope: ContextEnvelope, secret: str) -> str:
     {relay_version}|{pipeline_id}|{step}|{timestamp.isoformat()}|{token_budget_used}|{token_budget_total}|{manifest_hash}|{json.dumps(payload, sort_keys=True)}
     """
     payload = json.dumps(envelope.payload, sort_keys=True, separators=(",", ":"))
-    message = f"{envelope.relay_version}|{envelope.pipeline_id}|{envelope.step}|{envelope.timestamp.isoformat()}|{envelope.token_budget_used}|{envelope.token_budget_total}|{envelope.manifest_hash}|{payload}"
+    message = f"{envelope.relay_version}|{envelope.pipeline_id}|{envelope.step}|{_canonical_timestamp(envelope.timestamp)}|{envelope.token_budget_used}|{envelope.token_budget_total}|{envelope.manifest_hash}|{payload}"
     return hmac.new(secret.encode(), message.encode(), hashlib.sha256).hexdigest()
 
 

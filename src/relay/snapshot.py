@@ -218,25 +218,21 @@ class SnapshotStore:
             )
 
     def _envelope_to_dict(self, envelope: ContextEnvelope) -> dict[str, Any]:
-        """Convert envelope to JSON-serializable dict."""
+        """Convert envelope to JSON-serializable dict.
+
+        Uses timespec='seconds' so timestamps are consistent across Python 3.11/3.12.
+        """
         return {
             "relay_version": envelope.relay_version,
             "pipeline_id": envelope.pipeline_id,
             "step": envelope.step,
-            "timestamp": envelope.timestamp.isoformat(),
+            "timestamp": envelope.timestamp.isoformat(timespec="seconds"),
             "token_budget_used": envelope.token_budget_used,
             "token_budget_total": envelope.token_budget_total,
             "payload": envelope.payload,
             "manifest_hash": envelope.manifest_hash,
             "signature": envelope.signature,
         }
-
-    def _require_field(self, data: dict[str, Any], key: str, expected_type: type) -> Any:
-        """Validate and return a field from data dict."""
-        value = data.get(key)
-        if value is None or not isinstance(value, expected_type):
-            return Failure(reason=f"Missing or invalid {key}", code=ErrorCode.INVALID_SNAPSHOT)
-        return value
 
     def _require_str(self, data: dict[str, Any], key: str) -> "Result[str]":
         """Validate and return a string field from data dict."""
