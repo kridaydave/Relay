@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+## [0.3.0] - 2026-05-09
+
+### Added
+
+- **`relay.runners` — Layer 3 Agent Runner adapter layer**
+  - `AgentRunner` Protocol (`@runtime_checkable`) — all adapters implement `async def run(slice, manifest) -> AgentOutput`
+  - `AgentOutput` and `ContextSlice` frozen dataclasses — normalised data models with invariant validation
+  - `AdapterRegistry` — named adapter registration with `get()` returning `Result[AgentRunner]`
+  - `RawSDKAdapter` — wraps sync or async callables (OpenAI, Anthropic, any SDK directly)
+  - `LangChainAdapter` — wraps LangChain Runnables via `ainvoke` with `to_thread` fallback
+  - `CrewAIAdapter` — single-turn execution; rejects agents with `memory=True` (ValueError at construction)
+  - `AutoGenAdapter` — fresh `UserProxyAgent` per run to prevent history leakage across steps
+  - `LocalModelAdapter` — OpenAI-compatible REST endpoints (Ollama, vLLM); uses provider `usage.total_tokens` when available
+
+- **`CoreRelayPipeline.execute_step_with_runner()`** — async entry point that wires adapter output into the full pipeline: signing, validation, snapshotting, rollback
+- **`CoreRelayPipeline._build_context_slice()`** — builds bounded `ContextSlice` filtered to `manifest.reads`
+- **`_agent_output_to_payload()`** — normalises `AgentOutput` to payload dict for `execute_step_with_manifest`
+
+### Testing
+
+- 56 runner unit tests + 6 integration tests, all passing
+- `mypy --strict` passes across all 26 source files
+
+### Dependencies
+
+- Added optional extras: `langchain`, `crewai`, `autogen`, `local`, `all`
+- All framework dependencies are lazy-imported inside adapter methods
+
+### Fixed (from Coding Rules)
+
+- `ADAPTER_NOT_FOUND`, `NO_REGISTRY`, `ADAPTER_EXECUTION_FAILED` error codes added to `ErrorCode` enum
+- `Result` type alias uses properly bound `ResultT` TypeVar
+- No bare `except:` in any runner module
+
+---
+
 ## [0.2.3] - 2026-05-09
 
 ### Fixed (Critical)

@@ -18,6 +18,7 @@ Relay treats context like a ledger: append-only, signed at every step, and rever
 
 ## Features
 
+- **Agent Runners** — Universal adapter layer for any LLM provider or framework (v0.3)
 - **Context Broker** — Normalizes, timestamps, and cryptographically signs context envelopes
 - **Handoff Validator** — Detects contradictions and triggers rollback on corruption
 - **Snapshot Store** — Persists immutable checkpoints for automatic rollback
@@ -133,6 +134,65 @@ The budget enforcer checks projected token cost before each call. The slicer sel
 
 ---
 
+## Agent Runners (v0.3)
+
+Use the adapter registry to plug any LLM provider into Relay without touching Relay internals:
+
+```python
+import asyncio
+from relay.runners import AdapterRegistry, RawSDKAdapter, AgentManifest
+
+registry = AdapterRegistry()
+
+# Register any callable — sync or async
+def openai_callable(messages):
+    return openai.chat.completions.create(model="gpt-4", messages=messages)
+
+registry.register("openai", RawSDKAdapter(callable=openai_callable))
+
+# Or use bundled adapters
+from relay.runners import LocalModelAdapter
+registry.register("ollama", LocalModelAdapter(base_url="http://localhost:11434", model="llama3"))
+```
+
+```python
+from relay.core_pipeline import CoreRelayPipeline
+
+pipeline = CoreRelayPipeline(
+    signing_secret="your-secret",
+    token_budget=8000,
+    registry=registry,
+)
+
+manifest = AgentManifest(
+    agent_id="openai",
+    task_description="Analyze entities and summarize findings",
+    reads=frozenset({"entities", "summary"}),
+    writes=frozenset({"analysis"}),
+    max_tokens=4000,
+)
+
+async def run():
+    # First step: seed the pipeline
+    pipeline.execute_step({"entities": ["Apple"], "summary": "revenue up"})
+
+    # Execute via adapter — no LLM calls in Relay, only normalisation
+    result = await pipeline.execute_step_with_runner("openai", manifest)
+    # result is Success(SignedEnvelope) or Failure(ErrorCode.*)
+```
+
+All adapters are lazy-loaded. Install only what you need:
+
+```bash
+pip install relay-middleware[langchain]   # LangChain Runnable
+pip install relay-middleware[crewai]      # CrewAI Agent
+pip install relay-middleware[autogen]     # AutoGen AssistantAgent
+pip install relay-middleware[local]       # Ollama / vLLM / OpenAI-compatible
+pip install relay-middleware[all]         # everything
+```
+
+---
+
 ## How It Works
 
 ```
@@ -153,7 +213,7 @@ Every context move between agents is wrapped in a signed, immutable envelope:
 
 ```python
 {
-  "relay_version": "0.2.0",
+  "relay_version": "0.3.0",
   "pipeline_id": "uuid-v4",
   "step": 2,
   "timestamp": "2026-05-04T10:22:00Z",
