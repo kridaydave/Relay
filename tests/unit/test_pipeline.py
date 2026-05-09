@@ -352,6 +352,18 @@ class TestConcurrentPipeline:
         assert len(results) >= 0
         assert all(isinstance(r, Failure) or isinstance(r, Success) or isinstance(r, RollbackSuccess) for r in results)
 
+        final_envelope = pipeline._state._current_envelope
+        previous_envelopes = pipeline._state._previous_envelopes
+        snapshot_ids = pipeline._state._snapshot_ids
+
+        if final_envelope is not None:
+            current_step = final_envelope.step
+            if current_step > 1:
+                assert len(previous_envelopes) > 0 or snapshot_ids.get(current_step) is not None, (
+                    f"R18 invariant violated: step {current_step} has no snapshot and no previous envelopes. "
+                    f"Previous envelopes: {len(previous_envelopes)}, Snapshots: {snapshot_ids}"
+                )
+
     @patch("relay.context_broker.ContextBroker.create_initial_envelope")
     def test_thread_pool_executor_operations(
         self, mock_initial, temp_storage
