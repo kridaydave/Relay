@@ -5,6 +5,7 @@ Does NOT: define SliceStrategy enum, own EmbeddingProvider protocol,
           or count tokens precisely (delegates to envelope._estimate_tokens).
 """
 
+from abc import ABC, abstractmethod
 import json
 from typing import Any
 from math import sqrt
@@ -29,9 +30,10 @@ def _cosine_similarity(a: list[float], b: list[float]) -> float:
     return dot_product / (magnitude_a * magnitude_b)
 
 
-class SlicePacker:
+class SlicePacker(ABC):
     """Base class for slice packer strategies."""
 
+    @abstractmethod
     def pack(
         self, payload: dict[str, Any], manifest: AgentManifest
     ) -> Result[dict[str, Any]]:
@@ -44,7 +46,6 @@ class SlicePacker:
         Returns:
             Success with selected subset of payload sections, or Failure on error.
         """
-        raise NotImplementedError
 
 
 class RecencySlicePacker(SlicePacker):
@@ -135,7 +136,7 @@ class RelevanceSlicePacker(SlicePacker):
         if not payload:
             return Success({})
 
-        query_embedding = self.provider.embed(manifest.agent_id)
+        query_embedding = self.provider.embed(manifest.task_description)
         section_embeddings = {
             key: self.provider.embed(text) for key, text in payload.items()
         }
