@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "relay-middleware"
-version = "0.3.2"
+version = "0.3.3"
 description = "Context-driven data pipeline with budget enforcement and pluggable context slicing"
 readme = "README.md"
 authors = [
