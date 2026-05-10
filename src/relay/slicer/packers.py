@@ -1,7 +1,7 @@
 """Slice packer implementations for context selection strategies.
 
 Owns: RecencySlicePacker, StructuralSlicePacker, RelevanceSlicePacker.
-Does NOT: define SliceStrategy enum, own EmbeddingProvider protocol,
+Does NOT: own EmbeddingProvider protocol,
           or count tokens precisely (delegates to envelope._estimate_tokens).
 """
 
