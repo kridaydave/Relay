@@ -70,6 +70,7 @@ class RecencySlicePacker(SlicePacker):
             key=lambda k: (
                 int(k.split("_")[-1]) if "_" in k and k.split("_")[-1].isdigit() else 0
             ),
+            reverse=True,
         )
 
         result: dict[str, Any] = {}
