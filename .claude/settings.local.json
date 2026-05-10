@@ -14,7 +14,8 @@
       "Bash(python -m pytest tests/unit/test_budget.py tests/unit/test_pipeline.py -v --tb=short)",
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
-      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\NewAdmin\\\\Desktop\\\\Relay\" -Recurse -Filter \"*.py\")"
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\NewAdmin\\\\Desktop\\\\Relay\" -Recurse -Filter \"*.py\")",
+      "Bash(dir C:\\\\Users\\\\NewAdmin\\\\Desktop\\\\Relay\\\\docs *)"
     ]
   }
 }
