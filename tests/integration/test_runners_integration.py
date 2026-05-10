@@ -12,6 +12,7 @@ import pytest
 from relay.runners import AdapterRegistry
 from relay.runners.protocol import AgentOutput, ContextSlice
 from relay.slicer.manifest import AgentManifest
+from tests.conftest import FixedCounter
 from tests.unit.test_runners.conftest import FixedAgentRunner
 
 
@@ -178,3 +179,69 @@ async def test_context_slice_empty_on_first_step(temp_storage: str):
     assert len(captured_slice) == 1
     assert captured_slice[0].step == 0
     assert captured_slice[0].sections == {}
+
+
+@pytest.mark.asyncio
+async def test_pipeline_returns_failure_when_pipeline_budget_exceeded(temp_storage: str):
+    """Pipeline budget exceeded must return Failure(code=BUDGET_EXCEEDED)."""
+    from relay.core_pipeline import CoreRelayPipeline
+    from relay.types import Failure
+
+    registry = AdapterRegistry()
+    registry.register("agent-1", FixedAgentRunner(output_text="analysis complete"))
+
+    pipeline = CoreRelayPipeline(
+        signing_secret="a" * 32,
+        token_budget=5,
+        token_counter=FixedCounter(100),
+        storage_path=temp_storage,
+        registry=registry,
+    )
+
+    pipeline.execute_step({"input": "some data to fill slice"})
+
+    manifest = AgentManifest(
+        agent_id="agent-1",
+        task_description="Process input",
+        reads=frozenset({"input"}),
+        writes=frozenset({"text"}),
+        max_tokens=4000,
+    )
+
+    result = await pipeline.execute_step_with_runner("agent-1", manifest)
+
+    assert isinstance(result, Failure)
+    assert result.code == "BUDGET_EXCEEDED"
+
+
+@pytest.mark.asyncio
+async def test_pipeline_returns_failure_when_agent_max_tokens_exceeded(temp_storage: str):
+    """Agent manifest.max_tokens exceeded must return Failure(code=TOKEN_BUDGET_EXCEEDED)."""
+    from relay.core_pipeline import CoreRelayPipeline
+    from relay.types import Failure
+
+    registry = AdapterRegistry()
+    registry.register("agent-1", FixedAgentRunner(output_text="analysis complete"))
+
+    pipeline = CoreRelayPipeline(
+        signing_secret="a" * 32,
+        token_budget=8000,
+        token_counter=FixedCounter(100),
+        storage_path=temp_storage,
+        registry=registry,
+    )
+
+    pipeline.execute_step({"input": "some data to fill slice"})
+
+    manifest = AgentManifest(
+        agent_id="agent-1",
+        task_description="Process input",
+        reads=frozenset({"input"}),
+        writes=frozenset({"text"}),
+        max_tokens=1,
+    )
+
+    result = await pipeline.execute_step_with_runner("agent-1", manifest)
+
+    assert isinstance(result, Failure)
+    assert result.code == "TOKEN_BUDGET_EXCEEDED"

@@ -90,7 +90,13 @@ def unwrap(result: Result[T]) -> T:
 
 
 def unwrap_or(result: Result[T], default: T) -> T:
-    """Extract value from Success, return default on Failure."""
+    """Extract value from Success, return default on Failure or RollbackSuccess.
+
+    RollbackSuccess carries a restored value but callers of unwrap_or typically
+    want the default on any non-Success path — this is a deliberate design choice
+    that differs from map_result (which transforms RollbackSuccess). Use map_result
+    if you need to transform the rollback value.
+    """
     if isinstance(result, Success):
         return result.value
     return default

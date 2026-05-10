@@ -27,11 +27,11 @@ class RawSDKAdapter:
     """Adapter wrapping sync or async callables as AgentRunner.
 
     Args:
-        callable: A sync or async callable that takes messages and returns text.
+        fn: A sync or async callable that takes messages and returns text.
         adapter_name: Name for this adapter in AgentOutput.
     """
 
-    callable: SyncCallable | AsyncCallable
+    fn: SyncCallable | AsyncCallable
     adapter_name: str = "raw_sdk"
 
     def _build_messages(self, slice: ContextSlice) -> MessageList:
@@ -42,10 +42,10 @@ class RawSDKAdapter:
         """Execute the callable and return normalised output."""
         messages = self._build_messages(slice)
         start = time.monotonic()
-        if inspect.iscoroutinefunction(self.callable):
-            text = await self.callable(messages)
+        if inspect.iscoroutinefunction(self.fn):
+            text = await self.fn(messages)
         else:
-            text = await asyncio.to_thread(self.callable, messages)
+            text = await asyncio.to_thread(self.fn, messages)
         latency_ms = int((time.monotonic() - start) * 1000)
         return AgentOutput(
             text=text,

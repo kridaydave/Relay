@@ -31,7 +31,7 @@ class PipelineState:
 
     @property
     def snapshot_ids(self) -> dict[int, str]:
-        return dict(self._snapshot_ids)
+        return self._snapshot_ids
 
     def _assert_lock_held(self) -> None:
         """Assert _lock is held by the calling thread. Active only when __debug__ is True.

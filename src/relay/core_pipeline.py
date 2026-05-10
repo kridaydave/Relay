@@ -11,7 +11,7 @@ from typing import Any, Optional
 
 from relay.budget import HardCapEnforcer, TokenCounter
 from relay.context_broker import ContextBroker, create_context_broker
-from relay.envelope import ContextEnvelope, estimate_tokens
+from relay.envelope import _compute_signature, ContextEnvelope, estimate_tokens
 from relay.pipeline_rollback import RollbackHandler
 from relay.pipeline_snapshot import SnapshotManager
 from relay.pipeline_state import PipelineState
@@ -133,6 +133,10 @@ class CoreRelayPipeline:
         REQUIRES: caller holds self._state._lock via transaction() context manager.
         Must NOT call self._state.transaction() — lock is non-reentrant.
         """
+        budget_result = self._check_budget(manifest, None)
+        if isinstance(budget_result, Failure):
+            return budget_result
+
         result = self._context_broker.create_initial_envelope(
             pipeline_id=self._pipeline_id, initial_payload=agent_output
         )
@@ -178,12 +182,56 @@ class CoreRelayPipeline:
     def _check_budget(
         self,
         manifest: Optional[AgentManifest],
-        current_envelope: ContextEnvelope,
+        current_envelope: ContextEnvelope | None,
     ) -> Result[None]:
-        """Check token budget if manifest and enforcer present."""
+        """Check token budget if manifest and enforcer present.
+
+        Checks both pipeline-level budget (token_budget_total) and per-agent
+        budget (manifest.max_tokens) when available.
+
+        When current_envelope is None (initial step), token_budget_used is 0.
+        """
         if manifest is not None and self._enforcer is not None:
-            projected = self._slice_payload(manifest, current_envelope)
-            return self._enforcer.check(current_envelope, projected)
+            if current_envelope is not None:
+                projected = self._slice_payload(manifest, current_envelope)
+            else:
+                projected = json.dumps({s: "<slice>" for s in manifest.writes})
+            budget_used = (
+                current_envelope.token_budget_used
+                if current_envelope is not None
+                else 0
+            )
+            envelope_for_check = current_envelope
+            if envelope_for_check is None:
+                # Build a temporary envelope for budget checking on initial step.
+                from datetime import datetime, timezone
+
+                envelope_for_check = ContextEnvelope(
+                    relay_version="0.0.0",
+                    pipeline_id=self._pipeline_id,
+                    step=0,
+                    timestamp=datetime.now(timezone.utc),
+                    token_budget_used=budget_used,
+                    token_budget_total=self.token_budget,
+                    payload={},
+                    manifest_hash="",
+                    signature="",
+                )
+            enforcer_result = self._enforcer.check(envelope_for_check, projected)
+            if isinstance(enforcer_result, Failure):
+                return enforcer_result
+
+            # Per-agent max_tokens check (manifest.max_tokens).
+            if manifest.max_tokens is not None:
+                projected_cost = self._enforcer.counter.count(projected)
+                if projected_cost > manifest.max_tokens:
+                    return Failure(
+                        reason=(
+                            f"Agent budget exceeded: projected {projected_cost} tokens "
+                            f"exceeds manifest.max_tokens={manifest.max_tokens}"
+                        ),
+                        code=ErrorCode.TOKEN_BUDGET_EXCEEDED,
+                    )
         return Success(None)
 
     def _apply_manifest_if_present(
@@ -208,15 +256,11 @@ class CoreRelayPipeline:
         current_envelope: ContextEnvelope,
         new_envelope: ContextEnvelope,
     ) -> Result[ContextEnvelope]:
-        """Save snapshot, validate handoff, and advance pipeline.
+        """Archive envelope, validate handoff, and advance pipeline.
 
         REQUIRES: caller holds self._state._lock via transaction() context manager.
         Must NOT call self._state.transaction() — lock is is non-reentrant.
         """
-        save_result = self._snapshot_manager.save(current_envelope)
-        if isinstance(save_result, Failure):
-            return save_result
-        self._state._snapshot_ids[current_envelope.step] = save_result.value
         self._state.archive_and_set(new_envelope)
 
         validation_result = self._handoff_validator.validate_handoff(
@@ -226,6 +270,10 @@ class CoreRelayPipeline:
             return validation_result
 
         if self._handoff_validator.should_rollback(validation_result.value):
+            save_result = self._snapshot_manager.save(current_envelope)
+            if isinstance(save_result, Failure):
+                return save_result
+            self._state.snapshot_ids[current_envelope.step] = save_result.value
             return self._rollback_on_contradiction(
                 new_envelope, validation_result.value
             )
@@ -319,7 +367,9 @@ class CoreRelayPipeline:
         self,
         new_envelope: ContextEnvelope,
     ) -> Result[ContextEnvelope]:
-        """Advance pipeline to new envelope, saving snapshot and cleaning up old.
+        """Advance pipeline to new envelope, saving new envelope's snapshot.
+
+        Saves the new envelope's snapshot and cleans up the oldest snapshot from history.
 
         REQUIRES: caller holds self._state._lock via transaction() context manager.
         Must NOT call self._state.transaction() — lock is non-reentrant.
@@ -405,10 +455,9 @@ class CoreRelayPipeline:
 
         with self._state.transaction() as current_envelope:
             slice_ = self._build_context_slice(current_envelope, manifest)
-            if current_envelope is not None:
-                budget_result = self._check_budget(manifest, current_envelope)
-                if isinstance(budget_result, Failure):
-                    return budget_result
+            budget_result = self._check_budget(manifest, current_envelope)
+            if isinstance(budget_result, Failure):
+                return budget_result
 
         try:
             agent_output = await adapter.run(slice_, manifest)
