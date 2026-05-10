@@ -57,10 +57,18 @@ class ContextBroker:
     signing_secret: str
     token_budget_total: int
 
+    def __post_init__(self) -> None:
+        if len(self.signing_secret) < _MIN_SECRET_LENGTH:
+            raise ValueError(
+                f"signing_secret must be at least {_MIN_SECRET_LENGTH} characters, "
+                f"got {len(self.signing_secret)}. Weak secrets compromise envelope integrity."
+            )
+
     def create_initial_envelope(
         self,
         pipeline_id: str,
-        initial_payload: dict[str, Any]
+        initial_payload: dict[str, Any],
+        manifest_hash: str = "",
     ) -> Result[ContextEnvelope]:
         """Create the first envelope for a pipeline."""
         return create_initial_envelope(
@@ -68,18 +76,19 @@ class ContextBroker:
             initial_payload=initial_payload,
             secret=self.signing_secret,
             token_budget_total=self.token_budget_total,
-            manifest_hash="",
+            manifest_hash=manifest_hash,
         )
 
     def create_next_envelope(
         self,
         previous_envelope: ContextEnvelope,
-        agent_output: dict[str, Any]
+        agent_output: dict[str, Any],
+        manifest_hash: str = "",
     ) -> Result[ContextEnvelope]:
         """Create a subsequent envelope for the next step."""
         return create_next_envelope(
             previous_envelope=previous_envelope,
             secret=self.signing_secret,
             agent_output=agent_output,
-            manifest_hash="",
+            manifest_hash=manifest_hash,
         )

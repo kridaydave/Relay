@@ -26,6 +26,8 @@ __all__ = [
     "create_initial_envelope",
     "create_next_envelope",
     "verify_signature",
+    "estimate_tokens",
+    "compute_signature",
 ]
 PIPELINE_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{1,128}$")
 
@@ -105,8 +107,17 @@ def verify_signature(envelope: ContextEnvelope, secret: str) -> bool:
 
 def _sign_envelope(envelope: ContextEnvelope, secret: str) -> ContextEnvelope:
     """Create a signed copy of the envelope."""
-    signature = _compute_signature(envelope, secret)
+    signature = compute_signature(envelope, secret)
     return envelope.with_signature(signature)
+
+
+def compute_signature(envelope: ContextEnvelope, secret: str) -> str:
+    """Compute HMAC-SHA256 signature for an envelope.
+
+    Canonical signature format (field order is load-bearing):
+    {relay_version}|{pipeline_id}|{step}|{timestamp.isoformat()}|{token_budget_used}|{token_budget_total}|{manifest_hash}|{json.dumps(payload, sort_keys=True)}
+    """
+    return _compute_signature(envelope, secret)
 
 
 def create_initial_envelope(
@@ -129,7 +140,7 @@ def create_initial_envelope(
     if not initial_payload:
         return Failure(reason="initial_payload cannot be empty", code=ErrorCode.INVALID_PAYLOAD)
 
-    token_used = _estimate_tokens(initial_payload)
+    token_used = estimate_tokens(initial_payload)
     envelope = ContextEnvelope(
         relay_version=RELAY_VERSION,
         pipeline_id=pipeline_id,
@@ -165,7 +176,7 @@ def create_next_envelope(
     if not agent_output:
         return Failure(reason="agent_output cannot be empty", code=ErrorCode.INVALID_PAYLOAD)
 
-    token_used = previous_envelope.token_budget_used + _estimate_tokens(agent_output)
+    token_used = previous_envelope.token_budget_used + estimate_tokens(agent_output)
 
     envelope = ContextEnvelope(
         relay_version=RELAY_VERSION,
@@ -183,7 +194,7 @@ def create_next_envelope(
     return Success(signed)
 
 
-def _estimate_tokens(payload: dict[str, Any]) -> int:
+def estimate_tokens(payload: dict[str, Any]) -> int:
     """Approximates token count from payload JSON string length.
 
     This heuristic estimates BPE tokens by dividing character count by 3.

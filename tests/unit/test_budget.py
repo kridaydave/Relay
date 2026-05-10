@@ -71,3 +71,14 @@ class TestTokenCounterProtocol:
         counter = FixedCounter(42)
         assert isinstance(counter, TokenCounter)
         assert counter.count("anything") == 42
+
+
+class TestEmbeddingProviderProtocol:
+    def test_fixed_embedding_provider_is_protocol_compatible(self):
+        """Test that FixedEmbeddingProvider satisfies EmbeddingProvider protocol."""
+        from relay.slicer.providers import EmbeddingProvider
+        from tests.conftest import FixedEmbeddingProvider
+        provider = FixedEmbeddingProvider([0.1, 0.2, 0.3])
+        assert isinstance(provider, EmbeddingProvider)
+        vector = provider.embed("any text")
+        assert vector == [0.1, 0.2, 0.3]

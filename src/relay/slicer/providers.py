@@ -1,4 +1,8 @@
-"""Embedding provider protocol for relevance-based slicing."""
+"""Embedding provider protocol for relevance-based slice selection.
+
+Owns: EmbeddingProvider contract definition for text-to-vector conversion.
+Does NOT: implement embedding models, manage vector stores, or perform similarity search.
+"""
 
 from typing import Protocol, runtime_checkable
 

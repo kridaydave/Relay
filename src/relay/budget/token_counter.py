@@ -1,6 +1,13 @@
-"""Token counting interfaces and implementations for budget enforcement."""
+"""Token counting interfaces and heuristic implementations for budget enforcement.
 
-from typing import Optional, Protocol, runtime_checkable
+Owns: TokenCounter protocol, TiktokenCounter implementation, character-based estimation.
+Does NOT: enforce budget limits, manage token tracking across steps, or validate token counts.
+"""
+
+from typing import TYPE_CHECKING, Optional, Protocol, runtime_checkable
+
+if TYPE_CHECKING:
+    from tiktoken import Encoding
 
 
 @runtime_checkable
@@ -15,10 +22,8 @@ class TokenCounter(Protocol):
         """Release any resources held by the counter. Optional method."""
         ...
 
-
 try:
     import tiktoken
-    from tiktoken import Encoding
 
     class TiktokenCounter:
         """Token counter using tiktoken library.
@@ -31,9 +36,9 @@ try:
 
         def __init__(self, encoding: str = "cl100k_base") -> None:
             self._encoding = encoding
-            self._enc: Optional[Encoding] = None
+            self._enc: "Encoding | None" = None
 
-        def _get_encoder(self) -> Encoding:
+        def _get_encoder(self) -> "Encoding":
             if self._enc is None:
                 self._enc = tiktoken.get_encoding(self._encoding)
             return self._enc
@@ -55,4 +60,4 @@ try:
             self.close()
 
 except ImportError:
-    TiktokenCounter = None  # type: ignore
+    TiktokenCounter = None  # type: ignore[assignment, misc]

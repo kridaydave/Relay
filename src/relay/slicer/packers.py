@@ -2,7 +2,7 @@
 
 Owns: RecencySlicePacker, StructuralSlicePacker, RelevanceSlicePacker.
 Does NOT: own EmbeddingProvider protocol,
-          or count tokens precisely (delegates to envelope._estimate_tokens).
+          or count tokens precisely (delegates to envelope.estimate_tokens).
 """
 
 from abc import ABC, abstractmethod
@@ -10,7 +10,7 @@ import json
 from typing import Any
 from math import sqrt
 
-from relay.envelope import _estimate_tokens
+from relay.envelope import estimate_tokens
 from relay.slicer.manifest import AgentManifest
 from relay.slicer.providers import EmbeddingProvider
 from relay.types import ErrorCode, Failure, Result, Success
@@ -78,7 +78,7 @@ class RecencySlicePacker(SlicePacker):
 
         for key in sorted_keys:
             section_text = payload[key]
-            section_tokens = _estimate_tokens({key: section_text})
+            section_tokens = estimate_tokens({key: section_text})
 
             if used_tokens + section_tokens > manifest.max_tokens:
                 if result:
@@ -145,7 +145,7 @@ class RelevanceSlicePacker(SlicePacker):
         similarities = []
         for key, embedding in section_embeddings.items():
             sim = _cosine_similarity(query_embedding, embedding)
-            section_tokens = _estimate_tokens({key: payload[key]})
+            section_tokens = estimate_tokens({key: payload[key]})
             similarities.append((key, sim, section_tokens))
 
         similarities.sort(key=lambda x: x[1], reverse=True)

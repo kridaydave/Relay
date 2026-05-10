@@ -1,7 +1,7 @@
 """Snapshot manager for CoreRelayPipeline.
 
-Owns: snapshot save/load/cleanup logic.
-Does NOT: own snapshot_id state — callers update their own registries.
+Owns: snapshot save/load/cleanup logic, snapshot_id bookkeeping.
+Does NOT: own pipeline state, validate content, or manage envelope lifecycle.
 """
 
 import json
@@ -10,18 +10,6 @@ from typing import Any
 from relay.envelope import ContextEnvelope
 from relay.snapshot import SnapshotStore
 from relay.types import ErrorCode, Failure, Result, Success
-
-
-def serialize_payload(payload: dict[str, Any]) -> str:
-    """Serialize payload to JSON string.
-
-    Args:
-        payload: The payload dictionary to serialize.
-
-    Returns:
-        JSON string representation of the payload.
-    """
-    return json.dumps(payload)
 
 
 class SnapshotManager:
@@ -47,7 +35,6 @@ class SnapshotManager:
 
         Returns:
             Success with the snapshot ID, or Failure on error.
-            Caller is responsible for registering the ID.
         """
         return self._snapshot_store.save_snapshot(envelope)
 

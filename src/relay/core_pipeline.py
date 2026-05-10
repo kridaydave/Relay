@@ -4,15 +4,16 @@ Owns: pipeline lifecycle, component coordination, budget enforcement hooks, slic
 Does NOT: define agent behaviour, manage prompts, implement token counting, or implement slicing strategies.
 """
 
+import json
 import uuid
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from relay.budget import HardCapEnforcer, TokenCounter
 from relay.context_broker import ContextBroker, create_context_broker
-from relay.envelope import ContextEnvelope, _estimate_tokens
+from relay.envelope import ContextEnvelope, estimate_tokens
 from relay.pipeline_rollback import RollbackHandler
-from relay.pipeline_snapshot import SnapshotManager, serialize_payload
+from relay.pipeline_snapshot import SnapshotManager
 from relay.pipeline_state import PipelineState
 from relay.runners import AdapterRegistry, AgentOutput
 from relay.runners.protocol import ContextSlice
@@ -32,10 +33,9 @@ def _agent_output_to_payload(
 ) -> dict[str, Any]:
     """Convert AgentOutput to a payload dict suitable for execute_step_with_manifest.
 
-    Merges text and structured fields. Only includes keys that are in manifest.writes.
-    Keys produced by the adapter that are NOT in manifest.writes are silently dropped
-    here; the manifest boundary validator in execute_step_with_manifest will catch
-    any that slip through.
+    Merges text, structured fields, and tool_calls into a dict unconditionally.
+    No filtering by manifest.writes is performed — that validation happens in
+    validate_manifest_boundaries inside execute_step_with_manifest.
 
     This function does NOT validate — it only shapes the payload. Validation is
     the responsibility of validate_manifest_boundaries inside execute_step_with_manifest.
@@ -94,7 +94,7 @@ class CoreRelayPipeline:
 
         Cleans up token counter if it has a close method.
         """
-        if self.token_counter is not None and hasattr(self.token_counter, "close"):
+        if self.token_counter is not None:
             self.token_counter.close()
 
     def __enter__(self) -> "CoreRelayPipeline":
@@ -211,14 +211,13 @@ class CoreRelayPipeline:
         """Save snapshot, validate handoff, and advance pipeline.
 
         REQUIRES: caller holds self._state._lock via transaction() context manager.
-        Must NOT call self._state.transaction() — lock is non-reentrant.
+        Must NOT call self._state.transaction() — lock is is non-reentrant.
         """
-        self._state.archive_and_set(new_envelope)
-
         save_result = self._snapshot_manager.save(current_envelope)
         if isinstance(save_result, Failure):
             return save_result
-        self._state.snapshot_ids[current_envelope.step] = save_result.value
+        self._state._snapshot_ids[current_envelope.step] = save_result.value
+        self._state.archive_and_set(new_envelope)
 
         validation_result = self._handoff_validator.validate_handoff(
             previous_envelope=current_envelope, current_envelope=new_envelope
@@ -247,7 +246,12 @@ class CoreRelayPipeline:
         result = validate_manifest_boundaries(manifest, set(envelope.payload.keys()))
         if isinstance(result, Failure):
             return self._rollback_with_reason(result.reason)
-        return Success(envelope.with_manifest_hash(manifest.compute_hash()))
+        envelope_with_hash = envelope.with_manifest_hash(manifest.compute_hash())
+        # Re-sign after setting manifest_hash so signature covers the actual hash.
+        signed = envelope_with_hash.with_signature(
+            _compute_signature(envelope_with_hash, self._context_broker.signing_secret)
+        )
+        return Success(signed)
 
     def _rollback_on_contradiction(
         self, proposed_envelope: ContextEnvelope, validation: ValidationResult
@@ -273,11 +277,7 @@ class CoreRelayPipeline:
             )
 
         previous_envelope = self._state.peek_last()
-        if previous_envelope is None:
-            return Failure(
-                reason="No previous envelope to rollback to",
-                code=ErrorCode.INVALID_STATE,
-            )
+        assert previous_envelope is not None  # guarded by has_history()
 
         result = self._rollback_handler.restore_to_previous(
             previous_envelope,
@@ -302,11 +302,7 @@ class CoreRelayPipeline:
             )
 
         previous_envelope = self._state.peek_last()
-        if previous_envelope is None:
-            return Failure(
-                reason="No previous envelope to rollback to",
-                code=ErrorCode.INVALID_STATE,
-            )
+        assert previous_envelope is not None  # guarded by has_history()
 
         result = self._rollback_handler.restore_to_previous(
             previous_envelope,
@@ -347,7 +343,7 @@ class CoreRelayPipeline:
         pack_result = self.slice_packer.pack(current_envelope.payload, manifest)
         if isinstance(pack_result, Failure):
             return ""
-        return serialize_payload(pack_result.value)
+        return json.dumps(pack_result.value)
 
     def rollback(self) -> Result[ContextEnvelope]:
         """Rollback to the last clean state."""
@@ -416,7 +412,7 @@ class CoreRelayPipeline:
 
         try:
             agent_output = await adapter.run(slice_, manifest)
-        except Exception as e:
+        except BaseException as e:
             return Failure(
                 reason=f"Adapter '{adapter_name}' raised: {type(e).__name__}: {e}",
                 code=ErrorCode.ADAPTER_EXECUTION_FAILED,
@@ -449,7 +445,7 @@ class CoreRelayPipeline:
             )
         permitted = manifest.reads & set(current_envelope.payload.keys())
         sections = {k: current_envelope.payload[k] for k in permitted}
-        token_count = _estimate_tokens(sections) if sections else 0
+        token_count = estimate_tokens(sections) if sections else 0
         return ContextSlice(
             pipeline_id=current_envelope.pipeline_id,
             step=current_envelope.step,

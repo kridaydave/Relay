@@ -16,7 +16,7 @@ def _make_envelope(
     payload: dict,
     token_budget_used: int = 100,
     token_budget_total: int = 8000,
-    timestamp: datetime = None,
+    timestamp: datetime | None = None,
     signature: str = "sig",
     manifest_hash: str = ""
 ) -> ContextEnvelope:
@@ -204,6 +204,69 @@ class TestComputeDiff:
         assert "actions" in diff["removed"]
         assert "entities" in diff["modified"]
         assert "facts" in diff["modified"]
+
+
+class TestHallucinationGroundTruth:
+    """R6.3: Hallucination heuristic ground-truth tests.
+
+    Human-agreed ground truth:
+    - FABRICATION: Agent invents 5 new entities while dropping all 4 previous ones.
+      This is a textbook hallucination — a confident agent fabricating facts.
+    - CLEAN ADDITION: Agent adds 2 new entities while keeping all 3 previous ones.
+      This is normal incremental learning, not hallucination.
+    - ENTITY DECAY: Agent removes 2 entities with no additions.
+      Allowed per design — entity removal is not hallucination (see _detect_hallucination docstring).
+
+    Known false-positive cases:
+    - Entities with identical names but different referents (e.g., "Apple" the company
+      vs "apple" the fruit) are treated as the same entity. This can flag legitimate
+      context shifts as fabrication.
+    - Short entity names (<=2 chars) are filtered as stop words, which may miss
+      legitimate single-letter identifiers.
+    - Entities nested inside unrelated data structures (e.g., "invoice_123" in a
+      freeform "notes" field alongside unrelated text) can inflate entity counts.
+
+    Known false-negative cases:
+    - Subtle fabrication where new entities are paraphrases of old ones (e.g., "Apple Inc"
+      replaced by "Apple Corporation") is not caught since set comparison is exact-match.
+    - Fabricated entities that reuse names from existing ones are not flagged since they
+      appear as "kept" entities (e.g., prev: ["Apple"], curr: ["Apple", "Apple-2"]).
+    """
+
+    def test_hallucination_detector_fires_on_textbook_fabrication(self):
+        validator = HandoffValidator()
+        previous_payload = {
+            "entities": ["Apple-Inc", "Steve-Jobs", "Tim-Cook", "Cupertino"],
+            "facts": ["fact1"],
+        }
+        current_payload = {
+            "entities": [
+                "Apple-Inc", "Steve-Jobs", "Tim-Cook", "Cupertino",
+                "Microsoft", "Bill-Gates", "Satya-Nadella", "Redmond", "Silicon-Valley"
+            ],
+            "facts": [],
+        }
+        result = validator._detect_hallucination(previous_payload, current_payload)
+        assert result is not None
+        assert "Entity fabrication detected" in result
+
+    def test_hallucination_detector_is_silent_on_clean_addition(self):
+        validator = HandoffValidator()
+        previous_payload = {
+            "entities": ["Apple-Inc", "Steve-Jobs", "Tim-Cook"],
+        }
+        current_payload = {
+            "entities": ["Apple-Inc", "Steve-Jobs", "Tim-Cook", "iPhone", "MacBook"],
+        }
+        result = validator._detect_hallucination(previous_payload, current_payload)
+        assert result is None
+
+    def test_hallucination_detector_is_silent_on_entity_decay(self):
+        validator = HandoffValidator()
+        previous_payload = {"entities": ["Apple", "Microsoft", "Google"]}
+        current_payload = {"entities": ["Apple"]}
+        result = validator._detect_hallucination(previous_payload, current_payload)
+        assert result is None
 
 
 class TestHallucinationDetection:

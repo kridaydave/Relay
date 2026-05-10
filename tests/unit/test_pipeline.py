@@ -29,7 +29,7 @@ def pipeline(temp_storage):
 
 
 def create_mock_envelope(
-    step: int, pipeline_id: str, payload: dict, timestamp: datetime = None
+    step: int, pipeline_id: str, payload: dict, timestamp: datetime | None = None
 ) -> ContextEnvelope:
     if timestamp is None:
         timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
@@ -106,15 +106,25 @@ class TestPipelineRollback:
     @patch("relay.context_broker.ContextBroker.create_initial_envelope")
     @patch("relay.context_broker.ContextBroker.create_next_envelope")
     def test_pipeline_triggers_rollback_on_contradiction(
-        self, mock_next, mock_initial, pipeline
+        self, mock_next, mock_initial, temp_storage
     ):
         mock_initial.return_value = Success(
-            create_mock_envelope(
-                1, pipeline._pipeline_id, {"entities": ["entity1"]}
-            )
+            create_mock_envelope(1, "test-pipeline", {"entities": ["entity1"]})
         )
         mock_next.return_value = Success(
-            create_mock_envelope(2, pipeline._pipeline_id, {"data": "next"})
+            create_mock_envelope(2, "test-pipeline", {"data": "next"})
+        )
+
+        pipeline = CoreRelayPipeline(
+            signing_secret="a" * 32, token_budget=8000, storage_path=temp_storage
+        )
+        pipeline_id = pipeline._pipeline_id
+
+        mock_initial.return_value = Success(
+            create_mock_envelope(1, pipeline_id, {"entities": ["entity1"]})
+        )
+        mock_next.return_value = Success(
+            create_mock_envelope(2, pipeline_id, {"data": "next"})
         )
 
         pipeline.execute_step({"entities": ["entity1"], "data": "initial"})
@@ -128,17 +138,22 @@ class TestPipelineRollback2:
     @patch("relay.context_broker.ContextBroker.create_initial_envelope")
     @patch("relay.context_broker.ContextBroker.create_next_envelope")
     def test_pipeline_rollback_restores_previous_envelope(
-        self, mock_next, mock_initial, pipeline
+        self, mock_next, mock_initial, temp_storage
     ):
+        pipeline = CoreRelayPipeline(
+            signing_secret="a" * 32, token_budget=8000, storage_path=temp_storage
+        )
+        pipeline_id = pipeline._pipeline_id
+
         mock_initial.return_value = Success(
             create_mock_envelope(
                 1,
-                pipeline._pipeline_id,
+                pipeline_id,
                 {"entities": ["entity1"], "data": "initial"},
             )
         )
         mock_next.return_value = Success(
-            create_mock_envelope(2, pipeline._pipeline_id, {"data": "next"})
+            create_mock_envelope(2, pipeline_id, {"data": "next"})
         )
 
         pipeline.execute_step({"entities": ["entity1"], "data": "initial"})

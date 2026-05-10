@@ -4,7 +4,10 @@
       "Bash(Get-ChildItem -Recurse -Filter \"*.py\")",
       "Bash(Select-Object -ExpandProperty FullName)",
       "Bash(Sort-Object)",
-      "Bash(awk '{print $0}')"
+      "Bash(awk '{print $0}')",
+      "Bash(python -m mypy src/relay)",
+      "Bash(xargs -I {} sh -c 'echo \"=== {} ===\" && head -10 {}')",
+      "Bash(python -c 'import sys; import ast; import os; *)"
     ]
   }
 }

@@ -29,7 +29,7 @@ class InvalidSnapshotIdError(Exception):
 def _extract_step_from_snapshot_id(s_id: str) -> int:
     """Extract step number from snapshot ID for sorting.
 
-    Handles formats: "pipeline_id@step_uuid" and "pipeline_id_step".
+    Handles format: "pipeline_id@step_uuid".
 
     Returns:
         Sort key (step number).
@@ -38,10 +38,10 @@ def _extract_step_from_snapshot_id(s_id: str) -> int:
         InvalidSnapshotIdError: If snapshot ID format is invalid.
     """
     try:
-        if "@" in s_id:
-            rest = s_id.split("@", 1)[1]
-            return int(rest.split("_")[0])
-        return int(s_id.split("_")[0])
+        if "@" not in s_id:
+            raise InvalidSnapshotIdError(f"Invalid snapshot ID format: {s_id}")
+        rest = s_id.split("@", 1)[1]
+        return int(rest.split("_")[0])
     except (ValueError, IndexError):
         raise InvalidSnapshotIdError(f"Invalid snapshot ID format: {s_id}")
 

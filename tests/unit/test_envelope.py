@@ -13,7 +13,7 @@ from relay.envelope import (
     create_next_envelope,
     verify_signature,
     _compute_signature,
-    _estimate_tokens,
+    estimate_tokens,
 )
 
 
@@ -197,7 +197,7 @@ class TestVerifySignature:
 
 
 class TestTokenEstimation:
-    """Ground-truth benchmark for _estimate_tokens per R17.
+    """Ground-truth benchmark for estimate_tokens per R17.
 
     Ground truth: English prose and JSON tokenise at roughly 0.25–0.40
     tokens/char under BPE tokenisers (GPT-4 family, cl100k_base).
@@ -217,11 +217,11 @@ class TestTokenEstimation:
 
     def test_estimate_is_positive_for_all_representative_payloads(self):
         for payload in self.PAYLOADS:
-            assert _estimate_tokens(payload) > 0, f"Zero estimate for {payload}"
+            assert estimate_tokens(payload) > 0, f"Zero estimate for {payload}"
 
     def test_estimate_stays_within_3x_of_char_based_reference(self):
         for payload in self.PAYLOADS:
-            estimate = _estimate_tokens(payload)
+            estimate = estimate_tokens(payload)
             json_len = len(json.dumps(payload, sort_keys=True))
             baseline = max(1, json_len // 4)
             assert estimate >= baseline // 3, (
@@ -234,7 +234,7 @@ class TestTokenEstimation:
     def test_larger_payload_produces_larger_estimate(self):
         small = {"x": "a" * 10}
         large = {"x": "a" * 1000}
-        assert _estimate_tokens(large) > _estimate_tokens(small)
+        assert estimate_tokens(large) > estimate_tokens(small)
 
 
 class TestContextEnvelope:

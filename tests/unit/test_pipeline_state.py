@@ -75,6 +75,44 @@ class TestSnapshotIds:
         assert state.snapshot_ids == {}
 
 
+class TestGetPreviousEnvelopes:
+    def test_returns_copy_of_previous_envelopes(self, state):
+        env1 = create_mock_envelope(1)
+        env2 = create_mock_envelope(2)
+        with state.transaction() as _:
+            state.archive_and_set(env1)
+        with state.transaction() as _:
+            state.archive_and_set(env2)
+        history = state.get_previous_envelopes()
+        assert len(history) == 1
+        assert history[0] == env1
+        history.clear()
+        assert len(state.get_previous_envelopes()) == 1
+
+    def test_returns_empty_list_when_no_history(self, state):
+        assert state.get_previous_envelopes() == []
+
+
+class TestConsumeLast:
+    def test_removes_and_returns_last_envelope(self, state):
+        env1 = create_mock_envelope(1)
+        env2 = create_mock_envelope(2)
+        with state.transaction() as _:
+            state.archive_and_set(env1)
+        with state.transaction() as _:
+            state.archive_and_set(env2)
+        with state.transaction() as _:
+            consumed = state.consume_last()
+        assert consumed == env1
+        history = state.get_previous_envelopes()
+        assert len(history) == 0
+
+    def test_raises_index_error_when_history_empty(self, state):
+        with state.transaction() as _:
+            with pytest.raises(IndexError):
+                state.consume_last()
+
+
 class TestThreadSafety:
     def test_lock_is_acquirable(self, state):
         with state.transaction() as _:
@@ -107,3 +145,6 @@ class TestThreadSafety:
         t2.join()
 
         assert len(errors) == 0
+        final = state.current()
+        assert final is not None
+        assert final.step in (1, 2)

@@ -23,7 +23,7 @@ class TestSnapshotStore:
         self,
         pipeline_id: str = "pipeline-123",
         step: int = 1,
-        payload: dict = None,
+        payload: dict | None = None,
     ) -> ContextEnvelope:
         if payload is None:
             payload = {"data": "test"}

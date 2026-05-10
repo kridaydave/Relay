@@ -1,4 +1,8 @@
-"""Agent manifest definition for context boundaries."""
+"""Agent manifest definition for context read/write boundaries.
+
+Owns: AgentManifest data model, read/write permission sets, hash computation.
+Does NOT: validate manifests, enforce permissions, or manage agent lifecycle.
+"""
 
 import hashlib
 import json
