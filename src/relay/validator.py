@@ -146,8 +146,9 @@ class HandoffValidator:
     ) -> str | None:
         """Detect hallucination by checking entity fabrication ratio.
 
-        Flags when new entities vastly outnumber removed ones, suggesting fabrication.
-        Entity removal is valid and not flagged.
+        This heuristic approximates detection by flagging when new entities vastly
+        outnumber removed ones, suggesting fabrication. Entity removal is valid and
+        not flagged.
         """
         if self._hallucination_ratio_threshold is None:
             return None

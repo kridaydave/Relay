@@ -7,7 +7,6 @@ Does NOT: count tokens, manage budgets, or execute agents.
 from dataclasses import dataclass
 
 from relay.budget.token_counter import TokenCounter
-from relay.envelope import ContextEnvelope
 from relay.types import ErrorCode, Failure, Result, Success
 
 
@@ -22,11 +21,12 @@ class HardCapEnforcer:
     pipeline_id: str
     counter: TokenCounter
 
-    def check(self, envelope: ContextEnvelope, projected_slice: str) -> Result[None]:
+    def check(self, budget_used: int, budget_total: int, projected_slice: str) -> Result[None]:
         """Check if projected slice would exceed budget.
 
         Args:
-            envelope: Current context envelope.
+            budget_used: Tokens consumed so far in this pipeline.
+            budget_total: Maximum token budget allowed.
             projected_slice: The context slice that would be passed to the agent.
 
         Returns:
@@ -39,9 +39,9 @@ class HardCapEnforcer:
                 code=ErrorCode.INVALID_TOKEN_COUNT,
             )
 
-        if envelope.token_budget_used + projected_cost > envelope.token_budget_total:
+        if budget_used + projected_cost > budget_total:
             return Failure(
-                reason=f"Budget exceeded: used {envelope.token_budget_used}, projected {projected_cost}, limit {envelope.token_budget_total}",
+                reason=f"Budget exceeded: used {budget_used}, projected {projected_cost}, limit {budget_total}",
                 code=ErrorCode.BUDGET_EXCEEDED,
             )
 

@@ -9,7 +9,7 @@ from relay.slicer import (
     RelevanceSlicePacker,
     StructuralSlicePacker,
 )
-from relay.types import Failure, Success
+from relay.types import Failure, Success, ErrorCode
 from tests.conftest import FixedEmbeddingProvider
 
 
@@ -101,6 +101,7 @@ class TestStructuralSlicePacker:
         result = packer.pack(payload, manifest)
         assert isinstance(result, Failure)
         assert "section_b" in result.reason
+        assert result.code == ErrorCode.MISSING_SECTIONS
 
 
 class TestRelevanceSlicePacker:

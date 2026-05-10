@@ -25,7 +25,7 @@ class AgentManifest:
     task_description: str
     reads: frozenset[str]
     writes: frozenset[str]
-    max_tokens: int
+    max_tokens: int | None
 
     def compute_hash(self) -> str:
         """Compute deterministic SHA256 hash of the manifest.

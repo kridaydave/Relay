@@ -39,6 +39,7 @@ class TestCreateInitialEnvelope:
         result = broker.create_initial_envelope(
             pipeline_id="pipeline-123",
             initial_payload={"data": "test"},
+            manifest_hash="",
         )
 
         assert isinstance(result, Success)
@@ -51,6 +52,7 @@ class TestCreateInitialEnvelope:
         result = broker.create_initial_envelope(
             pipeline_id="",
             initial_payload={"data": "test"},
+            manifest_hash="",
         )
 
         assert isinstance(result, Failure)
@@ -62,6 +64,7 @@ class TestCreateInitialEnvelope:
         result = broker.create_initial_envelope(
             pipeline_id="pipeline-123",
             initial_payload={},
+            manifest_hash="",
         )
 
         assert isinstance(result, Failure)
@@ -102,6 +105,7 @@ class TestCreateNextEnvelope:
         result = broker.create_next_envelope(
             previous_envelope=previous_envelope,
             agent_output={"result": "output"},
+            manifest_hash="",
         )
 
         assert isinstance(result, Success)
@@ -140,6 +144,7 @@ class TestCreateNextEnvelope:
         result = broker.create_next_envelope(
             previous_envelope=previous_envelope,
             agent_output={"result": "output"},
+            manifest_hash="",
         )
 
         assert result.value.step == 2
@@ -176,6 +181,7 @@ class TestCreateNextEnvelope:
         result = broker.create_next_envelope(
             previous_envelope=previous_envelope,
             agent_output={"result": "output"},
+            manifest_hash="",
         )
 
         assert result.value.token_budget_used > 100

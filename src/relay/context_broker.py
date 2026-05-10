@@ -52,7 +52,8 @@ class ContextBroker:
     Does NOT: persist snapshots, validate content, or manage pipeline state.
 
     Note: Use create_context_broker() factory function to construct instances.
-    Direct construction bypasses validation - use the factory for boundary entry.
+    __post_init__ raises ValueError for weak secrets, catching programmer errors.
+    The factory function returns Result for boundary validation.
     """
     signing_secret: str
     token_budget_total: int
@@ -68,7 +69,7 @@ class ContextBroker:
         self,
         pipeline_id: str,
         initial_payload: dict[str, Any],
-        manifest_hash: str = "",
+        manifest_hash: str,
     ) -> Result[ContextEnvelope]:
         """Create the first envelope for a pipeline."""
         return create_initial_envelope(
@@ -83,7 +84,7 @@ class ContextBroker:
         self,
         previous_envelope: ContextEnvelope,
         agent_output: dict[str, Any],
-        manifest_hash: str = "",
+        manifest_hash: str,
     ) -> Result[ContextEnvelope]:
         """Create a subsequent envelope for the next step."""
         return create_next_envelope(

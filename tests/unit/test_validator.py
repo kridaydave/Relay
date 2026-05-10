@@ -6,8 +6,8 @@ from unittest.mock import patch
 import pytest
 
 from relay.envelope import RELAY_VERSION, ContextEnvelope, create_initial_envelope
-from relay.validator import HandoffValidator, ValidationResult
-from relay.types import Success, Failure
+from relay.validator import HandoffValidator, ValidationResult, validate_manifest_boundaries
+from relay.types import Success, Failure, ErrorCode
 
 
 def _make_envelope(
@@ -266,8 +266,41 @@ class TestHallucinationGroundTruth:
         previous_payload = {"entities": ["Apple", "Microsoft", "Google"]}
         current_payload = {"entities": ["Apple"]}
         result = validator._detect_hallucination(previous_payload, current_payload)
+
         assert result is None
 
+
+class TestValidateManifestBoundaries:
+    def test_valid_manifest_returns_success(self):
+        """Agent writing only to permitted sections returns Success."""
+        from relay.slicer import AgentManifest
+        manifest = AgentManifest(
+            agent_id="agent-1",
+            task_description="test",
+            reads=frozenset({"section_a", "section_b"}),
+            writes=frozenset({"section_a"}),
+            max_tokens=1000,
+        )
+        written_sections = {"section_a"}
+        result = validate_manifest_boundaries(manifest, written_sections)
+        assert isinstance(result, Success)
+        assert result.value is None
+
+    def test_unauthorized_section_returns_failure(self):
+        """Agent writing to unauthorized section returns Failure."""
+        from relay.slicer import AgentManifest
+        manifest = AgentManifest(
+            agent_id="agent-1",
+            task_description="test",
+            reads=frozenset(),
+            writes=frozenset({"section_a"}),
+            max_tokens=1000,
+        )
+        written_sections = {"section_a", "unauthorized_section"}
+        result = validate_manifest_boundaries(manifest, written_sections)
+        assert isinstance(result, Failure)
+        assert result.code == ErrorCode.MANIFEST_BOUNDARY_VIOLATION
+        assert "unauthorized_section" in result.reason
 
 class TestHallucinationDetection:
     def test_hallucination_detection_at_threshold(self):

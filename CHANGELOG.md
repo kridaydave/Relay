@@ -4,11 +4,6 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-## 0.0.x versions are generally bug fixes and minor improvements to the 0.x.0 release.
-## 0.x.0 versions are generally breaking changes to the 0.x.x releases.
-## x.0.0 are production releases.
-
-
 
 ## [0.3.2] - 2026-05-10
 

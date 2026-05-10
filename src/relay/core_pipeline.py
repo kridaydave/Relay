@@ -10,7 +10,7 @@ from typing import Any, Optional
 
 from relay.budget import HardCapEnforcer, TokenCounter
 from relay.context_broker import ContextBroker, create_context_broker
-from relay.envelope import _compute_signature, ContextEnvelope, estimate_tokens, serialize_slice
+from relay.envelope import compute_signature, ContextEnvelope, estimate_tokens, serialize_slice
 from relay.pipeline_rollback import RollbackHandler
 from relay.pipeline_snapshot import SnapshotManager
 from relay.pipeline_state import PipelineState
@@ -137,7 +137,7 @@ class CoreRelayPipeline:
             return budget_result
 
         result = self._context_broker.create_initial_envelope(
-            pipeline_id=self._pipeline_id, initial_payload=agent_output
+            pipeline_id=self._pipeline_id, initial_payload=agent_output, manifest_hash=manifest.compute_hash() if manifest else ""
         )
         if isinstance(result, Failure):
             return result
@@ -165,7 +165,7 @@ class CoreRelayPipeline:
             return budget_result
 
         result = self._context_broker.create_next_envelope(
-            previous_envelope=current_envelope, agent_output=agent_output
+            previous_envelope=current_envelope, agent_output=agent_output, manifest_hash=manifest.compute_hash() if manifest else ""
         )
         if isinstance(result, Failure):
             return result
@@ -192,7 +192,10 @@ class CoreRelayPipeline:
         """
         if manifest is not None and self._enforcer is not None:
             if current_envelope is not None:
-                projected = self._slice_payload(manifest, current_envelope)
+                slice_result = self._slice_payload(manifest, current_envelope)
+                if isinstance(slice_result, Failure):
+                    return slice_result
+                projected = slice_result.value
             else:
                 projected = serialize_slice({s: "<slice>" for s in manifest.writes})
             budget_used = (
@@ -200,23 +203,7 @@ class CoreRelayPipeline:
                 if current_envelope is not None
                 else 0
             )
-            envelope_for_check = current_envelope
-            if envelope_for_check is None:
-                # Build a temporary envelope for budget checking on initial step.
-                from datetime import datetime, timezone
-
-                envelope_for_check = ContextEnvelope(
-                    relay_version="0.0.0",
-                    pipeline_id=self._pipeline_id,
-                    step=0,
-                    timestamp=datetime.now(timezone.utc),
-                    token_budget_used=budget_used,
-                    token_budget_total=self.token_budget,
-                    payload={},
-                    manifest_hash="",
-                    signature="",
-                )
-            enforcer_result = self._enforcer.check(envelope_for_check, projected)
+            enforcer_result = self._enforcer.check(budget_used, self.token_budget, projected)
             if isinstance(enforcer_result, Failure):
                 return enforcer_result
 
@@ -296,7 +283,7 @@ class CoreRelayPipeline:
         envelope_with_hash = envelope.with_manifest_hash(manifest.compute_hash())
         # Re-sign after setting manifest_hash so signature covers the actual hash.
         signed = envelope_with_hash.with_signature(
-            _compute_signature(envelope_with_hash, self._context_broker.signing_secret)
+            compute_signature(envelope_with_hash, self._context_broker.signing_secret)
         )
         return Success(signed)
 
@@ -385,14 +372,14 @@ class CoreRelayPipeline:
 
     def _slice_payload(
         self, manifest: AgentManifest, current_envelope: ContextEnvelope | None
-    ) -> str:
+    ) -> Result[str]:
         """Slice the current payload based on the manifest and slice packer."""
         if self.slice_packer is None or current_envelope is None:
-            return ""
+            return Success("")
         pack_result = self.slice_packer.pack(current_envelope.payload, manifest)
         if isinstance(pack_result, Failure):
-            return ""
-        return serialize_slice(pack_result.value)
+            return pack_result
+        return Success(serialize_slice(pack_result.value))
 
     def rollback(self) -> Result[ContextEnvelope]:
         """Rollback to the last clean state."""
@@ -460,7 +447,7 @@ class CoreRelayPipeline:
 
         try:
             agent_output = await adapter.run(slice_, manifest)
-        except BaseException as e:
+        except Exception as e:
             return Failure(
                 reason=f"Adapter '{adapter_name}' raised: {type(e).__name__}: {e}",
                 code=ErrorCode.ADAPTER_EXECUTION_FAILED,

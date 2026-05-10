@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from relay.envelope import ContextEnvelope
+from relay.envelope import PIPELINE_ID_PATTERN, ContextEnvelope
 from relay.types import ErrorCode, Failure, Result, Success
 
 __all__ = [
@@ -104,6 +104,12 @@ class SnapshotStore:
             )
 
         pipeline_id, rest = snapshot_id.split("@", 1)
+        if not PIPELINE_ID_PATTERN.match(pipeline_id):
+            return Failure(
+                reason="Invalid pipeline_id in snapshot ID",
+                code=ErrorCode.INVALID_PIPELINE_ID,
+            )
+
         parts = rest.rsplit("_", 1)
         if len(parts) != 2:
             return Failure(
