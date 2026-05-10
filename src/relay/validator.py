@@ -79,14 +79,21 @@ class HandoffValidator:
         }
     )
 
-    def __init__(self, hallucination_ratio_threshold: float | None = 2.0) -> None:
+    def __init__(
+        self,
+        hallucination_ratio_threshold: float | None = 2.0,
+        hallucination_deletion_threshold: int | None = 3,
+    ) -> None:
         """Initialize the validator.
 
         Args:
             hallucination_ratio_threshold: Flag hallucination when new_entities / removed_entities
                 exceeds this ratio. None disables hallucination detection.
+            hallucination_deletion_threshold: Flag excessive deletion when more than this many
+                entities are removed with no additions. None disables this check.
         """
         self._hallucination_ratio_threshold = hallucination_ratio_threshold
+        self._hallucination_deletion_threshold = hallucination_deletion_threshold
 
     def validate_handoff(
         self, previous_envelope: ContextEnvelope, current_envelope: ContextEnvelope
@@ -164,7 +171,10 @@ class HandoffValidator:
                 return f"Entity fabrication detected: {new_count} new, {removed_count} removed (ratio: {ratio:.1f}x)"
 
         if removed_count > 0 and new_count == 0:
-            if removed_count > self._hallucination_ratio_threshold:
+            if (
+                self._hallucination_deletion_threshold is not None
+                and removed_count > self._hallucination_deletion_threshold
+            ):
                 return f"Excessive entity deletion detected: {removed_count} removed, 0 new"
 
         return None
@@ -246,14 +256,12 @@ class HandoffValidator:
 
 
 def validate_manifest_boundaries(
-    envelope: ContextEnvelope,
     manifest: "AgentManifest",
     written_sections: set[str],
 ) -> Result[None]:
     """Validate that agent only wrote to sections in its manifest.
 
     Args:
-        envelope: Current context envelope.
         manifest: Agent manifest defining write permissions.
         written_sections: Set of section keys the agent wrote to.
 
