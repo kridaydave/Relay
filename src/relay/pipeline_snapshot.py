@@ -4,9 +4,24 @@ Owns: snapshot save/load/cleanup logic.
 Does NOT: own snapshot_id state — callers update their own registries.
 """
 
+import json
+from typing import Any
+
 from relay.envelope import ContextEnvelope
 from relay.snapshot import SnapshotStore
 from relay.types import ErrorCode, Failure, Result, Success
+
+
+def serialize_payload(payload: dict[str, Any]) -> str:
+    """Serialize payload to JSON string.
+
+    Args:
+        payload: The payload dictionary to serialize.
+
+    Returns:
+        JSON string representation of the payload.
+    """
+    return json.dumps(payload)
 
 
 class SnapshotManager:

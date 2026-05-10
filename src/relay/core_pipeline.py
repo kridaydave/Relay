@@ -4,7 +4,6 @@ Owns: pipeline lifecycle, component coordination, budget enforcement hooks, slic
 Does NOT: define agent behaviour, manage prompts, implement token counting, or implement slicing strategies.
 """
 
-import json
 import uuid
 from dataclasses import dataclass, field
 from typing import Any, Optional
@@ -13,7 +12,7 @@ from relay.budget import HardCapEnforcer, TokenCounter
 from relay.context_broker import ContextBroker, create_context_broker
 from relay.envelope import ContextEnvelope
 from relay.pipeline_rollback import RollbackHandler
-from relay.pipeline_snapshot import SnapshotManager
+from relay.pipeline_snapshot import SnapshotManager, serialize_payload
 from relay.pipeline_state import PipelineState
 from relay.slicer import AgentManifest, SlicePacker
 from relay.snapshot import SnapshotStore
@@ -52,7 +51,7 @@ def _agent_output_to_payload(
 class CoreRelayPipeline:
     """Base class for pipeline orchestration.
 
-    Owns: pipeline lifecycle, component coordination.
+    Owns: pipeline lifecycle, component coordination, budget enforcement, slicer dispatch.
     Does NOT: define agent behavior, manage prompts.
     """
 
@@ -139,7 +138,7 @@ class CoreRelayPipeline:
         if isinstance(result, Failure):
             return result
 
-        apply_result = self._apply_manifest(result.value, manifest, validate=True)
+        apply_result = self._apply_manifest(result.value, manifest)
         if isinstance(apply_result, Failure):
             return apply_result
         new_envelope = apply_result.value
@@ -201,7 +200,7 @@ class CoreRelayPipeline:
         """
         if manifest is None:
             return Success(envelope)
-        return self._apply_manifest(envelope, manifest, validate=True)
+        return self._apply_manifest(envelope, manifest)
 
     def _finalize_step(
         self,
@@ -233,27 +232,22 @@ class CoreRelayPipeline:
 
         return self._advance_to_new_envelope(new_envelope)
 
-    def _apply_manifest(
+def _apply_manifest(
         self,
         envelope: ContextEnvelope,
         manifest: Optional[AgentManifest],
-        validate: bool = False,
     ) -> Result[ContextEnvelope]:
-        """Apply manifest hash to envelope, optionally validating write boundaries.
+        """Apply manifest hash to envelope, validating write boundaries.
 
-        Args:
-            validate: True to validate write boundaries against manifest. Should be
-                      True when a manifest is provided to catch boundary violations.
-        REQUIRES: caller holds self._state._lock.
+        REQUIRES: caller holds self._state._lock via transaction() context manager.
         """
         if manifest is None:
             return Success(envelope)
-        if validate:
-            result = validate_manifest_boundaries(
-                envelope, manifest, set(envelope.payload.keys())
-            )
-            if isinstance(result, Failure):
-                return self._rollback_with_reason(result.reason)
+        result = validate_manifest_boundaries(
+            manifest, set(envelope.payload.keys())
+        )
+        if isinstance(result, Failure):
+            return self._rollback_with_reason(result.reason)
         return Success(envelope.with_manifest_hash(manifest.compute_hash()))
 
     def _rollback_on_contradiction(
@@ -267,9 +261,7 @@ class CoreRelayPipeline:
         reason = validation.contradiction_details or "Contradiction detected"
         return self._rollback_with_reason(reason)
 
-    def _rollback_with_reason(
-        self, reason: str, consume_history: bool = False
-    ) -> Result[ContextEnvelope]:
+    def _rollback_with_reason(self, reason: str) -> Result[ContextEnvelope]:
         """Rollback to previous envelope with explicit reason.
 
         REQUIRES: caller holds self._state._lock via transaction() context manager.
@@ -295,8 +287,36 @@ class CoreRelayPipeline:
             reason,
         )
         if isinstance(result, RollbackSuccess):
-            if consume_history:
-                self._state.consume_last()
+            self._state.set_current(result.value)
+        return result
+
+    def _rollback_and_consume(self, reason: str) -> Result[ContextEnvelope]:
+        """Rollback to previous envelope and consume history.
+
+        REQUIRES: caller holds self._state._lock via transaction() context manager.
+        Must NOT call self._state.transaction() — lock is non-reentrant.
+        """
+        if not self._state.has_history():
+            return Failure(
+                reason="No previous envelope to rollback to",
+                code=ErrorCode.NO_ROLLBACK_AVAILABLE,
+            )
+
+        previous_envelope = self._state.peek_last()
+        if previous_envelope is None:
+            return Failure(
+                reason="No previous envelope to rollback to",
+                code=ErrorCode.INVALID_STATE,
+            )
+
+        result = self._rollback_handler.restore_to_previous(
+            previous_envelope,
+            self._state.snapshot_ids,
+            self._snapshot_store,
+            reason,
+        )
+        if isinstance(result, RollbackSuccess):
+            self._state.consume_last()
             self._state.set_current(result.value)
         return result
 
@@ -328,7 +348,7 @@ class CoreRelayPipeline:
         pack_result = self.slice_packer.pack(current_envelope.payload, manifest)
         if isinstance(pack_result, Failure):
             return ""
-        return json.dumps(pack_result.value)
+        return serialize_payload(pack_result.value)
 
     def rollback(self) -> Result[ContextEnvelope]:
         """Rollback to the last clean state."""
@@ -338,7 +358,7 @@ class CoreRelayPipeline:
                     reason="No previous envelope to rollback to",
                     code=ErrorCode.NO_ROLLBACK_AVAILABLE,
                 )
-            return self._rollback_with_reason("Manual rollback", consume_history=True)
+            return self._rollback_and_consume("Manual rollback")
 
     def get_current_envelope(self) -> ContextEnvelope | None:
         """Get the current envelope."""
@@ -433,14 +453,3 @@ class CoreRelayPipeline:
             token_count=token_count,
             manifest_hash=manifest.compute_hash(),
         )
-
-    # Backward-compatible accessors for tests
-    @property
-    def _current_envelope(self) -> ContextEnvelope | None:
-        """Expose current envelope for test compatibility."""
-        return self._state.current()
-
-    @property
-    def _snapshot_ids(self) -> dict[int, str]:
-        """Expose snapshot_ids for test compatibility."""
-        return self._state.snapshot_ids
