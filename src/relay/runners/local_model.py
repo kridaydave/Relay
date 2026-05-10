@@ -64,7 +64,7 @@ class LocalModelAdapter:
             data = response.json()
         latency_ms = int((time.monotonic() - start) * 1000)
         choices = data.get("choices", [])
-        text = choices[0]["message"]["content"] if choices else ""
+        text = choices[0].get("message", {}).get("content", "") if choices else ""
         usage = data.get("usage", {})
         token_count = usage.get("total_tokens") or (slice.token_count + len(text) // 4)
         return AgentOutput(

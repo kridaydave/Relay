@@ -64,18 +64,14 @@ class SnapshotStore:
         Trusts that envelope.pipeline_id is valid — validated at construction
         time by create_initial_envelope via _validate_pipeline_id.
 
-        Uses index-first ordering to avoid TOCTOU race: index is updated
-        before file write, so orphaned files are traceable.
+        Uses file-first ordering: writes the snapshot file, then updates the index.
+        If file write fails, no orphaned index entry is created.
         """
         pipeline_id = envelope.pipeline_id
         pipeline_path = self._storage_path / pipeline_id
         pipeline_path.mkdir(parents=True, exist_ok=True)
 
         snapshot_id = f"{pipeline_id}@{envelope.step}_{uuid.uuid4().hex[:12]}"
-
-        index_result = self._add_to_index(pipeline_id, snapshot_id)
-        if isinstance(index_result, Failure):
-            return index_result
 
         snapshot_file = f"{snapshot_id}.json"
         snapshot_path = pipeline_path / snapshot_file
@@ -92,6 +88,14 @@ class SnapshotStore:
                 except OSError:
                     pass
             return Failure(reason=str(e), code=ErrorCode.SNAPSHOT_SAVE_FAILED)
+
+        index_result = self._add_to_index(pipeline_id, snapshot_id)
+        if isinstance(index_result, Failure):
+            try:
+                snapshot_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+            return index_result
 
         return Success(snapshot_id)
 
@@ -196,7 +200,13 @@ class SnapshotStore:
 
             if snapshot_id not in index_data["snapshots"]:
                 index_data["snapshots"].append(snapshot_id)
-                index_data["snapshots"].sort(key=_extract_step_from_snapshot_id)
+                try:
+                    index_data["snapshots"].sort(key=_extract_step_from_snapshot_id)
+                except InvalidSnapshotIdError as e:
+                    return Failure(
+                        reason=f"Corrupted index entry: {e}",
+                        code=ErrorCode.CORRUPTED_INDEX,
+                    )
 
             temp_index_path = index_path.parent / "index.tmp"
             try:

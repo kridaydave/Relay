@@ -364,7 +364,7 @@ class TestConcurrentPipeline:
         for t in threads:
             t.join()
 
-        assert len(results) >= 0
+        assert len(results) > 0, "At least one rollback attempt should have completed"
         assert all(isinstance(r, Failure) or isinstance(r, Success) or isinstance(r, RollbackSuccess) for r in results)
 
         final_envelope = pipeline._state._current_envelope

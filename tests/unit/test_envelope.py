@@ -15,6 +15,7 @@ from relay.envelope import (
     _compute_signature,
     estimate_tokens,
 )
+from relay.types import ErrorCode, Failure
 
 
 @pytest.fixture
@@ -68,18 +69,18 @@ class TestCreateInitialEnvelope:
             pipeline_id="", initial_payload=initial_payload, secret=secret, manifest_hash=""
         )
 
-        assert isinstance(result.reason, str)
+        assert isinstance(result, Failure)
         assert "pipeline_id" in result.reason.lower()
-        assert result.code == "INVALID_PIPELINE_ID"
+        assert result.code == ErrorCode.INVALID_PIPELINE_ID
 
     def test_create_initial_envelope_fails_on_empty_payload(self, secret, initial_payload):
         result = create_initial_envelope(
             pipeline_id="pipeline-123", initial_payload={}, secret=secret, manifest_hash=""
         )
 
-        assert isinstance(result.reason, str)
+        assert isinstance(result, Failure)
         assert "payload" in result.reason.lower()
-        assert result.code == "INVALID_PAYLOAD"
+        assert result.code == ErrorCode.INVALID_PAYLOAD
 
 
 class TestCreateNextEnvelope:
@@ -141,9 +142,8 @@ class TestCreateNextEnvelope:
             previous_envelope=first.value, secret=secret, agent_output={}, manifest_hash=""
         )
 
-        assert isinstance(second.reason, str)
-        assert second.code == "INVALID_PAYLOAD"
-        assert second.code == "INVALID_PAYLOAD"
+        assert isinstance(second, Failure)
+        assert second.code == ErrorCode.INVALID_PAYLOAD
 
 
 class TestVerifySignature:

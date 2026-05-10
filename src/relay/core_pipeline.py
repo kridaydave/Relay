@@ -4,9 +4,10 @@ Owns: pipeline lifecycle, component coordination, budget enforcement hooks, slic
 Does NOT: define agent behaviour, manage prompts, implement token counting, or implement slicing strategies.
 """
 
+import asyncio
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 from relay.budget import HardCapEnforcer, TokenCounter
 from relay.context_broker import ContextBroker, create_context_broker
@@ -56,9 +57,9 @@ class CoreRelayPipeline:
     signing_secret: str
     token_budget: int = 8000
     storage_path: str = "./relay_data/snapshots"
-    token_counter: Optional[TokenCounter] = None
-    slice_packer: Optional[SlicePacker] = None
-    registry: Optional[AdapterRegistry] = None
+    token_counter: TokenCounter | None = None
+    slice_packer: SlicePacker | None = None
+    registry: AdapterRegistry | None = None
 
     _pipeline_id: str = field(init=False, repr=False)
     _state: PipelineState = field(init=False, repr=False)
@@ -67,7 +68,7 @@ class CoreRelayPipeline:
     _snapshot_store: SnapshotStore = field(init=False, repr=False)
     _snapshot_manager: SnapshotManager = field(init=False, repr=False)
     _rollback_handler: RollbackHandler = field(init=False, repr=False)
-    _enforcer: Optional[HardCapEnforcer] = field(init=False, repr=False)
+    _enforcer: HardCapEnforcer | None = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         self._pipeline_id = uuid.uuid4().hex
@@ -111,7 +112,7 @@ class CoreRelayPipeline:
     def execute_step_with_manifest(
         self,
         agent_output: dict[str, Any],
-        manifest: Optional[AgentManifest] = None,
+        manifest: AgentManifest | None = None,
     ) -> Result[ContextEnvelope]:
         """Execute a pipeline step with optional manifest for budget/boundary validation."""
         with self._state.transaction() as current_envelope:
@@ -125,7 +126,7 @@ class CoreRelayPipeline:
     def _handle_initial_step(
         self,
         agent_output: dict[str, Any],
-        manifest: Optional[AgentManifest],
+        manifest: AgentManifest | None,
     ) -> Result[ContextEnvelope]:
         """Handle the first pipeline step.
 
@@ -146,6 +147,12 @@ class CoreRelayPipeline:
         if isinstance(apply_result, Failure):
             return apply_result
         new_envelope = apply_result.value
+
+        save_result = self._snapshot_manager.save(new_envelope)
+        if isinstance(save_result, Failure):
+            return save_result
+        self._state.snapshot_ids[new_envelope.step] = save_result.value
+
         self._state.set_current(new_envelope)
         return Success(new_envelope)
 
@@ -153,7 +160,7 @@ class CoreRelayPipeline:
         self,
         current_envelope: ContextEnvelope,
         agent_output: dict[str, Any],
-        manifest: Optional[AgentManifest],
+        manifest: AgentManifest | None,
     ) -> Result[ContextEnvelope]:
         """Handle a subsequent pipeline step.
 
@@ -180,7 +187,7 @@ class CoreRelayPipeline:
 
     def _check_budget(
         self,
-        manifest: Optional[AgentManifest],
+        manifest: AgentManifest | None,
         current_envelope: ContextEnvelope | None,
     ) -> Result[None]:
         """Check token budget if manifest and enforcer present.
@@ -223,7 +230,7 @@ class CoreRelayPipeline:
     def _apply_manifest_if_present(
         self,
         envelope: ContextEnvelope,
-        manifest: Optional[AgentManifest],
+        manifest: AgentManifest | None,
     ) -> Result[ContextEnvelope]:
         """Apply manifest hash to envelope when manifest is provided.
 
@@ -244,11 +251,13 @@ class CoreRelayPipeline:
     ) -> Result[ContextEnvelope]:
         """Archive envelope, validate handoff, and advance pipeline.
 
+        Validates BEFORE mutating state to ensure we don't leave state
+        in an inconsistent position if validation fails for non-contradiction reasons.
+        Saves snapshot BEFORE advancing state to ensure consistency.
+
         REQUIRES: caller holds self._state._lock via transaction() context manager.
         Must NOT call self._state.transaction() — lock is is non-reentrant.
         """
-        self._state.archive_and_set(new_envelope)
-
         validation_result = self._handoff_validator.validate_handoff(
             previous_envelope=current_envelope, current_envelope=new_envelope
         )
@@ -260,16 +269,23 @@ class CoreRelayPipeline:
             if isinstance(save_result, Failure):
                 return save_result
             self._state.snapshot_ids[current_envelope.step] = save_result.value
+            self._state.archive_and_set(new_envelope)
             return self._rollback_on_contradiction(
                 new_envelope, validation_result.value
             )
 
-        return self._advance_to_new_envelope(new_envelope)
+        save_result = self._snapshot_manager.save(new_envelope)
+        if isinstance(save_result, Failure):
+            return save_result
+        self._state.snapshot_ids[new_envelope.step] = save_result.value
+        self._state.archive_and_set(new_envelope)
+
+        return Success(new_envelope)
 
     def _apply_manifest(
         self,
         envelope: ContextEnvelope,
-        manifest: Optional[AgentManifest],
+        manifest: AgentManifest | None,
     ) -> Result[ContextEnvelope]:
         """Apply manifest hash to envelope, validating write boundaries.
 
@@ -279,9 +295,8 @@ class CoreRelayPipeline:
             return Success(envelope)
         result = validate_manifest_boundaries(manifest, set(envelope.payload.keys()))
         if isinstance(result, Failure):
-            return self._rollback_with_reason(result.reason)
+            return result
         envelope_with_hash = envelope.with_manifest_hash(manifest.compute_hash())
-        # Re-sign after setting manifest_hash so signature covers the actual hash.
         signed = envelope_with_hash.with_signature(
             compute_signature(envelope_with_hash, self._context_broker.signing_secret)
         )
@@ -348,27 +363,6 @@ class CoreRelayPipeline:
             self._state.consume_last()
             self._state.set_current(result.value)
         return result
-
-    def _advance_to_new_envelope(
-        self,
-        new_envelope: ContextEnvelope,
-    ) -> Result[ContextEnvelope]:
-        """Advance pipeline to new envelope, saving new envelope's snapshot.
-
-        Saves the new envelope's snapshot and cleans up the oldest snapshot from history.
-
-        REQUIRES: caller holds self._state._lock via transaction() context manager.
-        Must NOT call self._state.transaction() — lock is non-reentrant.
-        """
-        oldest_in_history = self._state.peek_last()
-        save_result = self._snapshot_manager.save(new_envelope)
-        if isinstance(save_result, Failure):
-            return save_result
-        self._state.snapshot_ids[new_envelope.step] = save_result.value
-        if oldest_in_history is not None:
-            self._state.snapshot_ids.pop(oldest_in_history.step, None)
-
-        return Success(new_envelope)
 
     def _slice_payload(
         self, manifest: AgentManifest, current_envelope: ContextEnvelope | None
@@ -447,9 +441,18 @@ class CoreRelayPipeline:
 
         try:
             agent_output = await adapter.run(slice_, manifest)
-        except Exception as e:
+        except (
+            asyncio.TimeoutError,
+            OSError,
+            ImportError,
+            TimeoutError,
+            RuntimeError,
+            ValueError,
+            KeyError,
+            AttributeError,
+        ) as e:
             return Failure(
-                reason=f"Adapter '{adapter_name}' raised: {type(e).__name__}: {e}",
+                reason=f"Adapter '{adapter_name}' failed: {type(e).__name__}: {e}",
                 code=ErrorCode.ADAPTER_EXECUTION_FAILED,
             )
 

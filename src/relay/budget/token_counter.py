@@ -4,7 +4,7 @@ Owns: TokenCounter protocol, TiktokenCounter implementation, character-based est
 Does NOT: enforce budget limits, manage token tracking across steps, or validate token counts.
 """
 
-from typing import TYPE_CHECKING, Optional, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable, TypeVar
 
 if TYPE_CHECKING:
     from tiktoken import Encoding
@@ -22,10 +22,34 @@ class TokenCounter(Protocol):
         """Release any resources held by the counter. Optional method."""
         ...
 
+
+TokenCounterT = TypeVar("TokenCounterT", bound=TokenCounter)
+
+
+class HeuristicCounter:
+    """Fallback token counter using character-based estimation.
+
+    Uses len(text) // 3 as a rough approximation of token count.
+    Used when tiktoken is not installed.
+    """
+
+    def count(self, text: str) -> int:
+        return max(1, len(text) // 3)
+
+    def close(self) -> None:
+        pass
+
+    def __enter__(self) -> "HeuristicCounter":
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        self.close()
+
+
 try:
     import tiktoken
 
-    class TiktokenCounter:
+    class _TiktokenCounter:
         """Token counter using tiktoken library.
 
         Lazy imports tiktoken - must be installed separately:
@@ -51,7 +75,7 @@ try:
             """Release the encoding resource."""
             self._enc = None
 
-        def __enter__(self) -> "TiktokenCounter":
+        def __enter__(self) -> "_TiktokenCounter":
             """Enter the context manager."""
             return self
 
@@ -59,5 +83,6 @@ try:
             """Exit the context manager and release resources."""
             self.close()
 
+    TiktokenCounter: type[HeuristicCounter] | type[_TiktokenCounter] = _TiktokenCounter
 except ImportError:
-    TiktokenCounter = None  # type: ignore[assignment, misc]
+    TiktokenCounter = HeuristicCounter
