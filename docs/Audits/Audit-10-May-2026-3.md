@@ -1,10 +1,10 @@
 # Relay v0.3 — Final Pre-Ship Audit
 **Date:** 10 May 2026  
-**Auditor:** Claude (Sonnet 4.6)  
+**Auditor:** Claude Code (Sonnet 4.6)  
 **Scope:** Full codebase — all 24 source modules, all 28 test modules, integration tests  
 **Checked against:** `docs/Relay Coding Rules.md`, `docs/Relay Design Document.md`  
-**Passes:** 2 (exhaustive)
-
+**Passes:** 3 (exhaustive)
+**Status:** Fixed(all)
 ---
 
 ## Summary
