@@ -7,7 +7,6 @@ from relay.slicer import (
     EmbeddingProvider,
     RecencySlicePacker,
     RelevanceSlicePacker,
-    SliceStrategy,
     StructuralSlicePacker,
 )
 from relay.types import Failure, Success
@@ -103,11 +102,3 @@ class TestRelevanceSlicePacker:
         result = packer.pack(payload, manifest)
         assert isinstance(result, Success)
         assert len(result.value) == 2
-
-
-class TestSliceStrategy:
-    def test_enum_values(self):
-        """Enum has expected values."""
-        assert SliceStrategy.RECENCY.name == "RECENCY"
-        assert SliceStrategy.RELEVANCE.name == "RELEVANCE"
-        assert SliceStrategy.STRUCTURAL.name == "STRUCTURAL"

@@ -70,9 +70,9 @@ class TestSuccessfulHandoff:
 
         result2 = pipeline.execute_step(valid_next_payload)
         assert isinstance(result2, Success)
-        assert pipeline._current_envelope.step == 2
+        assert pipeline.get_current_envelope().step == 2
 
-        snapshot_id = pipeline._snapshot_ids.get(2)
+        snapshot_id = pipeline._state.snapshot_ids.get(2)
         assert snapshot_id is not None
 
         load_result = pipeline._snapshot_store.load_snapshot(snapshot_id)
@@ -94,14 +94,14 @@ class TestRollbackOnContradiction:
         pipeline.execute_step(base_payload)
         pipeline.execute_step(valid_next_payload)
 
-        previous_step = pipeline._current_envelope.step
-        previous_snapshot_id = pipeline._snapshot_ids.get(previous_step)
+        previous_step = pipeline.get_current_envelope().step
+        previous_snapshot_id = pipeline._state.snapshot_ids.get(previous_step)
 
         result = pipeline.execute_step(contradicting_payload)
 
         assert isinstance(result, RollbackSuccess)
 
-        restored = pipeline._current_envelope
+        restored = pipeline.get_current_envelope()
         assert restored.step == previous_step
         assert restored.payload == valid_next_payload
 
@@ -116,7 +116,7 @@ class TestRollbackOnContradiction:
 
         pipeline.execute_step(contradicting_payload)
 
-        current_payload = pipeline._current_envelope.payload
+        current_payload = pipeline.get_current_envelope().payload
         assert "NEW_ENTITY_X" not in str(current_payload)
 
 
@@ -132,8 +132,8 @@ class TestEdgeCases:
         pipeline.execute_step(valid_next_payload)
 
         step = 2
-        pipeline._snapshot_ids[step] = "new-id"
-        assert len([k for k in pipeline._snapshot_ids if k == step]) == 1
+        pipeline._state.snapshot_ids[step] = "new-id"
+        assert len([k for k in pipeline._state.snapshot_ids if k == step]) == 1
 
     def test_broker_signs_envelope(self, pipeline, base_payload):
         result = pipeline.execute_step(base_payload)

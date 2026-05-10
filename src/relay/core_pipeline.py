@@ -10,10 +10,12 @@ from typing import Any, Optional
 
 from relay.budget import HardCapEnforcer, TokenCounter
 from relay.context_broker import ContextBroker, create_context_broker
-from relay.envelope import ContextEnvelope
+from relay.envelope import ContextEnvelope, _estimate_tokens
 from relay.pipeline_rollback import RollbackHandler
 from relay.pipeline_snapshot import SnapshotManager, serialize_payload
 from relay.pipeline_state import PipelineState
+from relay.runners import AdapterRegistry, AgentOutput
+from relay.runners.protocol import ContextSlice
 from relay.slicer import AgentManifest, SlicePacker
 from relay.snapshot import SnapshotStore
 from relay.types import ErrorCode, Failure, Result, RollbackSuccess, Success
@@ -22,9 +24,6 @@ from relay.validator import (
     ValidationResult,
     validate_manifest_boundaries,
 )
-from relay.runners import AdapterRegistry, AgentOutput, AgentRunner
-from relay.envelope import _estimate_tokens
-from relay.runners.protocol import ContextSlice
 
 
 def _agent_output_to_payload(
@@ -120,7 +119,9 @@ class CoreRelayPipeline:
             if current_envelope is None:
                 return self._handle_initial_step(agent_output, manifest)
 
-            return self._handle_subsequent_step(current_envelope, agent_output, manifest)
+            return self._handle_subsequent_step(
+                current_envelope, agent_output, manifest
+            )
 
     def _handle_initial_step(
         self,
@@ -232,7 +233,7 @@ class CoreRelayPipeline:
 
         return self._advance_to_new_envelope(new_envelope)
 
-def _apply_manifest(
+    def _apply_manifest(
         self,
         envelope: ContextEnvelope,
         manifest: Optional[AgentManifest],
@@ -243,9 +244,7 @@ def _apply_manifest(
         """
         if manifest is None:
             return Success(envelope)
-        result = validate_manifest_boundaries(
-            manifest, set(envelope.payload.keys())
-        )
+        result = validate_manifest_boundaries(manifest, set(envelope.payload.keys()))
         if isinstance(result, Failure):
             return self._rollback_with_reason(result.reason)
         return Success(envelope.with_manifest_hash(manifest.compute_hash()))

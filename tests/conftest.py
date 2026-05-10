@@ -12,6 +12,9 @@ class FixedCounter:
     def count(self, text: str) -> int:
         return self.value
 
+    def close(self) -> None:
+        pass
+
 
 @dataclass
 class FixedEmbeddingProvider:

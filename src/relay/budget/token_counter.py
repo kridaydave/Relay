@@ -11,6 +11,10 @@ class TokenCounter(Protocol):
         """Count the number of tokens in the given text."""
         ...
 
+    def close(self) -> None:
+        """Release any resources held by the counter. Optional method."""
+        ...
+
 
 try:
     import tiktoken
