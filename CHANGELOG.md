@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+## [0.3.1] - 2026-05-10
+
+### Fixed
+
+- **RecencySlicePacker** — was selecting oldest sections instead of most recent; now sorts descending
+- **Hallucination detector** — was using ratio threshold as count threshold; added separate `hallucination_deletion_threshold` parameter
+- **`validate_manifest_boundaries`** — removed unused `envelope` parameter
+- **`RELAY_VERSION`** — bumped from stale 0.2.3 to 0.3.1
+
+### Rule Violations Fixed
+
+- **R2.4** — replaced manual copy constructors with `dataclasses.replace()`
+- **R3.2** — replaced bare `except Exception` with specific exceptions in snapshot.py
+- **R4.2** — `manifest_hash` field now uses `_require_str()` helper consistently
+- **R8.3** — added `Owns`/`Does NOT` docstring to `budget/enforcer.py`
+- **R8.2** — updated `CoreRelayPipeline` docstring to include budget enforcement, slicer dispatch
+- **R1.1** — moved `json.dumps` to `serialize_payload()` helper in pipeline_snapshot.py
+
+### Dead Code Removed
+
+- Unused `_MIN_SECRET_LENGTH` constant in envelope.py
+- Dead `_estimate_tokens` import in protocol.py
+- Unreachable `validate=False` parameter in `_apply_manifest`
+- Backward-compat `_current_envelope` and `_snapshot_ids` properties
+- Orphaned `SliceStrategy` enum (never used in production)
+
+### Complexity Reduced
+
+- Split `_rollback_with_reason(consume_history=False)` into two methods: `_rollback_with_reason()` and `_rollback_and_consume()`
+
+### Tests Added
+
+- Hallucination detection deletion threshold (positive + negative cases)
+- RecencySlicePacker most recent section selection under budget pressure
+- `map_result` on RollbackSuccess
+- `unwrap` on RollbackSuccess raises ValueError
+
+### Documentation
+
+- Added TODO(3.12) comment in types.py for future generic type alias improvement
+- Added concurrency note on `execute_step_with_runner` that budget check is advisory under concurrent load
+
+
 ## [0.3.0] - 2026-05-09
 
 ### Added
