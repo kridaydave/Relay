@@ -4,14 +4,13 @@ Owns: pipeline lifecycle, component coordination, budget enforcement hooks, slic
 Does NOT: define agent behaviour, manage prompts, implement token counting, or implement slicing strategies.
 """
 
-import json
 import uuid
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from relay.budget import HardCapEnforcer, TokenCounter
 from relay.context_broker import ContextBroker, create_context_broker
-from relay.envelope import _compute_signature, ContextEnvelope, estimate_tokens
+from relay.envelope import _compute_signature, ContextEnvelope, estimate_tokens, serialize_slice
 from relay.pipeline_rollback import RollbackHandler
 from relay.pipeline_snapshot import SnapshotManager
 from relay.pipeline_state import PipelineState
@@ -195,7 +194,7 @@ class CoreRelayPipeline:
             if current_envelope is not None:
                 projected = self._slice_payload(manifest, current_envelope)
             else:
-                projected = json.dumps({s: "<slice>" for s in manifest.writes})
+                projected = serialize_slice({s: "<slice>" for s in manifest.writes})
             budget_used = (
                 current_envelope.token_budget_used
                 if current_envelope is not None
@@ -393,7 +392,7 @@ class CoreRelayPipeline:
         pack_result = self.slice_packer.pack(current_envelope.payload, manifest)
         if isinstance(pack_result, Failure):
             return ""
-        return json.dumps(pack_result.value)
+        return serialize_slice(pack_result.value)
 
     def rollback(self) -> Result[ContextEnvelope]:
         """Rollback to the last clean state."""

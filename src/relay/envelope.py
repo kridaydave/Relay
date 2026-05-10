@@ -27,6 +27,7 @@ __all__ = [
     "create_next_envelope",
     "verify_signature",
     "estimate_tokens",
+    "serialize_slice",
     "compute_signature",
 ]
 PIPELINE_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{1,128}$")
@@ -192,6 +193,11 @@ def create_next_envelope(
 
     signed = _sign_envelope(envelope, secret)
     return Success(signed)
+
+
+def serialize_slice(data: dict[str, Any]) -> str:
+    """Serialize a payload dict to JSON for budget projection or slice passing."""
+    return json.dumps(data, sort_keys=True, separators=(",", ":"))
 
 
 def estimate_tokens(payload: dict[str, Any]) -> int:

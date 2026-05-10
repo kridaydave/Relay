@@ -6,10 +6,9 @@ Does NOT: handle specific domain errors, validate data, or make decisions.
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Callable, Generic, TypeAlias, TypeVar
+from typing import Callable, Generic, TypeVar
 
 T = TypeVar("T")
-ResultT = TypeVar("ResultT")
 
 
 class ErrorCode(str, Enum):
@@ -69,7 +68,7 @@ class RollbackSuccess(Generic[T]):
     reason: str
 
 
-Result: TypeAlias = Success[ResultT] | RollbackSuccess[ResultT] | Failure
+type Result[T] = Success[T] | RollbackSuccess[T] | Failure
 
 
 def is_success(result: Result[T]) -> bool:
