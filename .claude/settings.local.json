@@ -7,7 +7,14 @@
       "Bash(awk '{print $0}')",
       "Bash(python -m mypy src/relay)",
       "Bash(xargs -I {} sh -c 'echo \"=== {} ===\" && head -10 {}')",
-      "Bash(python -c 'import sys; import ast; import os; *)"
+      "Bash(python -c 'import sys; import ast; import os; *)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\NewAdmin\\\\Desktop\\\\Relay\" -Filter \"*.py\" -Recurse)",
+      "Bash(find /c/Users/NewAdmin/Desktop/Relay -type f -name \"*.py\" | sort)",
+      "Bash(python3 -m mypy --strict src/relay/core_pipeline.py)",
+      "Bash(python -m pytest tests/unit/test_budget.py tests/unit/test_pipeline.py -v --tb=short)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\NewAdmin\\\\Desktop\\\\Relay\" -Recurse -Filter \"*.py\")"
     ]
   }
 }

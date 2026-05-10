@@ -7,6 +7,7 @@
 **Coverage:** ~80% (happy paths covered)  
 **Audit Date:** 6 May 2026
 **Reviewer:** Gemini Cli (gemini 3-1 pro preview)
+**Passes:** 1
 ---
 
 ## Executive Summary
