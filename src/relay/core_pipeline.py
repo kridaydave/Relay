@@ -441,16 +441,7 @@ class CoreRelayPipeline:
 
         try:
             agent_output = await adapter.run(slice_, manifest)
-        except (
-            asyncio.TimeoutError,
-            OSError,
-            ImportError,
-            TimeoutError,
-            RuntimeError,
-            ValueError,
-            KeyError,
-            AttributeError,
-        ) as e:
+        except Exception as e:
             return Failure(
                 reason=f"Adapter '{adapter_name}' failed: {type(e).__name__}: {e}",
                 code=ErrorCode.ADAPTER_EXECUTION_FAILED,

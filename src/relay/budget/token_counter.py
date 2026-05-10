@@ -4,7 +4,7 @@ Owns: TokenCounter protocol, TiktokenCounter implementation, character-based est
 Does NOT: enforce budget limits, manage token tracking across steps, or validate token counts.
 """
 
-from typing import TYPE_CHECKING, Protocol, runtime_checkable, TypeVar
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from tiktoken import Encoding
@@ -21,9 +21,6 @@ class TokenCounter(Protocol):
     def close(self) -> None:
         """Release any resources held by the counter. Optional method."""
         ...
-
-
-TokenCounterT = TypeVar("TokenCounterT", bound=TokenCounter)
 
 
 class HeuristicCounter:
