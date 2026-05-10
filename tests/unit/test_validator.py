@@ -253,6 +253,21 @@ class TestHallucinationDetection:
 
         assert result is None
 
+    def test_hallucination_detection_deletion_threshold_positive(self):
+        validator = HandoffValidator()
+        previous = {"entities": ["alice", "bob", "charlie", "david", "eve"]}
+        current = {"entities": []}
+        result = validator._detect_hallucination(previous, current)
+        assert result is not None
+        assert "Excessive entity deletion" in result
+
+    def test_hallucination_detection_deletion_threshold_negative(self):
+        validator = HandoffValidator()
+        previous = {"entities": ["alice", "bob"]}
+        current = {"entities": []}
+        result = validator._detect_hallucination(previous, current)
+        assert result is None
+
 
 class TestEntityExtraction:
     def test_extract_entities_from_entities_list(self):

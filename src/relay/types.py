@@ -69,6 +69,10 @@ class RollbackSuccess(Generic[T]):
     reason: str
 
 
+# TODO(3.12): Replace with `type Result[T] = Success[T] | RollbackSuccess[T] | Failure`
+# Python 3.11 doesn't support generic type aliases, so ResultT is intentionally unbound.
+# This means mypy won't enforce Result[int] parameterization at call sites, but won't
+# cause runtime failures.
 Result: TypeAlias = Success[ResultT] | RollbackSuccess[ResultT] | Failure
 
 

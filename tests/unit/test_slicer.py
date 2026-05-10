@@ -65,6 +65,23 @@ class TestRecencySlicePacker:
         assert isinstance(result, Success)
         assert "section_1" in result.value
 
+    def test_selects_most_recent_under_budget_pressure(self):
+        """RecencySlicePacker should select highest-numbered sections when budget exceeded."""
+        packer = RecencySlicePacker()
+        payload = {
+            "section_1": "x" * 100,   # ~33 tokens
+            "section_2": "x" * 100,   # ~33 tokens
+            "section_3": "x" * 100,   # ~33 tokens
+            "section_4": "x" * 100,   # ~33 tokens
+            "section_5": "x" * 300,   # ~100 tokens - fits alone but pushes out oldest
+        }
+        manifest = AgentManifest("a1", "task", frozenset(), frozenset(), 130)
+
+        result = packer.pack(payload, manifest)
+        assert isinstance(result, Success)
+        assert "section_5" in result.value
+        assert "section_1" not in result.value
+
 
 class TestStructuralSlicePacker:
     def test_write_to_permitted_section_passes(self):

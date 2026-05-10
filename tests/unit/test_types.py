@@ -104,6 +104,12 @@ class TestUnwrap:
         with pytest.raises(ValueError, match="Unwrap called on non-Success"):
             unwrap(result)
 
+    def test_unwrap_raises_on_rollback_success(self):
+        """unwrap should raise ValueError on RollbackSuccess."""
+        result = RollbackSuccess(value=42, reason="test")
+        with pytest.raises(ValueError, match="non-Success"):
+            unwrap(result)
+
 
 class TestUnwrapOr:
     """Tests for the unwrap_or function."""
@@ -134,6 +140,14 @@ class TestMapResult:
         result: Result[int] = Failure(reason="error", code="ERR")
         mapped = map_result(result, lambda x: x * 2)
         assert mapped is result
+
+    def test_map_result_rollback_success(self):
+        """map_result should transform RollbackSuccess value."""
+        result = RollbackSuccess(value=5, reason="rolled back")
+        mapped = map_result(result, lambda x: x * 2)
+        assert isinstance(mapped, RollbackSuccess)
+        assert mapped.value == 10
+        assert mapped.reason == "rolled back"
 
 
 class TestMapError:

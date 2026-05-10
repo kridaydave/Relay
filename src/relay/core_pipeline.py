@@ -380,6 +380,12 @@ class CoreRelayPipeline:
           6. Call execute_step_with_manifest(payload, manifest=manifest) to handle
              signing, validation, snapshotting, and rollback as normal.
 
+        Note on concurrent budget enforcement: The budget check at step 3 is advisory under
+        concurrent load. The lock is released before adapter.run() (to avoid holding it during
+        I/O), so another thread may advance the envelope between the check and execution.
+        Token counts are heuristic anyway (character-based estimation). If an overrun occurs,
+        execute_step_with_manifest validates post-hoc and rollback is the safety net.
+
         Args:
             adapter_name: Name of the adapter in the registry to invoke.
             manifest: Agent manifest defining read/write permissions.
