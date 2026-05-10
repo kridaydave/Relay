@@ -85,7 +85,7 @@ class SnapshotStore:
             with open(temp_path, "w") as f:
                 json.dump(self._envelope_to_dict(envelope), f, indent=2)
             os.replace(temp_path, snapshot_path)
-        except Exception as e:
+        except (OSError, json.JSONDecodeError) as e:
             if temp_path.exists():
                 try:
                     temp_path.unlink(missing_ok=True)
@@ -141,7 +141,7 @@ class SnapshotStore:
                 reason=f"Snapshot not found: {snapshot_id}",
                 code=ErrorCode.SNAPSHOT_NOT_FOUND,
             )
-        except Exception as e:
+        except (json.JSONDecodeError, OSError) as e:
             return Failure(reason=str(e), code=ErrorCode.SNAPSHOT_LOAD_FAILED)
 
     def get_latest_snapshot(self, pipeline_id: str) -> Result[ContextEnvelope]:
@@ -202,7 +202,7 @@ class SnapshotStore:
                     temp_index_path.unlink(missing_ok=True)
                 except OSError:
                     pass
-        except Exception as e:
+        except (OSError, json.JSONDecodeError) as e:
             return Failure(
                 reason=f"Failed to update index: {e}",
                 code=ErrorCode.INDEX_UPDATE_FAILED,
@@ -327,8 +327,10 @@ class SnapshotStore:
             return payload_result
         payload: dict[str, Any] = payload_result.value
 
-        raw_hash = data.get("manifest_hash", "")
-        manifest_hash = raw_hash if isinstance(raw_hash, str) else ""
+        hash_result = self._require_str(data, "manifest_hash")
+        if isinstance(hash_result, Failure):
+            return hash_result
+        manifest_hash: str = hash_result.value
 
         sig_result = self._require_str(data, "signature")
         if isinstance(sig_result, Failure):
