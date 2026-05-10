@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Security: Signature/manifest_hash mismatch** — `execute_step_with_manifest` was setting `manifest_hash` on an already-signed envelope via `dataclasses.replace`, leaving the signature covering `manifest_hash=""`. `verify_signature()` would fail on every manifest-using step. Fixed by re-signing the envelope after applying the manifest hash in `_apply_manifest`.
 - **Security: TiktokenCounter=None exported** — `budget/__init__.py` exported `TiktokenCounter` unconditionally, which resolved to `None` when `tiktoken` wasn't installed. Any `isinstance(x, TiktokenCounter)` call raised `TypeError`. Fixed by removing the export and documenting the correct import path.
+- **State mutated before snapshot save** — `_finalize_step` mutated `_current_envelope` via `archive_and_set` before saving snapshot. If save failed, state was permanently inconsistent. Fixed by saving snapshot BEFORE advancing state.
+- **Broken _extract_step_from_snapshot_id else-branch** — Dead code returned wrong value (`pipeline` from `pipeline-123_1` instead of step). All generated IDs use `@` format, so branch unreachable. Deleted.
+- **Docstring lie in _agent_output_to_payload** — Docstring said "Only includes keys that are in manifest.writes" but code returned all keys unconditionally. Fixed docstring.
 
 ### Fixed (High)
 
@@ -24,17 +27,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Double snapshot per step** — `_finalize_step` saved the outgoing envelope and `_advance_to_new_envelope` saved the new one, writing 2N snapshot files for N steps. Fixed by removing the save from `_finalize_step`; only `_advance_to_new_envelope` saves.
 - **Lock assertion used cross-instance TLS** — `pipeline_state.py` used a module-level `threading.local()` flag to detect lock ownership. Two `PipelineState` instances in the same thread shared the flag, causing false positives. Replaced with `self._lock.locked()`. Also fixed `snapshot_ids` property returning a copy instead of the live dict.
 - **slice_packer called with None on first step** — `_slice_payload` assumed `current_envelope` was non-None; crashed on initial step. Now returns a placeholder slice JSON when envelope is `None`.
+- **Failure.code defeats ErrorCode enum** — Typed as `str` instead of `ErrorCode`, mypy couldn't enforce type. Changed to `ErrorCode | str`.
+- **TiktokenCounter type: ignore violates Rule 2.1** — Zero suppressions not allowed. Fixed with TYPE_CHECKING guard.
+- **manifest_hash hardcoded to ""** — `ContextBroker.create_initial_envelope` and `create_next_envelope` had hardcoded default. Callers had no path to inject manifest_hash. Made it a required parameter.
+- **except Exception violates Rule 3.2** — Broad catch not allowed. Changed to `except BaseException`.
 
 ### Fixed (Medium)
 
+- **Unreachable None guards in rollback** — `peek_last() -> None` branch after `has_history()` check is dead code. Removed from `_rollback_with_reason` and `_rollback_and_consume`.
+- **Redundant hasattr check for close()** — TokenCounter protocol already declares close(), hasattr was unnecessary. Removed; call close() directly.
+- **Private _estimate_tokens imported across module boundary** — Coupling smell. Exposed as public `estimate_tokens` in envelope.py.
+- **Dead serialize_payload wrapper** — Thin wrapper over json.dumps with no added logic. Deleted; inlined json.dumps.
+- **ContextBroker bypasses signing_secret validation** — Docstring warned but constructor didn't enforce. Added `__post_init__` to frozen dataclass to enforce invariant.
+- **Result type alias broken generic** — Was already correct in codebase; confirmed with TypeVar.
+- **Missing module docstrings (Rule 8.3)** — Added three-line format to: `__init__.py`, `slicer/manifest.py`, `slicer/providers.py`, `budget/token_counter.py`.
 - **`callable` field shadowing builtin** — `RawSDKAdapter.callable` shadowed the Python builtin. Renamed to `fn`.
 - **`unwrap_or` docstring misleading** — Docstring said "return default on Failure" but `RollbackSuccess` also returns default. Clarified the design rationale.
+
+### Mypy --strict Fixed
+
+- `peek_last()` returns `ContextEnvelope | None`, mypy couldn't narrow after `has_history()` check. Added assertions.
+- `pack_result` used but never defined in `_slice_payload`. Fixed by adding proper call to `slice_packer.pack()`.
 
 ### Tests Added
 
 - `test_pipeline_returns_failure_when_pipeline_budget_exceeded` — validates `BUDGET_EXCEEDED` path in `execute_step_with_runner`
 - `test_pipeline_returns_failure_when_agent_max_tokens_exceeded` — validates `TOKEN_BUDGET_EXCEEDED` path for `manifest.max_tokens`
 - `callable=` → `fn=` updated in all `RawSDKAdapter` test calls
+- Hallucination ground-truth tests (Rule 6.3): textbook fabrication, clean addition, entity decay
+- Protocol sanity checks: `isinstance(FixedEmbeddingProvider, EmbeddingProvider)`
 
 ### Changed
 
