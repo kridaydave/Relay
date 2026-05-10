@@ -1,4 +1,8 @@
-"""Budget enforcement for token cap validation."""
+"""Budget enforcement for token cap validation.
+
+Owns: hard-cap check before agent calls, negative-count validation.
+Does NOT: count tokens, manage budgets, or execute agents.
+"""
 
 from dataclasses import dataclass
 

@@ -12,13 +12,13 @@ import hashlib
 import hmac
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from typing import Any
 
 from relay.types import ErrorCode, Failure, Result, Success
 
-RELAY_VERSION = "0.2.3"
+RELAY_VERSION = "0.3.0"
 
 __all__ = [
     "RELAY_VERSION",
@@ -28,7 +28,6 @@ __all__ = [
     "verify_signature",
 ]
 PIPELINE_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{1,128}$")
-_MIN_SECRET_LENGTH = 32
 
 
 def _validate_pipeline_id(pipeline_id: str) -> Result[str]:
@@ -71,31 +70,11 @@ class ContextEnvelope:
 
     def with_manifest_hash(self, manifest_hash: str) -> "ContextEnvelope":
         """Return a copy of this envelope with a different manifest hash."""
-        return ContextEnvelope(
-            relay_version=self.relay_version,
-            pipeline_id=self.pipeline_id,
-            step=self.step,
-            timestamp=self.timestamp,
-            token_budget_used=self.token_budget_used,
-            token_budget_total=self.token_budget_total,
-            payload=self.payload,
-            manifest_hash=manifest_hash,
-            signature=self.signature,
-        )
+        return replace(self, manifest_hash=manifest_hash)
 
     def with_signature(self, signature: str) -> "ContextEnvelope":
         """Return a copy of this envelope with a different signature."""
-        return ContextEnvelope(
-            relay_version=self.relay_version,
-            pipeline_id=self.pipeline_id,
-            step=self.step,
-            timestamp=self.timestamp,
-            token_budget_used=self.token_budget_used,
-            token_budget_total=self.token_budget_total,
-            payload=self.payload,
-            manifest_hash=self.manifest_hash,
-            signature=signature,
-        )
+        return replace(self, signature=signature)
 
 
 def _canonical_timestamp(dt: datetime) -> str:

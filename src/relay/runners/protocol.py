@@ -10,7 +10,7 @@ import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
-from relay.envelope import _estimate_tokens
+
 
 if TYPE_CHECKING:
     from relay.slicer.manifest import AgentManifest
