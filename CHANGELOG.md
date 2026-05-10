@@ -10,6 +10,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+## [0.3.2] - 2026-05-10
+
+### Fixed (Critical)
+
+- **Security: Signature/manifest_hash mismatch** — `execute_step_with_manifest` was setting `manifest_hash` on an already-signed envelope via `dataclasses.replace`, leaving the signature covering `manifest_hash=""`. `verify_signature()` would fail on every manifest-using step. Fixed by re-signing the envelope after applying the manifest hash in `_apply_manifest`.
+- **Security: TiktokenCounter=None exported** — `budget/__init__.py` exported `TiktokenCounter` unconditionally, which resolved to `None` when `tiktoken` wasn't installed. Any `isinstance(x, TiktokenCounter)` call raised `TypeError`. Fixed by removing the export and documenting the correct import path.
+
+### Fixed (High)
+
+- **Per-agent budget cap not enforced** — `manifest.max_tokens` was defined in `AgentManifest` but never checked. Only the pipeline-level `token_budget_total` was validated. Fixed by adding a `manifest.max_tokens` check in `_check_budget`.
+- **First-step budget check skipped** — `execute_step_with_runner` gated the budget check on `current_envelope is not None`, bypassing it entirely on the initial step. Fixed by removing the guard; `_check_budget` now builds a temporary envelope for initial-step validation.
+- **Double snapshot per step** — `_finalize_step` saved the outgoing envelope and `_advance_to_new_envelope` saved the new one, writing 2N snapshot files for N steps. Fixed by removing the save from `_finalize_step`; only `_advance_to_new_envelope` saves.
+- **Lock assertion used cross-instance TLS** — `pipeline_state.py` used a module-level `threading.local()` flag to detect lock ownership. Two `PipelineState` instances in the same thread shared the flag, causing false positives. Replaced with `self._lock.locked()`. Also fixed `snapshot_ids` property returning a copy instead of the live dict.
+- **slice_packer called with None on first step** — `_slice_payload` assumed `current_envelope` was non-None; crashed on initial step. Now returns a placeholder slice JSON when envelope is `None`.
+
+### Fixed (Medium)
+
+- **`callable` field shadowing builtin** — `RawSDKAdapter.callable` shadowed the Python builtin. Renamed to `fn`.
+- **`unwrap_or` docstring misleading** — Docstring said "return default on Failure" but `RollbackSuccess` also returns default. Clarified the design rationale.
+
+### Tests Added
+
+- `test_pipeline_returns_failure_when_pipeline_budget_exceeded` — validates `BUDGET_EXCEEDED` path in `execute_step_with_runner`
+- `test_pipeline_returns_failure_when_agent_max_tokens_exceeded` — validates `TOKEN_BUDGET_EXCEEDED` path for `manifest.max_tokens`
+- `callable=` → `fn=` updated in all `RawSDKAdapter` test calls
+
+### Changed
+
+- Version bumped to 0.3.2 in `pyproject.toml` and `RELAY_VERSION`
+
+---
+
 ## [0.3.1] - 2026-05-10
 
 ### Fixed
