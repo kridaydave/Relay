@@ -45,3 +45,6 @@ venv/
 ENV/
 #build
 dist/
+# AI
+.claude/
+.gemini/
