@@ -21,8 +21,6 @@ Every module must answer three questions in its module docstring:
 
 If you cannot answer all three, the module is doing too many things. Split it.
 
-**Current violation to fix:** `core_pipeline.py` owns pipeline lifecycle but also calls into snapshot management, rollback, and budget enforcement directly. Those concerns are now partially delegated to `pipeline_snapshot.py`, `pipeline_rollback.py`, and `pipeline_state.py` — finish the job. `core_pipeline.py` should read like an orchestrator: call helpers, handle their results, move on. No direct `json.dumps`, no direct file paths, no business logic.
-
 ### 1.2 Layered imports — lower layers never import upper layers
 
 ```
@@ -52,23 +50,9 @@ Circular imports are a sign of wrong layer assignment. Fix the layer, not the im
 
 No `# type: ignore`. No `Any` unless the value genuinely is untyped at the boundary (e.g. raw JSON from disk). When mypy complains, fix the code.
 
-**Specific fixes required:**
+### 2.2 Generic Result type alias must be bound correctly
 
 ```python
-# WRONG — current core_pipeline.py
-_snapshot_ids: dict[str, str]  # accessed with int keys everywhere
-
-# CORRECT
-_snapshot_ids: dict[int, str]
-```
-
-### 2.2 Generic Result type alias is broken — fix it
-
-```python
-# WRONG — current types.py
-Result: TypeAlias = Union[Success[T], RollbackSuccess[T], Failure]
-# T is not bound here. mypy accepts it but it's a lie.
-
 # CORRECT
 type Result[T] = Success[T] | RollbackSuccess[T] | Failure        # Python 3.12+
 # or for 3.11 compatibility:
@@ -94,24 +78,9 @@ The `Result[T]` pattern means callers never need a try/except for expected failu
 
 **Rule:** Raise `ValueError` or `AssertionError` for programmer errors (wrong types passed, invariants violated at construction time). Return `Failure` for operational errors (missing file, budget exceeded, validation failed, corrupted JSON).
 
-**Current violation:**
-```python
-# snapshot.py — currently raises
-raise RuntimeError(f"Failed to update index: {e}")
-
-# Must be:
-return Failure(reason=f"Failed to update index: {e}", code="INDEX_UPDATE_FAILED")
-```
-
 ### 3.2 Never use bare `except`
 
 ```python
-# WRONG
-try:
-    ...
-except Exception as e:
-    raise RuntimeError(...)
-
 # CORRECT — catch the specific exception you expect
 try:
     with open(path) as f:
@@ -129,11 +98,6 @@ except OSError as e:
 ### 3.4 Propagate Failure immediately — no silent discard
 
 ```python
-# WRONG — swallows the failure path
-result = do_thing()
-if isinstance(result, Failure):
-    return Success(envelope)   # pretends everything is fine
-
 # CORRECT
 result = do_thing()
 if isinstance(result, Failure):
@@ -182,7 +146,7 @@ def _validate_pipeline_id(pipeline_id: str) -> Result[str]:
 
 ### 5.1 Every resource has an explicit owner and cleanup path
 
-Currently `TiktokenCounter` has a `close()` method but `CoreRelayPipeline.close()` only calls it if the attribute exists via `hasattr`. This is fragile. Use the `Closeable` protocol:
+Use the `Closeable` protocol:
 
 ```python
 from typing import Protocol
@@ -201,11 +165,11 @@ with CoreRelayPipeline(signing_secret=..., token_budget=8000) as pipeline:
 
 ### 5.2 `ThreadPoolExecutor` in tests must be shut down
 
-`tests/unit/test_pipeline.py` uses `ThreadPoolExecutor` but the `with` block is already correct there. Ensure no future test creates an executor outside a `with` block or `try/finally`.
+Ensure no future test creates an executor outside a `with` block or `try/finally`.
 
 ### 5.3 Snapshot temp files must be cleaned up on failure
 
-The current `save_snapshot` creates a `.tmp` file and cleans it up on exception — good. Verify the cleanup runs even if `os.replace` raises (e.g. cross-device link on some systems). Wrap the replace in the try block.
+The `save_snapshot` method creates a `.tmp` file and cleans it up on exception. Verify the cleanup runs even if `os.replace` raises (e.g. cross-device link on some systems). Wrap the replace in the try block.
 
 ---
 
@@ -217,7 +181,7 @@ Use the word **"approximates"** or **"estimates"** in the docstring. Without it,
 
 ### 6.2 Every heuristic must have a ground-truth benchmark test
 
-The `_estimate_tokens` function claims 50% accuracy but the test only checks the formula, not the accuracy claim. A proper benchmark:
+A proper benchmark:
 
 ```python
 def test_token_estimate_accuracy_against_reference():
@@ -242,7 +206,7 @@ def test_token_estimate_accuracy_against_reference():
 
 ### 6.3 The hallucination heuristic needs a ground-truth test
 
-`_detect_hallucination` uses a 2.0× ratio threshold with no empirical basis documented. Add a test that:
+`_detect_hallucination` uses a 2.0× ratio threshold.
 
 1. Constructs a payload where a human would agree hallucination occurred.
 2. Asserts the detector fires.
@@ -258,10 +222,6 @@ Document the known false-positive and false-negative cases in the test file.
 ### 7.1 Test names are sentences, not identifiers
 
 ```python
-# WRONG
-def test_enforcer_1():
-def test_snapshot_load():
-
 # CORRECT
 def test_hard_cap_enforcer_blocks_call_when_projected_cost_exceeds_remaining_budget():
 def test_snapshot_load_returns_failure_when_file_is_missing():
@@ -269,17 +229,11 @@ def test_snapshot_load_returns_failure_when_file_is_missing():
 
 ### 7.2 Every public function has a test — no exceptions
 
-Functions currently missing explicit tests:
-
-- `SnapshotStore.list_snapshots` — exists but only tested as a side effect of integration tests
-- `ContextEnvelope` constructor validation (the frozen invariant is tested; field constraints are not)
-- `unwrap_or`, `map_result`, `map_error` — only happy-path tested
-- `pipeline_state.py` public methods — no dedicated unit tests
-- `pipeline_snapshot.py` and `pipeline_rollback.py` — no dedicated unit tests
+Make sure every function is tested, including error and failure paths.
 
 ### 7.3 Concurrent code must be tested concurrently (R18)
 
-`PipelineState` mutates `_current_envelope`, `_previous_envelopes`, and `_snapshot_ids` and is accessed from multiple threads via `core_pipeline.py`. The existing concurrent tests in `test_pipeline.py` are a good start but they only assert "no exception raised." They must also assert **final state consistency**:
+Any component that mutates state and is accessed from multiple threads must be tested concurrently. Assert **final state consistency**:
 
 ```python
 def test_concurrent_steps_final_envelope_is_consistent():
@@ -312,9 +266,6 @@ Use `isinstance(FixedCounter(5), TokenCounter)` as a sanity assertion in at leas
 ### 8.1 Commit messages: what and why, not how
 
 ```
-# WRONG
-fix: updated stuff in snapshot
-
 # CORRECT
 fix(snapshot): return Failure instead of raising RuntimeError on index update
 
@@ -325,13 +276,6 @@ fix(snapshot): return Failure instead of raising RuntimeError on index update
 ### 8.2 Docstrings must stay accurate after every behaviour change (R19)
 
 When a PR changes what a function does, the docstring changes in the same commit. A reviewer must explicitly check that every modified function's docstring still matches its implementation. A docstring that lies is worse than no docstring.
-
-**Currently inaccurate docstring:**
-```python
-# core_pipeline.py — says "Does NOT: define agent behavior, manage prompts"
-# but the class also now owns budget enforcement and slicer orchestration.
-# Update it.
-```
 
 ### 8.3 Module docstrings use the three-line format
 
@@ -352,9 +296,6 @@ Every module. No exceptions.
 ### 9.1 The default signing secret must be removed
 
 ```python
-# WRONG — current envelope.py
-def create_initial_envelope(..., secret: str = "default-secret"):
-
 # CORRECT — make it required
 def create_initial_envelope(..., secret: str):
 ```
