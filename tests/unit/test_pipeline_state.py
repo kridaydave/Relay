@@ -33,10 +33,12 @@ class TestInitialization:
         assert state.pipeline_id == "test-pipeline-id"
 
     def test_initial_current_is_none(self, state):
-        assert state.current() is None
+        with state.transaction() as _:
+            assert state.current() is None
 
     def test_initial_has_no_history(self, state):
-        assert state.has_history() is False
+        with state.transaction() as _:
+            assert state.has_history() is False
 
 
 class TestSetCurrent:
@@ -44,7 +46,7 @@ class TestSetCurrent:
         env = create_mock_envelope(1)
         with state.transaction() as _:
             state.set_current(env)
-        assert state.current() == env
+            assert state.current() == env
 
 
 class TestArchiveAndSet:
@@ -56,18 +58,17 @@ class TestArchiveAndSet:
 
         with state.transaction() as _:
             state.archive_and_set(env2)
-
-        assert state.current() == env2
-        history = state.get_previous_envelopes()
-        assert len(history) == 1
-        assert history[0] == env1
+            assert state.current() == env2
+            history = state.get_previous_envelopes()
+            assert len(history) == 1
+            assert history[0] == env1
 
     def test_first_envelope_has_no_archive(self, state):
         env1 = create_mock_envelope(1)
         with state.transaction() as _:
             state.archive_and_set(env1)
-        assert state.current() == env1
-        assert state.has_history() is False
+            assert state.current() == env1
+            assert state.has_history() is False
 
 
 class TestSnapshotIds:
@@ -83,14 +84,16 @@ class TestGetPreviousEnvelopes:
             state.archive_and_set(env1)
         with state.transaction() as _:
             state.archive_and_set(env2)
-        history = state.get_previous_envelopes()
-        assert len(history) == 1
-        assert history[0] == env1
-        history.clear()
-        assert len(state.get_previous_envelopes()) == 1
+        with state.transaction() as _:
+            history = state.get_previous_envelopes()
+            assert len(history) == 1
+            assert history[0] == env1
+            history.clear()
+            assert len(state.get_previous_envelopes()) == 1
 
     def test_returns_empty_list_when_no_history(self, state):
-        assert state.get_previous_envelopes() == []
+        with state.transaction() as _:
+            assert state.get_previous_envelopes() == []
 
 
 class TestConsumeLast:
@@ -104,8 +107,9 @@ class TestConsumeLast:
         with state.transaction() as _:
             consumed = state.consume_last()
         assert consumed == env1
-        history = state.get_previous_envelopes()
-        assert len(history) == 0
+        with state.transaction() as _:
+            history = state.get_previous_envelopes()
+            assert len(history) == 0
 
     def test_raises_index_error_when_history_empty(self, state):
         with state.transaction() as _:
@@ -145,6 +149,14 @@ class TestThreadSafety:
         t2.join()
 
         assert len(errors) == 0
-        final = state.current()
+        with state.transaction() as _:
+            final = state.current()
         assert final is not None
         assert final.step in (1, 2)
+
+
+class TestLockAssertions:
+    def test_set_current_outside_transaction_raises_runtime_error(self, state):
+        env = create_mock_envelope(1)
+        with pytest.raises(RuntimeError, match="Lock must be held via transaction"):
+            state.set_current(env)

@@ -239,11 +239,18 @@ class TestConcurrentPipeline:
         self, mock_next, mock_initial, temp_storage
     ):
         """Test that concurrent access to _snapshot_ids is thread-safe."""
+        def mock_create_next_envelope(previous_envelope, agent_output, manifest_hash):
+            return Success(
+                create_mock_envelope(
+                    previous_envelope.step + 1,
+                    previous_envelope.pipeline_id,
+                    agent_output,
+                )
+            )
+        mock_next.side_effect = mock_create_next_envelope
+
         mock_initial.return_value = Success(
             create_mock_envelope(1, "test-pipeline-id", {"initial": "data"})
-        )
-        mock_next.return_value = Success(
-            create_mock_envelope(2, "test-pipeline-id", {"next": "data"})
         )
 
         pipeline = CoreRelayPipeline(
@@ -274,6 +281,16 @@ class TestConcurrentPipeline:
 
         assert len(errors) == 0, f"Errors occurred: {errors}"
         assert len(results) > 0
+
+        final_envelope = pipeline.get_current_envelope()
+        assert final_envelope is not None
+        assert final_envelope.step >= 1
+
+        submitted_payloads = [{"step": i} for i in range(3)] + [{"initial": "data"}]
+        assert final_envelope.payload in submitted_payloads, (
+            f"Final payload {final_envelope.payload} is not one of the submitted payloads — "
+            "possible state corruption from concurrent writes"
+        )
 
     @patch("relay.context_broker.ContextBroker.create_initial_envelope")
     @patch("relay.context_broker.ContextBroker.create_next_envelope")
@@ -380,10 +397,21 @@ class TestConcurrentPipeline:
                 )
 
     @patch("relay.context_broker.ContextBroker.create_initial_envelope")
+    @patch("relay.context_broker.ContextBroker.create_next_envelope")
     def test_thread_pool_executor_operations(
-        self, mock_initial, temp_storage
+        self, mock_next, mock_initial, temp_storage
     ):
         """Test pipeline operations under thread pool execution."""
+        def mock_create_next_envelope(previous_envelope, agent_output, manifest_hash):
+            return Success(
+                create_mock_envelope(
+                    previous_envelope.step + 1,
+                    previous_envelope.pipeline_id,
+                    agent_output,
+                )
+            )
+        mock_next.side_effect = mock_create_next_envelope
+
         mock_initial.return_value = Success(
             create_mock_envelope(1, "test-pipeline-id", {"data": "test"})
         )
@@ -410,3 +438,9 @@ class TestConcurrentPipeline:
         assert len(errors) == 0, f"Errors occurred: {errors}"
         final_envelope = pipeline.get_current_envelope()
         assert final_envelope is not None
+
+        submitted_payloads = [{"step": i} for i in range(5)] + [{"data": "test"}]
+        assert final_envelope.payload in submitted_payloads, (
+            f"Final payload {final_envelope.payload} is not one of the submitted payloads — "
+            "possible state corruption from concurrent writes"
+        )

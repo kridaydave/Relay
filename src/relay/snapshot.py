@@ -6,6 +6,7 @@ Does NOT: execute agents or manage pipeline state.
 
 import json
 import os
+import re
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -13,6 +14,10 @@ from typing import Any
 
 from relay.envelope import PIPELINE_ID_PATTERN, ContextEnvelope
 from relay.types import ErrorCode, Failure, Result, Success
+
+SNAPSHOT_ID_PATTERN = re.compile(
+    r"^[a-zA-Z0-9_-]{1,128}@\d+_[a-f0-9]{12}$"
+)
 
 __all__ = [
     "SnapshotStore",
@@ -101,31 +106,16 @@ class SnapshotStore:
 
     def load_snapshot(self, snapshot_id: str) -> Result[ContextEnvelope]:
         """Load an envelope from a snapshot by ID."""
-        if "@" not in snapshot_id:
+        if not SNAPSHOT_ID_PATTERN.match(snapshot_id):
             return Failure(
-                reason="Invalid snapshot ID format, missing pipeline_id",
+                reason="Invalid snapshot ID format",
                 code=ErrorCode.INVALID_SNAPSHOT_ID,
             )
 
         pipeline_id, rest = snapshot_id.split("@", 1)
-        if not PIPELINE_ID_PATTERN.match(pipeline_id):
-            return Failure(
-                reason="Invalid pipeline_id in snapshot ID",
-                code=ErrorCode.INVALID_PIPELINE_ID,
-            )
 
         parts = rest.rsplit("_", 1)
-        if len(parts) != 2:
-            return Failure(
-                reason="Invalid snapshot ID format", code=ErrorCode.INVALID_SNAPSHOT_ID
-            )
-
-        try:
-            step = int(parts[0])
-        except ValueError:
-            return Failure(
-                reason="Invalid step in snapshot ID", code=ErrorCode.INVALID_SNAPSHOT_ID
-            )
+        step = int(parts[0])
 
         snapshot_path = self._storage_path / pipeline_id / f"{snapshot_id}.json"
         try:

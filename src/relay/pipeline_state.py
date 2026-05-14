@@ -24,6 +24,7 @@ class PipelineState:
         self._previous_envelopes: list[ContextEnvelope] = []
         self._snapshot_ids: dict[int, str] = {}
         self._lock = threading.Lock()
+        self._lock_owner: int | None = None
 
     @property
     def pipeline_id(self) -> str:
@@ -34,8 +35,15 @@ class PipelineState:
         return self._snapshot_ids
 
     def current(self) -> ContextEnvelope | None:
-        """Return the current envelope (no lock needed for read of None check)."""
+        """Return the current envelope under lock."""
+        self._assert_lock_held()
         return self._current_envelope
+
+    def _assert_lock_held(self) -> None:
+        if threading.get_ident() != self._lock_owner:
+            raise RuntimeError(
+                "Lock must be held via transaction() context manager"
+            )
 
     @contextmanager
     def transaction(self) -> Generator[ContextEnvelope | None, None, None]:
@@ -45,30 +53,36 @@ class PipelineState:
         Automatically acquires and releases the lock.
         """
         with self._lock:
-            yield self._current_envelope
+            self._lock_owner = threading.get_ident()
+            try:
+                yield self._current_envelope
+            finally:
+                self._lock_owner = None
 
     def get_previous_envelopes(self) -> list[ContextEnvelope]:
-        """Return a copy of the previous envelopes list."""
+        """Return a copy of the previous envelopes list under lock."""
+        self._assert_lock_held()
         return list(self._previous_envelopes)
 
     def set_current(self, envelope: ContextEnvelope) -> None:
-        # Caller must hold self._lock via transaction()
+        self._assert_lock_held()
         self._current_envelope = envelope
 
     def archive_and_set(self, new_envelope: ContextEnvelope) -> None:
-        # Caller must hold self._lock via transaction()
+        self._assert_lock_held()
         if self._current_envelope is not None:
             self._previous_envelopes.append(self._current_envelope)
         self._current_envelope = new_envelope
 
     def peek_last(self) -> ContextEnvelope | None:
-        # Caller must hold self._lock via transaction()
+        self._assert_lock_held()
         return self._previous_envelopes[-1] if self._previous_envelopes else None
 
     def consume_last(self) -> ContextEnvelope:
-        # Caller must hold self._lock via transaction()
+        self._assert_lock_held()
         return self._previous_envelopes.pop()
 
     def has_history(self) -> bool:
-        """Check if there are previous envelopes to rollback to."""
+        """Check if there are previous envelopes to rollback to under lock."""
+        self._assert_lock_held()
         return len(self._previous_envelopes) > 0

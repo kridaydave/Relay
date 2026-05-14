@@ -133,6 +133,12 @@ class TestSnapshotStore:
         assert isinstance(result, Failure)
         assert result.code == "INVALID_SNAPSHOT_ID"
 
+    def test_load_snapshot_rejects_path_traversal_attempt(self):
+        result = self.store.load_snapshot("../etc/passwd")
+
+        assert isinstance(result, Failure)
+        assert result.code == "INVALID_SNAPSHOT_ID"
+
     def test_snapshot_get_latest_fails_when_no_snapshots(self):
         result = self.store.get_latest_snapshot("nonexistent-pipeline")
 
