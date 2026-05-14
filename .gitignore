@@ -48,3 +48,4 @@ dist/
 # AI
 .claude/
 .gemini/
+docs/codename.md
