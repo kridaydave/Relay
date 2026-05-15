@@ -534,9 +534,6 @@ class CoreRelayPipeline:
             compute_signature(envelope_with_meta, self._context_broker.signing_secret)
         )
         with self._state.transaction():
-            save_result = self._snapshot_store.save_snapshot(signed)
-            if isinstance(save_result, Failure):
-                return save_result
             self._state.set_current(signed)
         return Success(signed)
 

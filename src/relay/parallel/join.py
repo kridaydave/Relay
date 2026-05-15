@@ -110,10 +110,15 @@ async def _apply_first_wins(
     while pending and winner_payload is None:
         done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
         for task in done:
-            result: ForkResult = task.result()
+            try:
+                result: ForkResult = task.result()
+            except Exception:
+                continue
             if result.success and result.agent_output is not None:
                 winner_payload = _agent_output_to_payload(result.agent_output)
                 break
+        if winner_payload is not None:
+            break
 
     for task in tasks:
         if not task.done():
