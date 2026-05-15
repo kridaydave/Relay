@@ -7,11 +7,10 @@ Each call is a pure coroutine — the same pre_fork_envelope can be passed to
 N concurrent _run_single_fork calls with no contention.
 """
 
-import time
 from typing import TYPE_CHECKING, Any
 
 from relay.envelope import ContextEnvelope
-from relay.parallel.types import ForkResult, ForkSpec
+from relay.parallel.types import ForkResult, ForkSpec, _agent_output_to_payload
 from relay.runners.protocol import AgentOutput, ContextSlice
 from relay.types import ErrorCode, Failure, Success
 from relay.validator import HandoffValidator, validate_manifest_boundaries
@@ -19,19 +18,6 @@ from relay.validator import HandoffValidator, validate_manifest_boundaries
 if TYPE_CHECKING:
     from relay.runners.registry import AdapterRegistry
     from relay.slicer.manifest import AgentManifest
-
-
-def _agent_output_to_payload(output: AgentOutput) -> dict[str, Any]:
-    """Shape AgentOutput into a payload dict for validation and merging.
-
-    Defined here rather than imported from core_pipeline to avoid a circular
-    import (core_pipeline imports from parallel; parallel must NOT import from
-    core_pipeline). Logic is identical to core_pipeline._agent_output_to_payload.
-    """
-    raw: dict[str, Any] = {"text": output.text, **output.structured}
-    if output.tool_calls:
-        raw["tool_calls"] = output.tool_calls
-    return raw
 
 
 async def _run_single_fork(

@@ -8,19 +8,11 @@ import asyncio
 from typing import TYPE_CHECKING, Any, Coroutine
 
 from relay.envelope import ContextEnvelope
-from relay.parallel.types import ForkResult, ForkSpec, JoinStrategy
+from relay.parallel.types import ForkResult, ForkSpec, JoinStrategy, _agent_output_to_payload
 from relay.types import ErrorCode, Failure, Result, Success
 
 if TYPE_CHECKING:
     from relay.runners.protocol import AgentOutput
-
-
-def _agent_output_to_payload(output: "AgentOutput") -> dict[str, Any]:
-    """Shape AgentOutput into a payload dict for validation and merging."""
-    raw: dict[str, Any] = {"text": output.text, **output.structured}
-    if output.tool_calls:
-        raw["tool_calls"] = output.tool_calls
-    return raw
 
 
 def _apply_union(fork_results: list[ForkResult]) -> Result[dict[str, Any]]:

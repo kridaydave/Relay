@@ -8,10 +8,10 @@ from enum import Enum
 from dataclasses import dataclass
 from typing import Any, TYPE_CHECKING
 
+from relay.runners.protocol import AgentOutput
 from relay.types import Failure, Result
 
 if TYPE_CHECKING:
-    from relay.runners.protocol import AgentOutput
     from relay.validator import ValidationResult
     from relay.slicer.manifest import AgentManifest
 
@@ -50,3 +50,16 @@ class ForkResult:
     agent_output: "AgentOutput | None"
     validation: "ValidationResult | None"
     failure: "Failure | None"
+
+
+def _agent_output_to_payload(output: AgentOutput) -> dict[str, Any]:
+    """Shape AgentOutput into a payload dict for validation and merging.
+
+    ``output.text`` always takes precedence when ``output.structured``
+    also contains a ``"text"`` key, preventing silent data loss.
+    """
+    raw = dict(output.structured)
+    raw["text"] = output.text
+    if output.tool_calls:
+        raw["tool_calls"] = output.tool_calls
+    return raw

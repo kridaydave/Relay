@@ -12,14 +12,9 @@ from typing import Any
 from relay.budget import HardCapEnforcer, TokenCounter
 from relay.context_broker import ContextBroker, create_context_broker
 from relay.envelope import compute_signature, ContextEnvelope, estimate_tokens, serialize_slice
-from relay.parallel import (
-    _agent_output_to_payload,
-    _run_single_fork,
-    apply_join_strategy,
-    ForkResult,
-    ForkSpec,
-    JoinStrategy,
-)
+from relay.parallel import apply_join_strategy, ForkResult, ForkSpec, JoinStrategy
+from relay.parallel.fork_runner import _run_single_fork
+from relay.parallel.types import _agent_output_to_payload
 from relay.pipeline_rollback import RollbackHandler
 from relay.pipeline_state import PipelineState
 from relay.runners import AdapterRegistry
