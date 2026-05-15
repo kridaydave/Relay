@@ -1,13 +1,16 @@
 """Unit tests for relay.snapshot."""
 
+import json
 import shutil
 import tempfile
+from pathlib import Path
 from datetime import datetime, timezone
+from unittest.mock import patch
 
 import pytest
 
 from relay.envelope import RELAY_VERSION, ContextEnvelope, create_initial_envelope
-from relay.snapshot import SnapshotStore
+from relay.snapshot import SNAPSHOT_ID_PATTERN, SnapshotStore, InvalidSnapshotIdError, _extract_step_from_snapshot_id
 from relay.types import Failure, Success, ErrorCode
 
 
@@ -191,6 +194,254 @@ class TestSnapshotStore:
 
         assert isinstance(result, Success)
         assert result.value == []
+
+
+class TestSnapshotStoreSaveErrors:
+    def setup_method(self):
+        self.temp_dir = tempfile.mkdtemp()
+        self.store = SnapshotStore(storage_path=self.temp_dir)
+
+    def teardown_method(self):
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def _make_env(self, pipeline_id="pipeline-err", step=1):
+        return ContextEnvelope(
+            relay_version=RELAY_VERSION,
+            pipeline_id=pipeline_id,
+            step=step,
+            timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            token_budget_used=100,
+            token_budget_total=8000,
+            payload={"data": "test"},
+            manifest_hash="",
+            signature="sig",
+        )
+
+    def test_save_snapshot_fails_on_os_error(self):
+        with patch("builtins.open", side_effect=OSError("disk full")):
+            result = self.store.save_snapshot(self._make_env())
+
+        assert isinstance(result, Failure)
+        assert result.code == ErrorCode.SNAPSHOT_SAVE_FAILED
+
+    def test_save_snapshot_fails_on_index_update(self):
+        env = self._make_env()
+        with patch.object(self.store, "_add_to_index", return_value=Failure(reason="index fail", code=ErrorCode.INDEX_UPDATE_FAILED)):
+            result = self.store.save_snapshot(env)
+
+        assert isinstance(result, Failure)
+        assert result.code == ErrorCode.INDEX_UPDATE_FAILED
+
+    def test_save_snapshot_cleans_up_snapshot_file_on_index_failure(self):
+        env = self._make_env()
+        original_add = self.store._add_to_index
+
+        def failing_add(pid, sid):
+            return Failure(reason="index fail", code=ErrorCode.INDEX_UPDATE_FAILED)
+
+        self.store._add_to_index = failing_add
+        result = self.store.save_snapshot(env)
+        self.store._add_to_index = original_add
+
+        assert isinstance(result, Failure)
+        pipeline_path = Path(self.temp_dir) / env.pipeline_id
+        snapshot_files = list(pipeline_path.glob("*.json"))
+        assert len(snapshot_files) == 0
+
+
+class TestSnapshotStoreLoadErrors:
+    def setup_method(self):
+        self.temp_dir = tempfile.mkdtemp()
+        self.store = SnapshotStore(storage_path=self.temp_dir)
+
+    def teardown_method(self):
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def test_load_snapshot_fails_on_file_not_found(self):
+        result = self.store.load_snapshot("pipeline-valid@1_abcdef123456")
+
+        assert isinstance(result, Failure)
+        assert result.code == ErrorCode.SNAPSHOT_NOT_FOUND
+
+    def test_load_snapshot_fails_on_corrupted_json(self):
+        pipeline_dir = Path(self.temp_dir) / "pipeline-x"
+        pipeline_dir.mkdir(parents=True)
+        snapshot_file = pipeline_dir / "pipeline-x@1_abcdef123456.json"
+        snapshot_file.write_text("not valid json {{{")
+
+        result = self.store.load_snapshot("pipeline-x@1_abcdef123456")
+
+        assert isinstance(result, Failure)
+        assert result.code == ErrorCode.SNAPSHOT_LOAD_FAILED
+
+    def test_load_snapshot_fails_on_os_error(self):
+        pipeline_dir = Path(self.temp_dir) / "pipeline-x"
+        pipeline_dir.mkdir(parents=True)
+        snapshot_file = pipeline_dir / "pipeline-x@1_abcdef123456.json"
+        snapshot_file.write_text("{}")
+
+        with patch("builtins.open", side_effect=OSError("permission denied")):
+            result = self.store.load_snapshot("pipeline-x@1_abcdef123456")
+
+        assert isinstance(result, Failure)
+        assert result.code == ErrorCode.SNAPSHOT_LOAD_FAILED
+
+    def test_load_snapshot_rejects_invalid_format(self):
+        result = self.store.load_snapshot("no-at-sign")
+        assert isinstance(result, Failure)
+        assert result.code == ErrorCode.INVALID_SNAPSHOT_ID
+
+
+class TestSnapshotStoreGetLatestErrors:
+    def setup_method(self):
+        self.temp_dir = tempfile.mkdtemp()
+        self.store = SnapshotStore(storage_path=self.temp_dir)
+
+    def teardown_method(self):
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def test_get_latest_snapshot_fails_on_empty_snapshots_list(self):
+        pipeline_dir = Path(self.temp_dir) / "pipeline-empty"
+        pipeline_dir.mkdir(parents=True)
+        index_path = pipeline_dir / "index.json"
+        index_path.write_text('{"snapshots": []}')
+
+        result = self.store.get_latest_snapshot("pipeline-empty")
+
+        assert isinstance(result, Failure)
+        assert result.code == ErrorCode.NO_SNAPSHOTS
+
+
+class TestSnapshotStoreListErrors:
+    def setup_method(self):
+        self.temp_dir = tempfile.mkdtemp()
+        self.store = SnapshotStore(storage_path=self.temp_dir)
+
+    def teardown_method(self):
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def test_list_snapshots_propagates_index_read_failure(self):
+        pipeline_dir = Path(self.temp_dir) / "pipeline-fail"
+        pipeline_dir.mkdir(parents=True)
+        index_path = pipeline_dir / "index.json"
+        index_path.write_text("{}")
+
+        with patch("builtins.open", side_effect=OSError("permission denied")):
+            result = self.store.list_snapshots("pipeline-fail")
+
+        assert isinstance(result, Failure)
+        assert result.code == ErrorCode.INDEX_READ_FAILED
+
+
+class TestSnapshotStoreLoadIndexErrors:
+    def setup_method(self):
+        self.temp_dir = tempfile.mkdtemp()
+        self.store = SnapshotStore(storage_path=self.temp_dir)
+
+    def teardown_method(self):
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def test_load_index_corrupted_json(self):
+        pipeline_dir = Path(self.temp_dir) / "pipe-x"
+        pipeline_dir.mkdir(parents=True)
+        (pipeline_dir / "index.json").write_text("{{{broken")
+
+        result = self.store._load_index("pipe-x")
+
+        assert isinstance(result, Failure)
+        assert result.code == ErrorCode.CORRUPTED_INDEX
+
+    def test_load_index_os_error(self):
+        pipeline_dir = Path(self.temp_dir) / "pipe-x"
+        pipeline_dir.mkdir(parents=True)
+        (pipeline_dir / "index.json").write_text("{}")
+
+        with patch("builtins.open", side_effect=OSError("locked")):
+            result = self.store._load_index("pipe-x")
+
+        assert isinstance(result, Failure)
+        assert result.code == ErrorCode.INDEX_READ_FAILED
+
+
+class TestSnapshotDictToEnvelope:
+    def setup_method(self):
+        self.temp_dir = tempfile.mkdtemp()
+        self.store = SnapshotStore(storage_path=self.temp_dir)
+
+    def teardown_method(self):
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def _write_snapshot(self, pipeline_id: str, step: int, data: dict) -> str:
+        pipeline_dir = Path(self.temp_dir) / pipeline_id
+        pipeline_dir.mkdir(parents=True)
+        snapshot_id = f"{pipeline_id}@{step}_abcdef123456"
+        (pipeline_dir / f"{snapshot_id}.json").write_text(json.dumps(data))
+        return snapshot_id
+
+    def test_missing_relay_version_returns_failure(self):
+        sid = self._write_snapshot("p-miss", 1, {
+            "pipeline_id": "p-miss", "step": 1,
+            "timestamp": "2024-01-01T00:00:00+00:00",
+            "token_budget_used": 100, "token_budget_total": 8000,
+            "payload": {"k": "v"}, "manifest_hash": "", "signature": "s",
+        })
+        result = self.store.load_snapshot(sid)
+        assert isinstance(result, Failure)
+        assert result.code == ErrorCode.INVALID_SNAPSHOT
+
+    def test_invalid_timestamp_format_returns_failure(self):
+        sid = self._write_snapshot("p-ts", 1, {
+            "relay_version": RELAY_VERSION, "pipeline_id": "p-ts",
+            "step": 1, "timestamp": "not-a-date",
+            "token_budget_used": 100, "token_budget_total": 8000,
+            "payload": {"k": "v"}, "manifest_hash": "", "signature": "s",
+        })
+        result = self.store.load_snapshot(sid)
+        assert isinstance(result, Failure)
+        assert result.code == ErrorCode.INVALID_SNAPSHOT
+
+    def test_invalid_payload_type_returns_failure(self):
+        sid = self._write_snapshot("p-pay", 1, {
+            "relay_version": RELAY_VERSION, "pipeline_id": "p-pay",
+            "step": 1, "timestamp": "2024-01-01T00:00:00+00:00",
+            "token_budget_used": 100, "token_budget_total": 8000,
+            "payload": "not-a-dict", "manifest_hash": "", "signature": "s",
+        })
+        result = self.store.load_snapshot(sid)
+        assert isinstance(result, Failure)
+        assert result.code == ErrorCode.INVALID_SNAPSHOT
+
+    def test_invalid_step_type_returns_failure(self):
+        sid = self._write_snapshot("p-step", 1, {
+            "relay_version": RELAY_VERSION, "pipeline_id": "p-step",
+            "step": "not-an-int", "timestamp": "2024-01-01T00:00:00+00:00",
+            "token_budget_used": 100, "token_budget_total": 8000,
+            "payload": {"k": "v"}, "manifest_hash": "", "signature": "s",
+        })
+        result = self.store.load_snapshot(sid)
+        assert isinstance(result, Failure)
+        assert result.code == ErrorCode.INVALID_SNAPSHOT
+
+
+class TestExtractStepFromSnapshotId:
+    def test_extract_step_returns_correct_int(self):
+        assert _extract_step_from_snapshot_id("pipe@42_abc123") == 42
+
+    def test_extract_step_raises_on_missing_at_symbol(self):
+        with pytest.raises(InvalidSnapshotIdError, match="Invalid snapshot ID format"):
+            _extract_step_from_snapshot_id("no-at-sign")
+
+    def test_extract_step_raises_on_non_numeric_step(self):
+        with pytest.raises(InvalidSnapshotIdError, match="Invalid snapshot ID format"):
+            _extract_step_from_snapshot_id("pipe@abc_xyz")
+
+
+class TestSnapshotIdPattern:
+    def test_valid_snapshot_id_matches(self):
+        assert SNAPSHOT_ID_PATTERN.match("pipeline-123@1_a1b2c3d4e5f6")
+
+    def test_snapshot_id_with_path_traversal_does_not_match(self):
+        assert SNAPSHOT_ID_PATTERN.match("../etc/passwd") is None
 
 
 class TestContextEnvelope:
