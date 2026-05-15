@@ -38,9 +38,12 @@ def _apply_union(fork_results: list[ForkResult]) -> Result[dict[str, Any]]:
 
     for result in fork_results:
         if result.agent_output is None:
-            raise ValueError(
-                f"ForkResult.success=True but agent_output is None for fork[{result.fork_index}] "
-                "— invariant violated"
+            return Failure(
+                reason=(
+                    f"ForkResult.success=True but agent_output is None "
+                    f"for fork[{result.fork_index}] — invariant violated"
+                ),
+                code=ErrorCode.UNKNOWN_ERROR,
             )
         fork_payload = _agent_output_to_payload(result.agent_output)
         for key, value in fork_payload.items():
@@ -78,8 +81,12 @@ def _apply_vote(fork_results: list[ForkResult]) -> Result[dict[str, Any]]:
 
     winner = max(passing, key=_confidence)
     if winner.agent_output is None:
-        raise ValueError(
-            "ForkResult.success=True but agent_output is None — invariant violated"
+        return Failure(
+            reason=(
+                "ForkResult.success=True but agent_output is None "
+                f"for fork[{winner.fork_index}] — invariant violated"
+            ),
+            code=ErrorCode.UNKNOWN_ERROR,
         )
     return Success(_agent_output_to_payload(winner.agent_output))
 
