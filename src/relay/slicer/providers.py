@@ -6,6 +6,7 @@ Does NOT: implement embedding models, manage vector stores, or perform packing.
 
 from typing import Any, Protocol, runtime_checkable
 
+from relay.slicer.manifest import AgentManifest
 from relay.types import Result
 
 
@@ -31,7 +32,7 @@ class SlicePacker(Protocol):
     """
 
     def pack(
-        self, payload: dict[str, Any], manifest: Any
+        self, payload: dict[str, Any], manifest: AgentManifest
     ) -> Result[dict[str, Any]]:
         """Pack context based on strategy.
 
