@@ -431,6 +431,9 @@ class CoreRelayPipeline:
 
         Returns:
             Success(envelope) — with fork metadata fields populated.
+            Note: forks_succeeded is hardcoded to 1 for FIRST_WINS strategy
+            since the actual count of passing forks is unknowable after
+            cancellation. For UNION and VOTE the count is accurate.
             Failure — if input validation, all forks, or merge fails. State unchanged.
             RollbackSuccess — if validator triggers rollback during commit.
         """
