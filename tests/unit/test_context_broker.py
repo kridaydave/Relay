@@ -5,8 +5,6 @@ from unittest.mock import patch
 
 import pytest
 
-import pytest
-
 from relay.context_broker import ContextBroker, create_context_broker
 from relay.envelope import ContextEnvelope, RELAY_VERSION
 from relay.types import ErrorCode, Failure, Success

@@ -6,8 +6,6 @@ from typing import Any
 
 import pytest
 
-import pytest
-
 from relay.parallel.types import ForkResult, ForkSpec, JoinStrategy
 from relay.runners.protocol import AgentOutput, ContextSlice
 from relay.runners.registry import AdapterRegistry

@@ -12,8 +12,10 @@ class TestHardCapEnforcer:
     def test_exact_boundary_passes(self):
         """Exact boundary (used + projected == total) must pass."""
         enforcer = HardCapEnforcer(FixedCounter(10))
+        result = enforcer.check(90, 100, "any text")
+        assert isinstance(result, Success)
 
-    def test_check_returns_success_when_within_budget(self):
+    def test_check_returns_failure_when_over_budget(self):
         enforcer = HardCapEnforcer(FixedCounter(10))
         result = enforcer.check(91, 100, "any text")
         assert isinstance(result, Failure)
