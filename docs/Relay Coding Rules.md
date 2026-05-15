@@ -318,7 +318,7 @@ These are open questions the team must decide before v0.3 ships.
 
 | Decision | Options | Recommendation |
 |---|---|---|
-| `RelayPipeline` wrapper class | Remove it (empty subclass) or add real behaviour | Remove — it adds confusion with no value |
+| `RelayPipeline` wrapper class | ~~Remove it (empty subclass) or add real behaviour~~ | ✅ **Resolved** — class deleted from source |
 | Layer 2 (Agent Runner) | Implement in v0.3 or update design doc | Implement per design doc — the doc says v0.3 |
 | `manifest_hash` default `""` | Still present in `create_initial_envelope` | Remove the default now — it was a migration scaffold |
 | Error code registry | Ad-hoc strings vs `Enum` | Enum in `types.py` — prevents typos and enables exhaustive switch |

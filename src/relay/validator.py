@@ -234,8 +234,16 @@ class HandoffValidator:
 
         return None
 
+    ENTITY_KEYS: frozenset[str] = frozenset(
+        {"entity", "entities", "subject", "object", "name", "id", "identifier"}
+    )
+
     def _extract_entities(self, payload: dict[str, Any]) -> frozenset[str]:
         """Extract entity mentions from payload using iterative traversal.
+
+        Only extracts strings from values whose parent key is an entity-keyed field
+        (entity, entities, subject, object, name, id, identifier). This prevents
+        arbitrary narrative text from polluting the entity set.
 
         Tracks nesting depth from root (not stack size). A flat list of 60 strings
         has items at depth 1 and passes. A dict nested 50 levels deep fails with
@@ -243,9 +251,9 @@ class HandoffValidator:
         """
         entities: set[str] = set()
 
-        stack: list[tuple[Any, int]] = [(payload, 0)]
+        stack: list[tuple[Any, int, bool]] = [(payload, 0, False)]
         while stack:
-            obj, depth = stack.pop()
+            obj, depth, is_entity_context = stack.pop()
             if depth > MAX_EXTRACTION_DEPTH:
                 raise MaxDepthExceededError(
                     f"JSON depth {depth} exceeds maximum allowed depth of {MAX_EXTRACTION_DEPTH}"
@@ -253,28 +261,20 @@ class HandoffValidator:
 
             if isinstance(obj, dict):
                 for key, value in obj.items():
-                    if key in {
-                        "entity",
-                        "entities",
-                        "subject",
-                        "object",
-                        "name",
-                        "id",
-                        "identifier",
-                    }:
-                        if isinstance(value, str):
-                            entities.add(value.lower())
-                    stack.append((value, depth + 1))
+                    in_entity_context = key in self.ENTITY_KEYS
+                    if in_entity_context and isinstance(value, str):
+                        entities.add(value.lower())
+                    stack.append((value, depth + 1, in_entity_context))
             elif isinstance(obj, list):
                 for item in obj:
-                    stack.append((item, depth + 1))
-            elif isinstance(obj, str):
-                if (
-                    len(obj) > 2
-                    and len(obj) < 100
-                    and obj.lower() not in self.STOP_WORDS
-                ):
-                    entities.add(obj.lower())
+                    if is_entity_context and isinstance(item, str):
+                        if (
+                            len(item) > 2
+                            and len(item) < 100
+                            and item.lower() not in self.STOP_WORDS
+                        ):
+                            entities.add(item.lower())
+                    stack.append((item, depth + 1, is_entity_context))
 
         return frozenset(entities)
 

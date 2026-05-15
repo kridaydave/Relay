@@ -18,7 +18,6 @@ class HardCapEnforcer:
     would not exceed the remaining budget.
     """
 
-    pipeline_id: str
     counter: TokenCounter
 
     def check(self, budget_used: int, budget_total: int, projected_slice: str) -> Result[None]:

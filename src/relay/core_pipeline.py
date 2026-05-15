@@ -89,7 +89,7 @@ class CoreRelayPipeline:
         self._snapshot_store = SnapshotStore(storage_path=self.storage_path)
         self._rollback_handler = RollbackHandler()
         if self.token_counter is not None:
-            self._enforcer = HardCapEnforcer(self._pipeline_id, self.token_counter)
+            self._enforcer = HardCapEnforcer(self.token_counter)
         else:
             self._enforcer = None
 
@@ -330,8 +330,17 @@ class CoreRelayPipeline:
     def _slice_payload(
         self, manifest: AgentManifest, current_envelope: ContextEnvelope | None
     ) -> Result[str]:
-        """Slice the current payload based on the manifest and slice packer."""
-        if self.slice_packer is None or current_envelope is None:
+        """Slice the current payload based on the manifest and slice packer.
+
+        When no slice_packer is configured, serializes the full payload so budget
+        enforcement still has a realistic projection. When current_envelope is None
+        (initial step), returns the writes-based stub from _check_budget.
+        """
+        if self.slice_packer is None:
+            if current_envelope is None:
+                return Success("")
+            return Success(serialize_slice(current_envelope.payload))
+        if current_envelope is None:
             return Success("")
         pack_result = self.slice_packer.pack(current_envelope.payload, manifest)
         if isinstance(pack_result, Failure):
@@ -441,7 +450,7 @@ class CoreRelayPipeline:
         if not fork_specs:
             return Failure(
                 reason="fork_specs must be non-empty",
-                code=ErrorCode.INVALID_JOIN_STRATEGY,
+                code=ErrorCode.INVALID_STATE,
             )
         if self.registry is None:
             return Failure(

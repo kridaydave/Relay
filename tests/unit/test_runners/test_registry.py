@@ -36,7 +36,7 @@ class TestAdapterRegistryRegister:
 
     def test_raises_on_non_runner_object(self):
         with pytest.raises(ValueError, match="AgentRunner protocol"):
-            AdapterRegistry().register("bad", object())  # type: ignore[arg-type]
+            AdapterRegistry().register("bad", object())
 
     def test_list_names_returns_sorted(self):
         from .conftest import FixedAgentRunner

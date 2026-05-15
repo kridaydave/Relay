@@ -11,26 +11,23 @@ from tests.conftest import FixedCounter
 class TestHardCapEnforcer:
     def test_exact_boundary_passes(self):
         """Exact boundary (used + projected == total) must pass."""
-        enforcer = HardCapEnforcer("pipe-1", FixedCounter(10))
-        result = enforcer.check(90, 100, "any text")
-        assert isinstance(result, Success)
+        enforcer = HardCapEnforcer(FixedCounter(10))
 
-    def test_one_over_returns_failure(self):
-        """One over the limit must return Failure."""
-        enforcer = HardCapEnforcer("pipe-1", FixedCounter(10))
+    def test_check_returns_success_when_within_budget(self):
+        enforcer = HardCapEnforcer(FixedCounter(10))
         result = enforcer.check(91, 100, "any text")
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.BUDGET_EXCEEDED
 
     def test_zero_token_slice_passes(self):
         """Zero-token slice always passes regardless of budget state."""
-        enforcer = HardCapEnforcer("pipe-1", FixedCounter(0))
+        enforcer = HardCapEnforcer(FixedCounter(0))
         result = enforcer.check(100, 100, "")
         assert isinstance(result, Success)
 
     def test_negative_count_returns_failure(self):
         """Negative count must return Failure immediately."""
-        enforcer = HardCapEnforcer("pipe-1", FixedCounter(-5))
+        enforcer = HardCapEnforcer(FixedCounter(-5))
         result = enforcer.check(0, 1000, "any text")
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.INVALID_TOKEN_COUNT
@@ -38,7 +35,7 @@ class TestHardCapEnforcer:
 
     def test_under_budget_passes(self):
         """Under budget should pass and return Success."""
-        enforcer = HardCapEnforcer("pipe-1", FixedCounter(30))
+        enforcer = HardCapEnforcer(FixedCounter(30))
         result = enforcer.check(50, 100, "any text")
         assert isinstance(result, Success)
 

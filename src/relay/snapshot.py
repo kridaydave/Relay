@@ -65,13 +65,19 @@ class SnapshotStore:
     def save_snapshot(self, envelope: ContextEnvelope) -> Result[str]:
         """Save an envelope as a snapshot and return the snapshot ID.
 
-        Trusts that envelope.pipeline_id is valid — validated at construction
-        time by create_initial_envelope via _validate_pipeline_id.
+        Validates pipeline_id at the boundary to defend against manually
+        constructed envelopes with invalid or malicious pipeline_ids
+        (defense-in-depth per Rule 4.1).
 
         Uses file-first ordering: writes the snapshot file, then updates the index.
         If file write fails, no orphaned index entry is created.
         """
         pipeline_id = envelope.pipeline_id
+        if not pipeline_id or not PIPELINE_ID_PATTERN.match(pipeline_id):
+            return Failure(
+                reason=f"Invalid pipeline_id: {pipeline_id}",
+                code=ErrorCode.INVALID_PIPELINE_ID,
+            )
         pipeline_path = self._storage_path / pipeline_id
         pipeline_path.mkdir(parents=True, exist_ok=True)
 
