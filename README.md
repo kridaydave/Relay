@@ -193,6 +193,67 @@ pip install relay-middleware[all]         # everything
 
 ---
 
+## Parallel Fork-Join (v0.4)
+
+Run multiple agents concurrently against the same context, then merge their outputs:
+
+```python
+import asyncio
+from relay.core_pipeline import CoreRelayPipeline
+from relay.parallel import ForkSpec, JoinStrategy
+from relay.slicer import AgentManifest
+from relay.runners import AdapterRegistry, LocalModelAdapter
+
+registry = AdapterRegistry()
+registry.register("analyst", LocalModelAdapter(base_url="http://localhost:11434", model="llama3"))
+registry.register("researcher", LocalModelAdapter(base_url="http://localhost:11434", model="llama3"))
+
+pipeline = CoreRelayPipeline(
+    signing_secret="your-secret-key",
+    token_budget=8000,
+    registry=registry,
+)
+
+manifest_a = AgentManifest("analyst", "Analyze data", frozenset({"input"}), frozenset({"analysis"}), 4000)
+manifest_b = AgentManifest("researcher", "Research context", frozenset({"input"}), frozenset({"research"}), 4000)
+
+# Step 1: seed pipeline
+pipeline.execute_step({"input": "Q3 earnings report"})
+
+# Step 2: parallel fork — both agents run concurrently
+result = asyncio.run(pipeline.execute_parallel_step(
+    fork_specs=[ForkSpec("analyst", manifest_a), ForkSpec("researcher", manifest_b)],
+    join_strategy=JoinStrategy.UNION,
+))
+# Success: merged payload has {"text": "...", "analysis": "...", "research": "..."}
+```
+
+Three join strategies:
+
+| Strategy | Behavior | Use Case |
+|---|---|---|
+| `UNION` | Merge all passing outputs; conflict → rollback | Independent sections of context |
+| `VOTE` | Accept highest-confidence output; discard failures | Redundant agents, best-of-N |
+| `FIRST_WINS` | Accept first passing output; cancel remaining tasks | Latency-critical fallbacks |
+
+```python
+# VOTE: pick the best analysis
+result = asyncio.run(pipeline.execute_parallel_step(
+    fork_specs=[ForkSpec("gpt4", manifest_a), ForkSpec("claude", manifest_b)],
+    join_strategy=JoinStrategy.VOTE,
+))
+
+# FIRST_WINS: fast agent wins, slow agents cancelled
+result = asyncio.run(pipeline.execute_parallel_step(
+    fork_specs=[ForkSpec("fast-model", manifest), ForkSpec("backup-model", manifest)],
+    join_strategy=JoinStrategy.FIRST_WINS,
+))
+```
+
+Forks share the same base payload (immutable snapshot). No LLM calls during parallel step — Relay orchestrates, adapters execute. If all forks fail, state is unchanged (no rollback needed).
+
+---
+
 ## How It Works
 
 ```

@@ -5,6 +5,51 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-05-15
+
+### Added
+
+- **Layer 4 — Async Pipelines:** `CoreRelayPipeline.execute_parallel_step()` — new async entry point that runs N agent adapters concurrently against the same context snapshot, then merges their outputs deterministically.
+
+- **`relay.parallel` package** — three join strategies for merging fork outputs:
+  - **UNION** — Merge all passing fork outputs; any key written by two forks with different values raises `MERGE_CONFLICT` and rolls back the entire step.
+  - **VOTE** — Accept the fork with the highest `confidence_score` (entity preservation ratio). Failed forks are silently discarded.
+  - **FIRST_WINS** — Accept the first passing fork; cancel remaining in-flight tasks immediately.
+
+- **Fork execution model** — `_run_single_fork()` coroutine handles adapter lookup, execution, validation, and manifest boundary checking. Never raises — all errors captured in `ForkResult`.
+
+- **`ContextEnvelope` fork metadata** — Four optional fields (`fork_id`, `join_strategy`, `fork_count`, `forks_succeeded`) added to the envelope for audit trail. Backward-compatible: sequential envelopes produce identical signatures to v0.3.3.
+
+- **`ValidationResult.confidence_score`** — New field (default 1.0) computed as entity preservation ratio. Used by VOTE strategy.
+
+- **`validate_handoff_payload()`** — New method on `HandoffValidator` for validating raw payloads without a full envelope (used internally by fork runner).
+
+- **New error codes:** `MERGE_CONFLICT`, `ALL_FORKS_FAILED`, `FORK_EXECUTION_FAILED`, `INVALID_JOIN_STRATEGY`
+
+### Changed
+
+- `RELAY_VERSION` bumped to `"0.4.0"`
+- `CoreRelayPipeline` class docstring updated to include parallel orchestration ownership
+- `_compute_signature` extended to include fork metadata when `fork_id` is non-None (backward-compatible)
+- `SnapshotStore._dict_to_envelope` handles absent fork fields (loads v0.3 snapshots cleanly)
+- `SnapshotStore._envelope_to_dict` serializes the four fork metadata fields
+
+### Internal
+
+- `validate_handoff` refactored to delegate payload validation to `_validate_payloads` (pure extraction, no behavior change)
+- `_agent_output_to_payload` defined locally in both `fork_runner.py` and `join.py` to prevent circular imports
+
+### Testing
+
+- 44 new tests (8 integration + 36 unit):
+  - Fork runner: happy path, adapter-not-found, adapter exception, contradiction detection, concurrency
+  - Join strategies: UNION merge/conflict/failure, VOTE confidence/failure, FIRST_WINS cancellation/failure
+  - Pipeline integration: all three strategies end-to-end, signature validation, state management
+  - Envelope fork fields: backward-compatible signature, with_fork_metadata, snapshot roundtrip
+  - Confidence score: clean handoff, contradiction, deep nesting, partial preservation
+- All existing 277 tests pass with zero regressions
+- `mypy --strict` zero errors across 28 source files
+
 ## [0.3.3] - 2026-05-10
 
 ### Fixed (Critical)
