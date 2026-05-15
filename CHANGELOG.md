@@ -39,6 +39,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `validate_handoff` refactored to delegate payload validation to `_validate_payloads` (pure extraction, no behavior change)
 - `_agent_output_to_payload` defined locally in both `fork_runner.py` and `join.py` to prevent circular imports
 
+### Fixed
+
+- **Parallel step orphans stale envelope in history on contradiction** — `_finalize_step` called `archive_and_set(new_envelope)` before rollback, leaving the contaminated envelope in the history list. Subsequent `rollback()` would peek at the contaminated envelope and fail with `NO_SNAPSHOT_REGISTERED`. Fixed by pushing current envelope to history (via `PipelineState.push_current_to_history`) instead, and returning `RollbackSuccess` directly without the contaminated envelope ever entering the state.
+
+- **Parallel step saves duplicate snapshot** — `execute_parallel_step` called `execute_step_with_manifest` (which internally saves a snapshot via `_finalize_step`), then saved a second snapshot with fork metadata on top. Two snapshots existed for the same logical step. Fixed by removing the redundant second save — only the in-memory `current_envelope` is updated with fork metadata after commit.
+
+- **FIRST_WINS task.result() raises unhandled exception** — If a completed asyncio task raised an exception (e.g. from adapter execution), `task.result()` in the FIRST_WINS loop propagated it upward, leaking all remaining in-flight tasks (never cancelled, never gathered). Fixed by wrapping `task.result()` in `try/except continue`.
+
+- **Parallel step budget check runs post-fork execution** — `execute_parallel_step` checked the merged payload's token budget AFTER all forks had already executed (LLM API calls already made). Per-fork budget checks (via `_check_budget` with `manifest.max_tokens`) are sufficient. Removed the post-hoc check with a documented rationale.
+
+- **`assert` in production code** — `_do_rollback` used `assert previous_envelope is not None` which is stripped with `python -O`. Replaced with explicit `if None: return Failure(...)` per Rule 3.1.
+
+### Changed
+
+- **`_cosine_similarity` raises `ValueError` on dimension mismatch** — Previously returned `0.0`, silently hiding embedding provider bugs. Now raises promptly with a descriptive message.
+
 ### Testing
 
 - 44 new tests (8 integration + 36 unit):
