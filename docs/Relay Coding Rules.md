@@ -312,17 +312,17 @@ See Section 4.3. A path traversal via `pipeline_id = "../../../etc"` would creat
 
 ---
 
-## Section 10 — Architecture Decisions to Resolve
+## Section 10 — Architecture Decisions (Resolved)
 
-These are open questions the team must decide before v0.3 ships.
+All decisions from the v0.3 era have been resolved.
 
-| Decision | Options | Recommendation |
-|---|---|---|
-| `RelayPipeline` wrapper class | ~~Remove it (empty subclass) or add real behaviour~~ | ✅ **Resolved** — class deleted from source |
-| Layer 2 (Agent Runner) | Implement in v0.3 or update design doc | Implement per design doc — the doc says v0.3 |
-| `manifest_hash` default `""` | Still present in `create_initial_envelope` | Remove the default now — it was a migration scaffold |
-| Error code registry | Ad-hoc strings vs `Enum` | Enum in `types.py` — prevents typos and enables exhaustive switch |
-| `_estimate_tokens` accuracy claim | "50%" in docstring but no benchmark confirms this | Add the benchmark test or lower the claim |
+| Decision | Resolution |
+|---|---|
+| `RelayPipeline` wrapper class | ✅ **Resolved** — class deleted from source |
+| Layer 2 (Agent Runner) | ✅ **Resolved** — implemented as `AdapterRegistry`/`AgentRunner` in v0.3 |
+| `manifest_hash` default `""` | ✅ **Resolved** — defaults removed from `ContextBroker` and envelope factories |
+| Error code registry | ✅ **Resolved** — `ErrorCode` Enum defined in `types.py` |
+| `_estimate_tokens` accuracy claim | ✅ **Resolved** — claim softened to "not benchmarked, heuristic only" |
 
 ---
 

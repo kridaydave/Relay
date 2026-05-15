@@ -114,7 +114,7 @@ class CoreRelayPipeline:
         REQUIRES: caller holds self._state._lock via transaction() context manager.
         Must NOT call self._state.transaction() — lock is non-reentrant.
         """
-        budget_result = self._check_budget(manifest, None)
+        budget_result = self._check_budget(manifest, None, agent_output)
         if isinstance(budget_result, Failure):
             return budget_result
 
@@ -170,13 +170,15 @@ class CoreRelayPipeline:
         self,
         manifest: AgentManifest | None,
         current_envelope: ContextEnvelope | None,
+        agent_output: dict[str, Any] | None = None,
     ) -> Result[None]:
         """Check token budget if manifest and enforcer present.
 
         Checks both pipeline-level budget (token_budget_total) and per-agent
         budget (manifest.max_tokens) when available.
 
-        When current_envelope is None (initial step), token_budget_used is 0.
+        When current_envelope is None (initial step), token_budget_used is 0
+        and projection is based on agent_output (the actual payload).
         """
         if manifest is not None and self._enforcer is not None:
             if current_envelope is not None:
@@ -185,7 +187,7 @@ class CoreRelayPipeline:
                     return slice_result
                 projected = slice_result.value
             else:
-                projected = serialize_slice({s: "<slice>" for s in manifest.writes})
+                projected = serialize_slice(agent_output) if agent_output is not None else serialize_slice({s: "<slice>" for s in manifest.writes})
             budget_used = (
                 current_envelope.token_budget_used
                 if current_envelope is not None
@@ -445,7 +447,7 @@ class CoreRelayPipeline:
         if not fork_specs:
             return Failure(
                 reason="fork_specs must be non-empty",
-                code=ErrorCode.INVALID_JOIN_STRATEGY,
+                code=ErrorCode.INVALID_STATE,
             )
         if self.registry is None:
             return Failure(

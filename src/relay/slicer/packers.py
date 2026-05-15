@@ -31,23 +31,24 @@ def _estimate_tokens(payload: dict[str, Any]) -> int:
     """Approximate token count from JSON string length (heuristic).
 
     Simple character-based heuristic: len(json_str) // 3.
-    Coarse approximation within the 0.25-0.40 tokens/char range of BPE tokenizers.
+    Not benchmarked — use only for coarse ordering, not precise accounting.
     """
     json_str = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return max(1, len(json_str) // 3)
 
 
 class RecencySlicePacker:
-    """Selects most recent sections by step order until max_tokens consumed.
+    """Selects most recent sections by step order, slicing until max_tokens.
 
-    Sections are ordered by their numeric suffix (e.g., section_1, section_2).
+    Sections are ordered by their numeric suffix (e.g., section_1, section_2)
+    and only the newest sections that fit within the token budget are returned.
     Uses token estimation via simple character count divided by 3.
     """
 
     def pack(
         self, payload: dict[str, Any], manifest: AgentManifest
     ) -> Result[dict[str, Any]]:
-        """Pack context based on recency.
+        """Slice the payload to retain only the most recent sections by recency.
 
         Approximates token count using character count divided by 3.
 
