@@ -89,23 +89,6 @@ def _canonical_timestamp(dt: datetime) -> str:
     return dt.isoformat(timespec="seconds")
 
 
-def _compute_signature(envelope: ContextEnvelope, secret: str) -> str:
-    """Compute HMAC-SHA256 signature for an envelope.
-
-    Canonical signature format (field order is load-bearing):
-    {relay_version}|{pipeline_id}|{step}|{timestamp.isoformat()}|{token_budget_used}|{token_budget_total}|{manifest_hash}|{json.dumps(payload, sort_keys=True)}
-    """
-    payload = json.dumps(envelope.payload, sort_keys=True, separators=(",", ":"))
-    message = f"{envelope.relay_version}|{envelope.pipeline_id}|{envelope.step}|{_canonical_timestamp(envelope.timestamp)}|{envelope.token_budget_used}|{envelope.token_budget_total}|{envelope.manifest_hash}|{payload}"
-    return hmac.new(secret.encode(), message.encode(), hashlib.sha256).hexdigest()
-
-
-def verify_signature(envelope: ContextEnvelope, secret: str) -> bool:
-    """Verify the signature of an envelope."""
-    expected_sig = _compute_signature(envelope, secret)
-    return hmac.compare_digest(envelope.signature, expected_sig)
-
-
 def _sign_envelope(envelope: ContextEnvelope, secret: str) -> ContextEnvelope:
     """Create a signed copy of the envelope."""
     signature = compute_signature(envelope, secret)
@@ -118,7 +101,15 @@ def compute_signature(envelope: ContextEnvelope, secret: str) -> str:
     Canonical signature format (field order is load-bearing):
     {relay_version}|{pipeline_id}|{step}|{timestamp.isoformat()}|{token_budget_used}|{token_budget_total}|{manifest_hash}|{json.dumps(payload, sort_keys=True)}
     """
-    return _compute_signature(envelope, secret)
+    payload = json.dumps(envelope.payload, sort_keys=True, separators=(",", ":"))
+    message = f"{envelope.relay_version}|{envelope.pipeline_id}|{envelope.step}|{_canonical_timestamp(envelope.timestamp)}|{envelope.token_budget_used}|{envelope.token_budget_total}|{envelope.manifest_hash}|{payload}"
+    return hmac.new(secret.encode(), message.encode(), hashlib.sha256).hexdigest()
+
+
+def verify_signature(envelope: ContextEnvelope, secret: str) -> bool:
+    """Verify the signature of an envelope."""
+    expected_sig = compute_signature(envelope, secret)
+    return hmac.compare_digest(envelope.signature, expected_sig)
 
 
 def create_initial_envelope(

@@ -73,7 +73,8 @@ class TestArchiveAndSet:
 
 class TestSnapshotIds:
     def test_snapshot_ids_is_empty_initially(self, state):
-        assert state.snapshot_ids == {}
+        with state.transaction():
+            assert state.snapshot_ids == {}
 
 
 class TestGetPreviousEnvelopes:

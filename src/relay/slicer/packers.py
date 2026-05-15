@@ -5,7 +5,6 @@ Does NOT: own EmbeddingProvider protocol,
           or count tokens precisely (delegates to envelope.estimate_tokens).
 """
 
-from abc import ABC, abstractmethod
 import json
 from typing import Any
 from math import sqrt
@@ -30,25 +29,7 @@ def _cosine_similarity(a: list[float], b: list[float]) -> float:
     return dot_product / (magnitude_a * magnitude_b)
 
 
-class SlicePacker(ABC):
-    """Base class for slice packer strategies."""
-
-    @abstractmethod
-    def pack(
-        self, payload: dict[str, Any], manifest: AgentManifest
-    ) -> Result[dict[str, Any]]:
-        """Pack context based on strategy.
-
-        Args:
-            payload: Dictionary of section_key -> section_content.
-            manifest: Agent manifest defining constraints.
-
-        Returns:
-            Success with selected subset of payload sections, or Failure on error.
-        """
-
-
-class RecencySlicePacker(SlicePacker):
+class RecencySlicePacker:
     """Selects most recent sections by step order until max_tokens consumed.
 
     Sections are ordered by their numeric suffix (e.g., section_1, section_2).
@@ -89,7 +70,7 @@ class RecencySlicePacker(SlicePacker):
         return Success(result)
 
 
-class StructuralSlicePacker(SlicePacker):
+class StructuralSlicePacker:
     """Selects only sections named in AgentManifest.reads.
 
     Returns Failure if reads names a section absent from payload.
@@ -112,7 +93,7 @@ class StructuralSlicePacker(SlicePacker):
         return Success({key: payload[key] for key in sorted(manifest.reads)})
 
 
-class RelevanceSlicePacker(SlicePacker):
+class RelevanceSlicePacker:
     """Ranks sections by cosine similarity to query, returns top sections within max_tokens.
 
     Uses token estimation via character count divided by 3.

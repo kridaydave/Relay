@@ -6,7 +6,6 @@ Does NOT: execute agents, manage LLM sessions, or own pipeline state.
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 

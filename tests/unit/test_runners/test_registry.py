@@ -3,7 +3,7 @@
 import pytest
 
 from relay.runners.registry import AdapterRegistry
-from relay.types import Failure, Success
+from relay.types import Failure, Success, ErrorCode
 
 
 class TestAdapterRegistryRegister:
@@ -19,7 +19,7 @@ class TestAdapterRegistryRegister:
     def test_returns_failure_for_unknown_name(self):
         result = AdapterRegistry().get("nonexistent")
         assert isinstance(result, Failure)
-        assert result.code == "ADAPTER_NOT_FOUND"
+        assert result.code == ErrorCode.ADAPTER_NOT_FOUND
         assert "nonexistent" in result.reason
 
     def test_raises_on_empty_name(self):

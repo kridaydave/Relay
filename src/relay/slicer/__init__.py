@@ -11,8 +11,8 @@ Exports:
 """
 
 from relay.slicer.manifest import AgentManifest
-from relay.slicer.packers import RecencySlicePacker, RelevanceSlicePacker, StructuralSlicePacker, SlicePacker
-from relay.slicer.providers import EmbeddingProvider
+from relay.slicer.packers import RecencySlicePacker, RelevanceSlicePacker, StructuralSlicePacker
+from relay.slicer.providers import EmbeddingProvider, SlicePacker
 
 __all__ = [
     "AgentManifest",

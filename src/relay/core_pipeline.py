@@ -13,7 +13,6 @@ from relay.budget import HardCapEnforcer, TokenCounter
 from relay.context_broker import ContextBroker, create_context_broker
 from relay.envelope import compute_signature, ContextEnvelope, estimate_tokens, serialize_slice
 from relay.pipeline_rollback import RollbackHandler
-from relay.pipeline_snapshot import SnapshotManager
 from relay.pipeline_state import PipelineState
 from relay.runners import AdapterRegistry, AgentOutput
 from relay.runners.protocol import ContextSlice
@@ -66,7 +65,6 @@ class CoreRelayPipeline:
     _context_broker: ContextBroker = field(init=False, repr=False)
     _handoff_validator: HandoffValidator = field(init=False, repr=False)
     _snapshot_store: SnapshotStore = field(init=False, repr=False)
-    _snapshot_manager: SnapshotManager = field(init=False, repr=False)
     _rollback_handler: RollbackHandler = field(init=False, repr=False)
     _enforcer: HardCapEnforcer | None = field(init=False, repr=False)
 
@@ -81,18 +79,16 @@ class CoreRelayPipeline:
         self._context_broker = broker_result.value
         self._handoff_validator = HandoffValidator()
         self._snapshot_store = SnapshotStore(storage_path=self.storage_path)
-        self._snapshot_manager = SnapshotManager(self._snapshot_store)
         self._rollback_handler = RollbackHandler()
         if self.token_counter is not None:
             self._enforcer = HardCapEnforcer(self._pipeline_id, self.token_counter)
         else:
             self._enforcer = None
-        # registry is set directly from __init__ field, no additional setup needed
 
     def close(self) -> None:
         """Release pipeline resources.
 
-        Cleans up token counter if it has a close method.
+        Releases token counter resources if one was provided.
         """
         if self.token_counter is not None:
             self.token_counter.close()
@@ -148,10 +144,10 @@ class CoreRelayPipeline:
             return apply_result
         new_envelope = apply_result.value
 
-        save_result = self._snapshot_manager.save(new_envelope)
+        save_result = self._snapshot_store.save_snapshot(new_envelope)
         if isinstance(save_result, Failure):
             return save_result
-        self._state.snapshot_ids[new_envelope.step] = save_result.value
+        self._state.register_snapshot(new_envelope.step, save_result.value)
 
         self._state.set_current(new_envelope)
         return Success(new_envelope)
@@ -178,7 +174,7 @@ class CoreRelayPipeline:
             return result
         new_envelope = result.value
 
-        result = self._apply_manifest_if_present(new_envelope, manifest)
+        result = self._apply_manifest(new_envelope, manifest)
         if isinstance(result, Failure):
             return result
         new_envelope = result.value
@@ -227,23 +223,6 @@ class CoreRelayPipeline:
                     )
         return Success(None)
 
-    def _apply_manifest_if_present(
-        self,
-        envelope: ContextEnvelope,
-        manifest: AgentManifest | None,
-    ) -> Result[ContextEnvelope]:
-        """Apply manifest hash to envelope when manifest is provided.
-
-        Validates write boundaries (agent can only write to sections in
-        manifest.writes). Returns Success with the updated envelope if no
-        manifest, or if manifest is valid.
-
-        REQUIRES: caller holds self._state._lock.
-        """
-        if manifest is None:
-            return Success(envelope)
-        return self._apply_manifest(envelope, manifest)
-
     def _finalize_step(
         self,
         current_envelope: ContextEnvelope,
@@ -265,19 +244,19 @@ class CoreRelayPipeline:
             return validation_result
 
         if self._handoff_validator.should_rollback(validation_result.value):
-            save_result = self._snapshot_manager.save(current_envelope)
+            save_result = self._snapshot_store.save_snapshot(current_envelope)
             if isinstance(save_result, Failure):
                 return save_result
-            self._state.snapshot_ids[current_envelope.step] = save_result.value
+            self._state.register_snapshot(current_envelope.step, save_result.value)
             self._state.archive_and_set(new_envelope)
             return self._rollback_on_contradiction(
                 new_envelope, validation_result.value
             )
 
-        save_result = self._snapshot_manager.save(new_envelope)
+        save_result = self._snapshot_store.save_snapshot(new_envelope)
         if isinstance(save_result, Failure):
             return save_result
-        self._state.snapshot_ids[new_envelope.step] = save_result.value
+        self._state.register_snapshot(new_envelope.step, save_result.value)
         self._state.archive_and_set(new_envelope)
 
         return Success(new_envelope)
@@ -311,35 +290,10 @@ class CoreRelayPipeline:
         Must NOT call self._state.transaction() — lock is non-reentrant.
         """
         reason = validation.contradiction_details or "Contradiction detected"
-        return self._rollback_with_reason(reason)
+        return self._do_rollback(reason, consume=False)
 
-    def _rollback_with_reason(self, reason: str) -> Result[ContextEnvelope]:
-        """Rollback to previous envelope with explicit reason.
-
-        REQUIRES: caller holds self._state._lock via transaction() context manager.
-        Must NOT call self._state.transaction() — lock is non-reentrant.
-        """
-        if not self._state.has_history():
-            return Failure(
-                reason="No previous envelope to rollback to",
-                code=ErrorCode.NO_ROLLBACK_AVAILABLE,
-            )
-
-        previous_envelope = self._state.peek_last()
-        assert previous_envelope is not None  # guarded by has_history()
-
-        result = self._rollback_handler.restore_to_previous(
-            previous_envelope,
-            self._state.snapshot_ids,
-            self._snapshot_store,
-            reason,
-        )
-        if isinstance(result, RollbackSuccess):
-            self._state.set_current(result.value)
-        return result
-
-    def _rollback_and_consume(self, reason: str) -> Result[ContextEnvelope]:
-        """Rollback to previous envelope and consume history.
+    def _do_rollback(self, reason: str, consume: bool) -> Result[ContextEnvelope]:
+        """Rollback to previous envelope with optional history consumption.
 
         REQUIRES: caller holds self._state._lock via transaction() context manager.
         Must NOT call self._state.transaction() — lock is non-reentrant.
@@ -360,7 +314,8 @@ class CoreRelayPipeline:
             reason,
         )
         if isinstance(result, RollbackSuccess):
-            self._state.consume_last()
+            if consume:
+                self._state.consume_last()
             self._state.set_current(result.value)
         return result
 
@@ -383,7 +338,7 @@ class CoreRelayPipeline:
                     reason="No previous envelope to rollback to",
                     code=ErrorCode.NO_ROLLBACK_AVAILABLE,
                 )
-            return self._rollback_and_consume("Manual rollback")
+            return self._do_rollback("Manual rollback", consume=True)
 
     def get_current_envelope(self) -> ContextEnvelope | None:
         """Get the current envelope."""

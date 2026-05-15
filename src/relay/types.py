@@ -57,7 +57,7 @@ class Failure:
     """Represents a failed result with a reason and error code."""
 
     reason: str
-    code: ErrorCode | str = ErrorCode.UNKNOWN_ERROR
+    code: ErrorCode = ErrorCode.UNKNOWN_ERROR
 
 
 @dataclass(frozen=True)

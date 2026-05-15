@@ -7,7 +7,7 @@ import pytest
 
 from relay.envelope import RELAY_VERSION, ContextEnvelope
 from relay.pipeline_rollback import RollbackHandler
-from relay.types import Failure, RollbackSuccess, Success
+from relay.types import Failure, RollbackSuccess, Success, ErrorCode
 
 
 def create_mock_envelope(step: int, pipeline_id: str = "test-pipeline") -> ContextEnvelope:
@@ -51,19 +51,19 @@ class TestRestoreToPrevious:
         result = rollback_handler.restore_to_previous(env1, snapshot_ids, mock_store, "Test rollback")
 
         assert isinstance(result, Failure)
-        assert result.code == "NO_SNAPSHOT_REGISTERED"
+        assert result.code == ErrorCode.NO_SNAPSHOT_REGISTERED
         mock_store.load_snapshot.assert_not_called()
 
     def test_fails_when_snapshot_load_fails(self, rollback_handler):
         mock_store = MagicMock()
-        mock_store.load_snapshot.return_value = Failure(reason="Disk error", code="DISK_ERROR")
+        mock_store.load_snapshot.return_value = Failure(reason="Disk error", code=ErrorCode.UNKNOWN_ERROR)
         env1 = create_mock_envelope(1)
 
         snapshot_ids = {1: "snapshot-1"}
         result = rollback_handler.restore_to_previous(env1, snapshot_ids, mock_store, "Test rollback")
 
         assert isinstance(result, Failure)
-        assert result.code == "DISK_ERROR"
+        assert result.code == ErrorCode.UNKNOWN_ERROR
         mock_store.load_snapshot.assert_called_once_with("snapshot-1")
 
     def test_preserves_reason_in_result(self, rollback_handler):

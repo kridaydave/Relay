@@ -166,11 +166,10 @@ class HandoffValidator:
         removed_count = len(removed_entities)
 
         if new_count > 0:
-            display_removed = removed_count
-            removed_count = max(removed_count, 1)
-            ratio = new_count / removed_count
+            effective_removed = max(removed_count, 1)
+            ratio = new_count / effective_removed
             if ratio > self._hallucination_ratio_threshold:
-                return f"Entity fabrication detected: {new_count} new, {display_removed} removed (ratio: {ratio:.1f}x)"
+                return f"Entity fabrication detected: {new_count} new, {removed_count} removed (ratio: {ratio:.1f}x)"
 
         if removed_count > 0 and new_count == 0:
             if (

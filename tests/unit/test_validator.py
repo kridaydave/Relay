@@ -60,7 +60,7 @@ class TestValidateHandoff:
         result = validator.validate_handoff(previous_envelope, current_envelope)
 
         assert isinstance(result, Failure)
-        assert result.code == "PIPELINE_MISMATCH"
+        assert result.code == ErrorCode.PIPELINE_MISMATCH
 
     @patch("relay.envelope.datetime")
     def test_validate_handoff_step_not_increasing(self, mock_datetime):
@@ -86,7 +86,7 @@ class TestValidateHandoff:
         result = validator.validate_handoff(previous_envelope, current_envelope)
 
         assert isinstance(result, Failure)
-        assert result.code == "INVALID_STEP"
+        assert result.code == ErrorCode.INVALID_STEP
 
     @patch("relay.envelope.datetime")
     def test_validator_passes_clean_handoff(self, mock_datetime):

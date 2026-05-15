@@ -148,10 +148,12 @@ class SnapshotStore:
         """Get the most recent snapshot for a pipeline."""
         index_result = self._load_index(pipeline_id)
         if isinstance(index_result, Failure):
-            return Failure(
-                reason=f"No snapshots found for pipeline: {pipeline_id}",
-                code=ErrorCode.PIPELINE_NOT_FOUND,
-            )
+            if index_result.code == ErrorCode.INDEX_NOT_FOUND:
+                return Failure(
+                    reason=f"No snapshots found for pipeline: {pipeline_id}",
+                    code=ErrorCode.PIPELINE_NOT_FOUND,
+                )
+            return index_result
 
         index_data = index_result.value
         snapshots = index_data.get("snapshots", [])

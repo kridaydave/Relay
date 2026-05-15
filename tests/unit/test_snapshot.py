@@ -8,7 +8,7 @@ import pytest
 
 from relay.envelope import RELAY_VERSION, ContextEnvelope, create_initial_envelope
 from relay.snapshot import SnapshotStore
-from relay.types import Failure, Success
+from relay.types import Failure, Success, ErrorCode
 
 
 class TestSnapshotStore:
@@ -107,7 +107,7 @@ class TestSnapshotStore:
 
         result = self.store.load_snapshot(snapshot_id)
         assert isinstance(result, Failure)
-        assert result.code == "INVALID_SNAPSHOT"
+        assert result.code == ErrorCode.INVALID_SNAPSHOT
 
     def test_snapshot_index_sorts_numerically(self):
         pipeline_id = "pipeline-sort"
@@ -131,19 +131,60 @@ class TestSnapshotStore:
         result = self.store.load_snapshot("nonexistent_id")
 
         assert isinstance(result, Failure)
-        assert result.code == "INVALID_SNAPSHOT_ID"
+        assert result.code == ErrorCode.INVALID_SNAPSHOT_ID
 
     def test_load_snapshot_rejects_path_traversal_attempt(self):
         result = self.store.load_snapshot("../etc/passwd")
 
         assert isinstance(result, Failure)
-        assert result.code == "INVALID_SNAPSHOT_ID"
+        assert result.code == ErrorCode.INVALID_SNAPSHOT_ID
 
     def test_snapshot_get_latest_fails_when_no_snapshots(self):
         result = self.store.get_latest_snapshot("nonexistent-pipeline")
 
         assert isinstance(result, Failure)
-        assert result.code == "PIPELINE_NOT_FOUND"
+        assert result.code == ErrorCode.PIPELINE_NOT_FOUND
+
+    def test_get_latest_snapshot_propagates_corrupted_index_failure(self):
+        """Corrupted index must not be silently converted to PIPELINE_NOT_FOUND."""
+        from pathlib import Path
+
+        index_path = Path(self.temp_dir) / "pipeline-xyz" / "index.json"
+        index_path.parent.mkdir(parents=True)
+        index_path.write_text("not valid json {{{")
+
+        result = self.store.get_latest_snapshot("pipeline-xyz")
+
+        assert isinstance(result, Failure)
+        assert result.code == ErrorCode.CORRUPTED_INDEX
+
+    def test_get_latest_snapshot_propagates_index_read_failure(self):
+        """OS-level read errors must propagate, not become PIPELINE_NOT_FOUND."""
+        from pathlib import Path
+        from unittest.mock import patch
+
+        index_path = Path(self.temp_dir) / "pipeline-xyz" / "index.json"
+        index_path.parent.mkdir(parents=True)
+        index_path.write_text('{"snapshots": []}')
+
+        with patch("builtins.open", side_effect=OSError("permission denied")):
+            result = self.store.get_latest_snapshot("pipeline-xyz")
+
+        assert isinstance(result, Failure)
+        assert result.code == ErrorCode.INDEX_READ_FAILED
+
+    def test_get_latest_snapshot_propagates_invalid_index_failure(self):
+        """Index with wrong schema (not a dict) must propagate, not become PIPELINE_NOT_FOUND."""
+        from pathlib import Path
+
+        index_path = Path(self.temp_dir) / "pipeline-xyz" / "index.json"
+        index_path.parent.mkdir(parents=True)
+        index_path.write_text('["not", "a", "dict"]')
+
+        result = self.store.get_latest_snapshot("pipeline-xyz")
+
+        assert isinstance(result, Failure)
+        assert result.code == ErrorCode.INVALID_INDEX
 
     def test_list_snapshots_returns_empty_for_unknown_pipeline(self):
         result = self.store.list_snapshots("does-not-exist")

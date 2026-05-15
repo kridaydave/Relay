@@ -12,7 +12,6 @@ from relay.envelope import (
     create_initial_envelope,
     create_next_envelope,
     verify_signature,
-    _compute_signature,
     estimate_tokens,
 )
 from relay.types import ErrorCode, Failure

@@ -32,7 +32,12 @@ class PipelineState:
 
     @property
     def snapshot_ids(self) -> dict[int, str]:
-        return self._snapshot_ids
+        self._assert_lock_held()
+        return dict(self._snapshot_ids)
+
+    def register_snapshot(self, step: int, snapshot_id: str) -> None:
+        self._assert_lock_held()
+        self._snapshot_ids[step] = snapshot_id
 
     def current(self) -> ContextEnvelope | None:
         """Return the current envelope under lock."""
