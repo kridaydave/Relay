@@ -22,17 +22,14 @@ classifiers = [
     "Intended Audience :: Developers",
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
-dependencies = [
-    "pytest",
-    "mypy",
-    "pydantic",
-]
+dependencies = []
 
 [project.urls]
 "Homepage" = "https://github.com/kridaydave/relay"
 "Bug Tracker" = "https://github.com/kridaydave/relay/issues"
 
 [project.optional-dependencies]
+dev = ["pytest", "mypy"]
 tiktoken = ["tiktoken"]
 langchain = ["langchain-core>=0.1"]
 crewai    = ["crewai>=0.30"]
