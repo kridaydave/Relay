@@ -21,7 +21,6 @@ SNAPSHOT_ID_PATTERN = re.compile(
 
 __all__ = [
     "SnapshotStore",
-    "InvalidSnapshotIdError",
 ]
 
 
