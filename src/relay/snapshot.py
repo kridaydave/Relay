@@ -260,6 +260,10 @@ class SnapshotStore:
             "payload": envelope.payload,
             "manifest_hash": envelope.manifest_hash,
             "signature": envelope.signature,
+            "fork_id": envelope.fork_id,
+            "join_strategy": envelope.join_strategy,
+            "fork_count": envelope.fork_count,
+            "forks_succeeded": envelope.forks_succeeded,
         }
 
     def _require_str(self, data: dict[str, Any], key: str) -> "Result[str]":
@@ -344,6 +348,13 @@ class SnapshotStore:
             return sig_result
         signature: str = sig_result.value
 
+        fork_id = data.get("fork_id")
+        join_strategy = data.get("join_strategy")
+        fork_count_raw = data.get("fork_count")
+        forks_succ_raw = data.get("forks_succeeded")
+        fork_count = int(fork_count_raw) if fork_count_raw is not None else None
+        forks_succ = int(forks_succ_raw) if forks_succ_raw is not None else None
+
         return Success(
             ContextEnvelope(
                 relay_version=relay_version,
@@ -355,5 +366,9 @@ class SnapshotStore:
                 payload=payload,
                 manifest_hash=manifest_hash,
                 signature=signature,
+                fork_id=fork_id,
+                join_strategy=join_strategy,
+                fork_count=fork_count,
+                forks_succeeded=forks_succ,
             )
         )

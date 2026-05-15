@@ -529,3 +529,75 @@ class TestContextEnvelope:
 
         with pytest.raises(Exception):
             envelope.pipeline_id = "changed"
+
+
+class TestPreV04SnapshotCompat:
+    def test_loading_snapshot_without_fork_fields_succeeds(self):
+        """Pre-v0.4 snapshot (no fork keys in JSON) loads with fork fields as None."""
+        import tempfile
+        import shutil
+        store = SnapshotStore(storage_path=tempfile.mkdtemp())
+        data = {
+            "relay_version": "0.3.3",
+            "pipeline_id": "test-pipe",
+            "step": 1,
+            "timestamp": "2024-01-01T00:00:00+00:00",
+            "token_budget_used": 100,
+            "token_budget_total": 8000,
+            "payload": {"data": "x"},
+            "manifest_hash": "",
+            "signature": "sig",
+        }
+        result = store._dict_to_envelope(data)
+        assert isinstance(result, Success)
+        env = result.value
+        assert env.fork_id is None
+        assert env.join_strategy is None
+        assert env.fork_count is None
+        assert env.forks_succeeded is None
+
+    def test_envelope_to_dict_includes_fork_fields(self):
+        """_envelope_to_dict serializes all four fork fields."""
+        import tempfile
+        store = SnapshotStore(storage_path=tempfile.mkdtemp())
+        env = ContextEnvelope(
+            relay_version=RELAY_VERSION, pipeline_id="test", step=1,
+            timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            token_budget_used=100, token_budget_total=8000,
+            payload={"data": "x"}, manifest_hash="", signature="sig",
+            fork_id="uuid-1", join_strategy="UNION",
+            fork_count=2, forks_succeeded=2,
+        )
+        d = store._envelope_to_dict(env)
+        assert d["fork_id"] == "uuid-1"
+        assert d["join_strategy"] == "UNION"
+        assert d["fork_count"] == 2
+        assert d["forks_succeeded"] == 2
+
+    def test_roundtrip_envelope_with_fork_fields(self):
+        """Save and load envelope with fork fields preserves all values."""
+        import tempfile
+        import shutil
+        tmp = tempfile.mkdtemp()
+        try:
+            store = SnapshotStore(storage_path=tmp)
+            env = ContextEnvelope(
+                relay_version=RELAY_VERSION, pipeline_id="test", step=2,
+                timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
+                token_budget_used=200, token_budget_total=8000,
+                payload={"data": "y"}, manifest_hash="hash", signature="sig",
+                fork_id="uuid-2", join_strategy="VOTE",
+                fork_count=3, forks_succeeded=1,
+            )
+            save_result = store.save_snapshot(env)
+            assert isinstance(save_result, Success)
+            load_result = store.load_snapshot(save_result.value)
+            assert isinstance(load_result, Success)
+            loaded = load_result.value
+            assert loaded.fork_id == "uuid-2"
+            assert loaded.join_strategy == "VOTE"
+            assert loaded.fork_count == 3
+            assert loaded.forks_succeeded == 1
+            assert loaded.step == 2
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)

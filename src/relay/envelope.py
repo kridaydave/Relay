@@ -18,7 +18,7 @@ from typing import Any
 
 from relay.types import ErrorCode, Failure, Result, Success
 
-RELAY_VERSION = "0.3.3"
+RELAY_VERSION = "0.4.0"
 
 __all__ = [
     "RELAY_VERSION",
@@ -71,6 +71,11 @@ class ContextEnvelope:
     manifest_hash: str
     signature: str
 
+    fork_id: str | None = None
+    join_strategy: str | None = None
+    fork_count: int | None = None
+    forks_succeeded: int | None = None
+
     def with_manifest_hash(self, manifest_hash: str) -> "ContextEnvelope":
         """Return a copy of this envelope with a different manifest hash."""
         return replace(self, manifest_hash=manifest_hash)
@@ -78,6 +83,28 @@ class ContextEnvelope:
     def with_signature(self, signature: str) -> "ContextEnvelope":
         """Return a copy of this envelope with a different signature."""
         return replace(self, signature=signature)
+
+    def with_fork_metadata(
+        self,
+        fork_id: str,
+        join_strategy: str,
+        fork_count: int,
+        forks_succeeded: int,
+    ) -> "ContextEnvelope":
+        """Return a copy of this envelope with parallel step metadata applied.
+
+        WARNING: The returned copy is UNSIGNED and has an invalid signature field.
+        The caller MUST re-sign the envelope (e.g., via execute_step_with_manifest)
+        before persisting or transmitting.
+        """
+        return replace(
+            self,
+            fork_id=fork_id,
+            join_strategy=join_strategy,
+            fork_count=fork_count,
+            forks_succeeded=forks_succeeded,
+            signature="",
+        )
 
 
 def _canonical_timestamp(dt: datetime) -> str:
@@ -100,10 +127,22 @@ def compute_signature(envelope: ContextEnvelope, secret: str) -> str:
 
     Canonical signature format (field order is load-bearing):
     {relay_version}|{pipeline_id}|{step}|{timestamp.isoformat()}|{token_budget_used}|{token_budget_total}|{manifest_hash}|{json.dumps(payload, sort_keys=True)}
+
+    When fork_id is not None, fork metadata is appended for parallel steps:
+    ...|{fork_id}|{join_strategy}|{fork_count}|{forks_succeeded}
     """
-    payload = json.dumps(envelope.payload, sort_keys=True, separators=(",", ":"))
-    message = f"{envelope.relay_version}|{envelope.pipeline_id}|{envelope.step}|{_canonical_timestamp(envelope.timestamp)}|{envelope.token_budget_used}|{envelope.token_budget_total}|{envelope.manifest_hash}|{payload}"
-    return hmac.new(secret.encode(), message.encode(), hashlib.sha256).hexdigest()
+    payload_json = json.dumps(envelope.payload, sort_keys=True, separators=(",", ":"))
+    base = (
+        f"{envelope.relay_version}|{envelope.pipeline_id}|{envelope.step}|"
+        f"{_canonical_timestamp(envelope.timestamp)}|{envelope.token_budget_used}|"
+        f"{envelope.token_budget_total}|{envelope.manifest_hash}|{payload_json}"
+    )
+    if envelope.fork_id is not None:
+        base += (
+            f"|{envelope.fork_id}|{envelope.join_strategy}|"
+            f"{envelope.fork_count}|{envelope.forks_succeeded}"
+        )
+    return hmac.new(secret.encode(), base.encode(), hashlib.sha256).hexdigest()
 
 
 def verify_signature(envelope: ContextEnvelope, secret: str) -> bool:

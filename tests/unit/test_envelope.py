@@ -16,7 +16,7 @@ from relay.envelope import (
     verify_signature,
     estimate_tokens,
 )
-from relay.types import ErrorCode, Failure
+from relay.types import ErrorCode, Failure, Success
 
 
 @pytest.fixture
@@ -391,3 +391,101 @@ class TestSerializeSlice:
 
     def test_serialize_slice_empty_dict(self):
         assert serialize_slice({}) == "{}"
+
+
+class TestForkFields:
+    def test_sequential_envelope_has_none_fork_fields(self):
+        """Sequential envelopes have all fork fields as None."""
+        from relay.envelope import create_initial_envelope
+        result = create_initial_envelope(
+            pipeline_id="test", initial_payload={"data": "x"},
+            secret="a" * 32, manifest_hash="",
+        )
+        assert isinstance(result, Success)
+        env = result.value
+        assert env.fork_id is None
+        assert env.join_strategy is None
+        assert env.fork_count is None
+        assert env.forks_succeeded is None
+
+    def test_with_fork_metadata_sets_all_fields(self):
+        """with_fork_metadata returns envelope with all four fork fields set."""
+        from relay.envelope import create_initial_envelope
+        env = create_initial_envelope(
+            pipeline_id="test", initial_payload={"data": "x"},
+            secret="a" * 32, manifest_hash="",
+        ).value
+        meta = env.with_fork_metadata(
+            fork_id="uuid-1", join_strategy="UNION",
+            fork_count=3, forks_succeeded=2,
+        )
+        assert meta.fork_id == "uuid-1"
+        assert meta.join_strategy == "UNION"
+        assert meta.fork_count == 3
+        assert meta.forks_succeeded == 2
+        assert meta.signature == ""
+
+    def test_with_fork_metadata_invalidates_signature(self):
+        """with_fork_metadata sets signature to empty string."""
+        from relay.envelope import create_initial_envelope
+        env = create_initial_envelope(
+            pipeline_id="test", initial_payload={"data": "x"},
+            secret="a" * 32, manifest_hash="",
+        ).value
+        meta = env.with_fork_metadata(
+            fork_id="uuid-1", join_strategy="VOTE",
+            fork_count=1, forks_succeeded=1,
+        )
+        assert meta.signature == ""
+
+    def test_sequential_envelope_signature_unchanged(self):
+        """Sequential envelope (fork fields None) produces same signature as v0.3 format."""
+        from datetime import datetime, timezone
+        ts = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        env = ContextEnvelope(
+            relay_version=RELAY_VERSION, pipeline_id="test", step=1,
+            timestamp=ts, token_budget_used=100, token_budget_total=8000,
+            payload={"data": "x"}, manifest_hash="", signature="",
+        )
+        secret = "a" * 32
+        sig = compute_signature(env, secret)
+        env_with_fork_none = ContextEnvelope(
+            relay_version=RELAY_VERSION, pipeline_id="test", step=1,
+            timestamp=ts, token_budget_used=100, token_budget_total=8000,
+            payload={"data": "x"}, manifest_hash="", signature="",
+            fork_id=None, join_strategy=None, fork_count=None, forks_succeeded=None,
+        )
+        sig_with_none = compute_signature(env_with_fork_none, secret)
+        assert sig == sig_with_none
+
+    def test_parallel_envelope_signature_includes_fork_suffix(self):
+        """Parallel envelope signature differs from sequential when fork_id is set."""
+        from datetime import datetime, timezone
+        ts = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        env_seq = ContextEnvelope(
+            relay_version=RELAY_VERSION, pipeline_id="test", step=1,
+            timestamp=ts, token_budget_used=100, token_budget_total=8000,
+            payload={"data": "x"}, manifest_hash="", signature="",
+        )
+        env_par = ContextEnvelope(
+            relay_version=RELAY_VERSION, pipeline_id="test", step=1,
+            timestamp=ts, token_budget_used=100, token_budget_total=8000,
+            payload={"data": "x"}, manifest_hash="", signature="",
+            fork_id="uuid-1", join_strategy="UNION", fork_count=2, forks_succeeded=2,
+        )
+        secret = "a" * 32
+        assert compute_signature(env_seq, secret) != compute_signature(env_par, secret)
+
+    def test_verify_signature_passes_after_re_signing_fork_metadata(self):
+        """Envelope with fork metadata verifies after re-signing."""
+        from relay.envelope import create_initial_envelope
+        env = create_initial_envelope(
+            pipeline_id="test", initial_payload={"data": "x"},
+            secret="a" * 32, manifest_hash="",
+        ).value
+        meta = env.with_fork_metadata(
+            fork_id="uuid-1", join_strategy="UNION",
+            fork_count=2, forks_succeeded=2,
+        )
+        signed = meta.with_signature(compute_signature(meta, "a" * 32))
+        assert verify_signature(signed, "a" * 32)
