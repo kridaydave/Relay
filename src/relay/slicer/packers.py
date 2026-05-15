@@ -4,10 +4,10 @@ Owns: RecencySlicePacker, StructuralSlicePacker, RelevanceSlicePacker.
 Does NOT: own EmbeddingProvider protocol or count tokens precisely.
 """
 
-import json
 from typing import Any
 from math import sqrt
 
+from relay.envelope import estimate_tokens
 from relay.slicer.manifest import AgentManifest
 from relay.slicer.providers import EmbeddingProvider
 from relay.types import ErrorCode, Failure, Result, Success
@@ -16,7 +16,10 @@ from relay.types import ErrorCode, Failure, Result, Success
 def _cosine_similarity(a: list[float], b: list[float]) -> float:
     """Compute cosine similarity between two vectors without numpy."""
     if len(a) != len(b):
-        return 0.0
+        raise ValueError(
+            f"Vector dimension mismatch: {len(a)} vs {len(b)}. "
+            "Embedding providers must return consistent dimensions."
+        )
 
     dot_product = sum(x * y for x, y in zip(a, b))
     magnitude_a = sqrt(sum(x**2 for x in a))
@@ -25,16 +28,6 @@ def _cosine_similarity(a: list[float], b: list[float]) -> float:
     if magnitude_a == 0 or magnitude_b == 0:
         return 0.0
     return dot_product / (magnitude_a * magnitude_b)
-
-
-def _estimate_tokens(payload: dict[str, Any]) -> int:
-    """Approximate token count from JSON string length (heuristic).
-
-    Simple character-based heuristic: len(json_str) // 3.
-    Not benchmarked — use only for coarse ordering, not precise accounting.
-    """
-    json_str = json.dumps(payload, sort_keys=True, separators=(",", ":"))
-    return max(1, len(json_str) // 3)
 
 
 class RecencySlicePacker:
@@ -68,7 +61,7 @@ class RecencySlicePacker:
 
         for key in sorted_keys:
             section_text = payload[key]
-            section_tokens = _estimate_tokens({key: section_text})
+            section_tokens = estimate_tokens({key: section_text})
 
             if manifest.max_tokens is not None and used_tokens + section_tokens > manifest.max_tokens:
                 break
@@ -133,7 +126,7 @@ class RelevanceSlicePacker:
         similarities = []
         for key, embedding in section_embeddings.items():
             sim = _cosine_similarity(query_embedding, embedding)
-            section_tokens = _estimate_tokens({key: payload[key]})
+            section_tokens = estimate_tokens({key: payload[key]})
             similarities.append((key, sim, section_tokens))
 
         similarities.sort(key=lambda x: x[1], reverse=True)
