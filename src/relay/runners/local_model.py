@@ -38,7 +38,8 @@ class LocalModelAdapter:
     timeout_seconds: float = 60.0
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "base_url", self.base_url.rstrip("/"))
+        base_url = self.base_url.rstrip("/")
+        object.__setattr__(self, "base_url", base_url)
 
     def _build_payload(self, slice: ContextSlice) -> dict[str, Any]:
         return {
