@@ -307,7 +307,11 @@ class CoreRelayPipeline:
             )
 
         previous_envelope = self._state.peek_last()
-        assert previous_envelope is not None  # guarded by has_history()
+        if previous_envelope is None:
+            return Failure(
+                reason="Invariant violated: has_history() returned true but peek_last() returned None",
+                code=ErrorCode.INVALID_STATE,
+            )
 
         result = self._rollback_handler.restore_to_previous(
             previous_envelope,
