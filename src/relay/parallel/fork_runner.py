@@ -99,7 +99,7 @@ async def _run_single_fork(
                 adapter_name=spec.adapter_name,
                 success=False,
                 agent_output=agent_output,
-                validation=validation,
+                validation=None,
                 failure=boundary_result,
             )
 

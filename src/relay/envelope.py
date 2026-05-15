@@ -18,7 +18,7 @@ from typing import Any
 
 from relay.types import ErrorCode, Failure, Result, Success
 
-RELAY_VERSION = "0.4.0"
+RELAY_VERSION = "0.4.1"
 
 __all__ = [
     "RELAY_VERSION",

@@ -12,6 +12,7 @@ import pytest
 from relay.runners import AdapterRegistry
 from relay.runners.protocol import AgentOutput, ContextSlice
 from relay.slicer.manifest import AgentManifest
+from relay.types import ErrorCode
 from tests.conftest import FixedCounter
 from tests.unit.test_runners.conftest import FixedAgentRunner
 
@@ -73,7 +74,7 @@ async def test_pipeline_returns_failure_when_adapter_raises(temp_storage: str):
     result = await pipeline.execute_step_with_runner("failing", manifest)
 
     assert isinstance(result, Failure)
-    assert result.code == "ADAPTER_EXECUTION_FAILED"
+    assert result.code == ErrorCode.ADAPTER_EXECUTION_FAILED
     assert "failing" in result.reason
 
 
@@ -91,7 +92,7 @@ async def test_pipeline_returns_failure_without_registry(temp_storage: str):
     result = await pipeline.execute_step_with_runner("agent-1", manifest)
 
     assert isinstance(result, Failure)
-    assert result.code == "NO_REGISTRY"
+    assert result.code == ErrorCode.NO_REGISTRY
 
 
 @pytest.mark.asyncio
@@ -110,7 +111,7 @@ async def test_pipeline_returns_failure_for_unknown_adapter(temp_storage: str):
     result = await pipeline.execute_step_with_runner("nonexistent", manifest)
 
     assert isinstance(result, Failure)
-    assert result.code == "ADAPTER_NOT_FOUND"
+    assert result.code == ErrorCode.ADAPTER_NOT_FOUND
 
 
 @pytest.mark.asyncio
@@ -211,7 +212,7 @@ async def test_pipeline_returns_failure_when_pipeline_budget_exceeded(temp_stora
     result = await pipeline.execute_step_with_runner("agent-1", manifest)
 
     assert isinstance(result, Failure)
-    assert result.code == "BUDGET_EXCEEDED"
+    assert result.code == ErrorCode.BUDGET_EXCEEDED
 
 
 @pytest.mark.asyncio
@@ -244,4 +245,4 @@ async def test_pipeline_returns_failure_when_agent_max_tokens_exceeded(temp_stor
     result = await pipeline.execute_step_with_runner("agent-1", manifest)
 
     assert isinstance(result, Failure)
-    assert result.code == "TOKEN_BUDGET_EXCEEDED"
+    assert result.code == ErrorCode.TOKEN_BUDGET_EXCEEDED

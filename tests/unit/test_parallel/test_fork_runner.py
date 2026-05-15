@@ -172,6 +172,25 @@ class TestRunSingleFork:
         assert result.fork_index == 0
 
     @pytest.mark.asyncio
+    async def test_fork_returns_failure_when_manifest_boundary_violated(self, make_pipeline_components):
+        """Agent writes to a key not declared in manifest.writes → ForkResult.success=False."""
+        registry, validator = make_pipeline_components
+        registry.register("agent-a", FixedForkRunner(output_text="result-a"))
+        spec = make_fork_spec("agent-a", writes=frozenset({"output"}))
+        env = _make_envelope()
+        slice_ = make_context_slice(agent_id="agent-a")
+
+        result = await _run_single_fork(
+            fork_index=0, spec=spec, slice_=slice_,
+            pre_fork_envelope=env, registry=registry, validator=validator,
+        )
+        assert result.success is False
+        assert result.agent_output is not None
+        assert result.validation is None
+        assert result.failure is not None
+        assert result.fork_index == 0
+
+    @pytest.mark.asyncio
     async def test_fork_index_matches_input(self, make_pipeline_components):
         """fork_index in result matches the input index."""
         registry, validator = make_pipeline_components

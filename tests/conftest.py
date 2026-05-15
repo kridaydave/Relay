@@ -15,6 +15,12 @@ class FixedCounter:
     def close(self) -> None:
         pass
 
+    def __enter__(self) -> "FixedCounter":
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        self.close()
+
 
 @dataclass
 class FixedEmbeddingProvider:

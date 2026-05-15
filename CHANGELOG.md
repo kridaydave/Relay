@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2026-05-15
+
+### Fixed
+
+- **Corrupted index file crashes `_add_to_index`** — Manually corrupted `index.json` with a non-list `"snapshots"` field caused `AttributeError` on `.append()`. Added validation that `index_data["snapshots"]` is a list before appending, and that `snapshot_id` is a `str` type (`snapshot.py:192-202`).
+
+- **Non-serializable payload bypasses error handling** — `save_snapshot` and `_add_to_index` caught `json.JSONDecodeError` in their write paths, which can never be raised by `json.dump`. Changed to `TypeError` which IS raised for non-serializable objects (`snapshot.py:94,218`).
+
+- **`total_tokens=0` from API silently falls through to heuristic** — In `LocalModelAdapter.run()`, `usage.get("total_tokens") or heuristic` treated `0` bytes consumed as falsy and used the raw character-based estimate. Replaced with explicit `is not None` check (`local_model.py:70`).
+
+- **Fork result `validation` field is misleading on manifest boundary violation** — When `validate_manifest_boundaries` rejected a fork's output, the `ForkResult` still carried the previous (passing) `validation` result, falsely suggesting no error. Set `validation=None` when manifest boundaries are the reason for failure (`fork_runner.py:102`).
+
+- **Integration test asserts wrong error code** — `test_parallel_step_with_empty_fork_specs_returns_failure` asserted `INVALID_JOIN_STRATEGY` but `execute_parallel_step` returns `INVALID_STATE` for empty `fork_specs`. The bug was invisible because integration tests aren't in the `tests/unit` run target (`test_parallel_pipeline.py:195`).
+
+### Changed
+
+- **`FixedCounter` test double now implements context manager** — Added `__enter__/__exit__` to match the `TokenCounter` protocol, which `HeuristicCounter` and `_TiktokenCounter` already provide. Prevents `AttributeError` if any production code uses `with counter:` (`tests/conftest.py`).
+
+### Testing
+
+- Fixed `test_parallel_step_with_empty_fork_specs_returns_failure` — asserted `ErrorCode.INVALID_JOIN_STRATEGY` instead of the correct `ErrorCode.INVALID_STATE`
+- Replaced raw string error code comparisons (`"BUDGET_EXCEEDED"`, `"NO_REGISTRY"`, etc.) with `ErrorCode` enum references across all integration tests
+- Added `test_fork_returns_failure_when_manifest_boundary_violated` — validates that `_run_single_fork` returns `success=False` with `validation=None` when the agent writes outside its declared manifest writes
+
 ## [0.4.0] - 2026-05-15
 
 ### Added

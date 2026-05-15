@@ -67,7 +67,8 @@ class LocalModelAdapter:
         choices = data.get("choices", [])
         text = choices[0].get("message", {}).get("content", "") if choices else ""
         usage = data.get("usage", {})
-        token_count = usage.get("total_tokens") or (slice.token_count + len(text) // 4)
+        total_tokens = usage.get("total_tokens")
+        token_count = total_tokens if total_tokens is not None else (slice.token_count + len(text) // 4)
         return AgentOutput(
             text=text, structured={}, tool_calls=[],
             token_count=token_count, latency_ms=latency_ms,

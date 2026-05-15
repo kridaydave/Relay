@@ -91,7 +91,7 @@ class SnapshotStore:
             with open(temp_path, "w") as f:
                 json.dump(self._envelope_to_dict(envelope), f, indent=2)
             os.replace(temp_path, snapshot_path)
-        except (OSError, json.JSONDecodeError) as e:
+        except (OSError, TypeError) as e:
             if temp_path.exists():
                 try:
                     temp_path.unlink(missing_ok=True)
@@ -192,9 +192,16 @@ class SnapshotStore:
                     index_data = (
                         loaded if isinstance(loaded, dict) else {"snapshots": []}
                     )
+                    if not isinstance(index_data.get("snapshots"), list):
+                        index_data["snapshots"] = []
             else:
                 index_data = {"snapshots": []}
 
+            if not isinstance(snapshot_id, str):
+                return Failure(
+                    reason=f"Invalid snapshot_id type: {type(snapshot_id).__name__}",
+                    code=ErrorCode.CORRUPTED_INDEX,
+                )
             if snapshot_id not in index_data["snapshots"]:
                 index_data["snapshots"].append(snapshot_id)
                 try:
@@ -215,7 +222,7 @@ class SnapshotStore:
                     temp_index_path.unlink(missing_ok=True)
                 except OSError:
                     pass
-        except (OSError, json.JSONDecodeError) as e:
+        except (OSError, TypeError) as e:
             return Failure(
                 reason=f"Failed to update index: {e}",
                 code=ErrorCode.INDEX_UPDATE_FAILED,

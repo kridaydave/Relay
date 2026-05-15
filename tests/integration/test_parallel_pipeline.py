@@ -188,8 +188,8 @@ class TestParallelPipeline:
 
     @pytest.mark.asyncio
     async def test_parallel_step_with_empty_fork_specs_returns_failure(self, tmp_path):
-        """Empty fork_specs -> INVALID_JOIN_STRATEGY Failure."""
+        """Empty fork_specs -> INVALID_STATE Failure."""
         pipeline = CoreRelayPipeline(signing_secret="a" * 32, token_budget=8000, storage_path=str(tmp_path))
         result = await pipeline.execute_parallel_step(fork_specs=[], join_strategy=JoinStrategy.UNION)
         assert isinstance(result, Failure)
-        assert result.code == ErrorCode.INVALID_JOIN_STRATEGY
+        assert result.code == ErrorCode.INVALID_STATE
