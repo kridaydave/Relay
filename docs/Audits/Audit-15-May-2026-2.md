@@ -1,6 +1,6 @@
 # Relay Post-Ship Audit — 15 May 2026 (Pass 2)
 **Date:** 15 May 2026
-**Auditor:** Matt (J.Dev)
+**Auditor:** Boston (J.Dev)
 **Scope:** Full codebase — all 24 source modules, all 29 test modules
 **Checked against:** `docs/Relay Coding Rules.md`, `AGENTS.md`
 **Branch:** main
