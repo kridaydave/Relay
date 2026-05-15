@@ -76,6 +76,18 @@ class ContextEnvelope:
     fork_count: int | None = None
     forks_succeeded: int | None = None
 
+    def __post_init__(self) -> None:
+        if self.step < 1:
+            raise ValueError(f"step must be >= 1, got {self.step}")
+        if self.token_budget_used < 0:
+            raise ValueError(
+                f"token_budget_used must be >= 0, got {self.token_budget_used}"
+            )
+        if self.token_budget_total < 0:
+            raise ValueError(
+                f"token_budget_total must be >= 0, got {self.token_budget_total}"
+            )
+
     def with_manifest_hash(self, manifest_hash: str) -> "ContextEnvelope":
         """Return a copy of this envelope with a different manifest hash."""
         return replace(self, manifest_hash=manifest_hash)

@@ -492,35 +492,46 @@ class TestForkFields:
 
 
 class TestContextEnvelopeFieldConstraints:
-    def test_negative_token_budget_used_accepted(self):
-        """Negative token_budget_used is accepted (dataclass has no field validation)."""
+    def test_negative_token_budget_used_rejected(self):
+        """Negative token_budget_used raises ValueError."""
         from datetime import datetime, timezone
-        env = ContextEnvelope(
-            relay_version=RELAY_VERSION, pipeline_id="test", step=1,
-            timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
-            token_budget_used=-100, token_budget_total=8000,
-            payload={"data": "x"}, manifest_hash="", signature="",
-        )
-        assert env.token_budget_used == -100
+        with pytest.raises(ValueError, match="token_budget_used"):
+            ContextEnvelope(
+                relay_version=RELAY_VERSION, pipeline_id="test", step=1,
+                timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
+                token_budget_used=-100, token_budget_total=8000,
+                payload={"data": "x"}, manifest_hash="", signature="",
+            )
 
-    def test_negative_token_budget_total_accepted(self):
-        """Negative token_budget_total is accepted."""
+    def test_negative_token_budget_total_rejected(self):
+        """Negative token_budget_total raises ValueError."""
         from datetime import datetime, timezone
-        env = ContextEnvelope(
-            relay_version=RELAY_VERSION, pipeline_id="test", step=1,
-            timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
-            token_budget_used=100, token_budget_total=-1,
-            payload={"data": "x"}, manifest_hash="", signature="",
-        )
-        assert env.token_budget_total == -1
+        with pytest.raises(ValueError, match="token_budget_total"):
+            ContextEnvelope(
+                relay_version=RELAY_VERSION, pipeline_id="test", step=1,
+                timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
+                token_budget_used=100, token_budget_total=-1,
+                payload={"data": "x"}, manifest_hash="", signature="",
+            )
 
-    def test_negative_step_accepted(self):
-        """Negative step is accepted (no field validation)."""
+    def test_negative_step_rejected(self):
+        """Negative step raises ValueError."""
         from datetime import datetime, timezone
-        env = ContextEnvelope(
-            relay_version=RELAY_VERSION, pipeline_id="test", step=-1,
-            timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
-            token_budget_used=100, token_budget_total=8000,
-            payload={"data": "x"}, manifest_hash="", signature="",
-        )
-        assert env.step == -1
+        with pytest.raises(ValueError, match="step"):
+            ContextEnvelope(
+                relay_version=RELAY_VERSION, pipeline_id="test", step=-1,
+                timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
+                token_budget_used=100, token_budget_total=8000,
+                payload={"data": "x"}, manifest_hash="", signature="",
+            )
+
+    def test_step_zero_rejected(self):
+        """Step == 0 raises ValueError."""
+        from datetime import datetime, timezone
+        with pytest.raises(ValueError, match="step"):
+            ContextEnvelope(
+                relay_version=RELAY_VERSION, pipeline_id="test", step=0,
+                timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
+                token_budget_used=0, token_budget_total=8000,
+                payload={"data": "x"}, manifest_hash="", signature="",
+            )
