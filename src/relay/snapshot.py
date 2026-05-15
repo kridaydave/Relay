@@ -356,10 +356,20 @@ class SnapshotStore:
 
         fork_id = data.get("fork_id")
         join_strategy = data.get("join_strategy")
-        fork_count_raw = data.get("fork_count")
-        forks_succ_raw = data.get("forks_succeeded")
-        fork_count = int(fork_count_raw) if fork_count_raw is not None else None
-        forks_succ = int(forks_succ_raw) if forks_succ_raw is not None else None
+
+        fork_count: int | None = None
+        if "fork_count" in data:
+            fc_result = self._require_int(data, "fork_count")
+            if isinstance(fc_result, Failure):
+                return fc_result
+            fork_count = fc_result.value
+
+        forks_succeeded: int | None = None
+        if "forks_succeeded" in data:
+            fs_result = self._require_int(data, "forks_succeeded")
+            if isinstance(fs_result, Failure):
+                return fs_result
+            forks_succeeded = fs_result.value
 
         return Success(
             ContextEnvelope(
@@ -375,6 +385,6 @@ class SnapshotStore:
                 fork_id=fork_id,
                 join_strategy=join_strategy,
                 fork_count=fork_count,
-                forks_succeeded=forks_succ,
+                forks_succeeded=forks_succeeded,
             )
         )
