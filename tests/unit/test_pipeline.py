@@ -339,6 +339,48 @@ class TestConcurrentPipeline:
 
     @patch("relay.context_broker.ContextBroker.create_initial_envelope")
     @patch("relay.context_broker.ContextBroker.create_next_envelope")
+    def test_concurrent_reads_and_writes(
+        self, mock_next, mock_initial, temp_storage
+    ):
+        """Concurrent step writes interleaved with reads don't corrupt state."""
+        mock_initial.return_value = Success(
+            create_mock_envelope(1, "test-pipeline-id", {"initial": "data"})
+        )
+        mock_next.return_value = Success(
+            create_mock_envelope(2, "test-pipeline-id", {"next": "data"})
+        )
+
+        pipeline = CoreRelayPipeline(
+            signing_secret="a" * 32, token_budget=8000, storage_path=temp_storage
+        )
+        pipeline.execute_step({"initial": "data"})
+
+        results = []
+        errors = []
+        lock = threading.Lock()
+
+        def mixed_access(i: int):
+            try:
+                if i % 2 == 0:
+                    pipeline.execute_step({"step": i})
+                envelope = pipeline.get_current_envelope()
+                with lock:
+                    results.append(envelope)
+            except Exception as e:
+                with lock:
+                    errors.append(e)
+
+        threads = [threading.Thread(target=mixed_access, args=(i,)) for i in range(10)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert len(errors) == 0, f"Errors occurred: {errors}"
+        assert all(r is not None for r in results), "All results should be non-None"
+
+    @patch("relay.context_broker.ContextBroker.create_initial_envelope")
+    @patch("relay.context_broker.ContextBroker.create_next_envelope")
     @patch("relay.core_pipeline.SnapshotStore")
     def test_concurrent_rollback_access(
         self, mock_store_cls, mock_next, mock_initial, temp_storage
