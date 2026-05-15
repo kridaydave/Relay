@@ -6,7 +6,7 @@ from unittest.mock import patch
 import pytest
 
 from relay.envelope import RELAY_VERSION, ContextEnvelope, create_initial_envelope
-from relay.validator import HandoffValidator, ValidationResult, validate_manifest_boundaries
+from relay.validator import HandoffValidator, MaxDepthExceededError, ValidationResult, validate_manifest_boundaries
 from relay.types import Success, Failure, ErrorCode
 
 
@@ -417,3 +417,45 @@ class TestEntityExtraction:
         result = validator._detect_hallucination(previous_payload, current_payload)
 
         assert result is None
+
+    def test_detect_hallucination_returns_none_when_threshold_disabled(self):
+        validator = HandoffValidator(hallucination_ratio_threshold=None)
+        prev = {"entities": ["Apple", "Microsoft", "Google"]}
+        curr = {"entities": ["Apple", "Microsoft", "Google", "Amazon", "Meta", "Netflix"]}
+        result = validator._detect_hallucination(prev, curr)
+        assert result is None
+
+    def test_hallucination_detection_with_both_hallucination_and_missing_keys(self):
+        """Combined hallucination and critical key removal concatenates details."""
+        from datetime import datetime, timezone
+        prev_payload = {"entities": ["alice", "bob"], "facts": ["fact1"], "constraints": ["x"]}
+        curr_payload = {"entities": ["alice", "bob", "charlie", "david", "eve", "frank"]}
+        prev = _make_envelope("pipe", 1, prev_payload)
+        curr = _make_envelope("pipe", 2, curr_payload)
+        validator = HandoffValidator()
+        result = validator.validate_handoff(prev, curr)
+        assert isinstance(result, Success)
+        assert result.value.has_contradiction is True
+        assert "Entity fabrication" in result.value.contradiction_details
+        assert "Critical keys removed" in result.value.contradiction_details
+
+    def test_extract_entities_raises_on_excessive_depth(self):
+        validator = HandoffValidator()
+        deeply_nested = {}
+        current = deeply_nested
+        for i in range(60):
+            current["nested"] = {}
+            current = current["nested"]
+        with pytest.raises(MaxDepthExceededError):
+            validator._extract_entities(deeply_nested)
+
+    def test_detect_hallucination_propagates_max_depth_error(self):
+        validator = HandoffValidator()
+        deeply_nested = {}
+        current = deeply_nested
+        for i in range(60):
+            current["nested"] = {}
+            current = current["nested"]
+        result = validator._detect_hallucination({}, deeply_nested)
+        assert result is not None
+        assert "depth exceeds limit" in result

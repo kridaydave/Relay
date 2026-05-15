@@ -9,8 +9,10 @@ import pytest
 from relay.envelope import (
     RELAY_VERSION,
     ContextEnvelope,
+    compute_signature,
     create_initial_envelope,
     create_next_envelope,
+    serialize_slice,
     verify_signature,
     estimate_tokens,
 )
@@ -323,3 +325,69 @@ class TestContextEnvelopeWithManifestHash:
         assert final.manifest_hash == "hash3"
         assert final.step == original.step
         assert final.pipeline_id == original.pipeline_id
+
+
+class TestPipelineIdValidation:
+    def test_rejects_pipeline_id_with_invalid_chars(self, secret, initial_payload):
+        result = create_initial_envelope(
+            pipeline_id="bad pipe!", initial_payload=initial_payload,
+            secret=secret, manifest_hash="",
+        )
+        assert isinstance(result, Failure)
+        assert result.code == ErrorCode.INVALID_PIPELINE_ID
+
+    def test_rejects_pipeline_id_too_long(self, secret, initial_payload):
+        result = create_initial_envelope(
+            pipeline_id="x" * 129, initial_payload=initial_payload,
+            secret=secret, manifest_hash="",
+        )
+        assert isinstance(result, Failure)
+        assert result.code == ErrorCode.INVALID_PIPELINE_ID
+
+
+class TestWithSignature:
+    def test_with_signature_returns_new_envelope(self):
+        original = ContextEnvelope(
+            relay_version=RELAY_VERSION,
+            pipeline_id="test", step=1,
+            timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            token_budget_used=100, token_budget_total=8000,
+            payload={"k": "v"}, manifest_hash="", signature="old",
+        )
+        result = original.with_signature("new-sig")
+        assert result is not original
+        assert result.signature == "new-sig"
+        assert result.manifest_hash == original.manifest_hash
+
+
+class TestComputeSignature:
+    def test_compute_signature_is_deterministic(self, secret):
+        env1 = create_initial_envelope(
+            pipeline_id="pipe", initial_payload={"k": "v"},
+            secret=secret, manifest_hash="",
+        ).value
+        env2 = create_initial_envelope(
+            pipeline_id="pipe", initial_payload={"k": "v"},
+            secret=secret, manifest_hash="",
+        ).value
+        sig1 = compute_signature(env1, secret)
+        sig2 = compute_signature(env2, secret)
+        assert sig1 == sig2
+
+    def test_compute_signature_differs_for_different_secret(self, secret):
+        env = create_initial_envelope(
+            pipeline_id="pipe", initial_payload={"k": "v"},
+            secret=secret, manifest_hash="",
+        ).value
+        sig1 = compute_signature(env, secret)
+        sig2 = compute_signature(env, "x" * 32)
+        assert sig1 != sig2
+
+
+class TestSerializeSlice:
+    def test_serialize_slice_returns_compact_json(self):
+        result = serialize_slice({"b": 2, "a": 1})
+        assert result == '{"a":1,"b":2}'
+
+    def test_serialize_slice_empty_dict(self):
+        assert serialize_slice({}) == "{}"
