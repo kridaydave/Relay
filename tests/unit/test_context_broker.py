@@ -7,7 +7,7 @@ import pytest
 
 from relay.context_broker import ContextBroker, create_context_broker
 from relay.envelope import ContextEnvelope, RELAY_VERSION
-from relay.types import Failure, Success
+from relay.types import ErrorCode, Failure, Success
 
 
 class TestCreateInitialEnvelope:
@@ -57,7 +57,7 @@ class TestCreateInitialEnvelope:
 
         assert isinstance(result, Failure)
         assert result.reason == "pipeline_id cannot be empty"
-        assert result.code == "INVALID_PIPELINE_ID"
+        assert result.code == ErrorCode.INVALID_PIPELINE_ID
 
     def test_broker_fails_on_empty_payload(self):
         broker = ContextBroker(signing_secret="a" * 32, token_budget_total=8000)
@@ -69,7 +69,7 @@ class TestCreateInitialEnvelope:
 
         assert isinstance(result, Failure)
         assert result.reason == "initial_payload cannot be empty"
-        assert result.code == "INVALID_PAYLOAD"
+        assert result.code == ErrorCode.INVALID_PAYLOAD
 
 
 class TestCreateNextEnvelope:

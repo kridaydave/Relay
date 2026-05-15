@@ -3,7 +3,7 @@
 import pytest
 
 from relay.budget import HardCapEnforcer, TokenCounter
-from relay.types import Failure, Success
+from relay.types import ErrorCode, Failure, Success
 from tests.conftest import FixedCounter
 
 
@@ -19,7 +19,7 @@ class TestHardCapEnforcer:
         enforcer = HardCapEnforcer("pipe-1", FixedCounter(10))
         result = enforcer.check(91, 100, "any text")
         assert isinstance(result, Failure)
-        assert result.code == "BUDGET_EXCEEDED"
+        assert result.code == ErrorCode.BUDGET_EXCEEDED
 
     def test_zero_token_slice_passes(self):
         """Zero-token slice always passes regardless of budget state."""
@@ -32,7 +32,7 @@ class TestHardCapEnforcer:
         enforcer = HardCapEnforcer("pipe-1", FixedCounter(-5))
         result = enforcer.check(0, 1000, "any text")
         assert isinstance(result, Failure)
-        assert result.code == "INVALID_TOKEN_COUNT"
+        assert result.code == ErrorCode.INVALID_TOKEN_COUNT
         assert "negative" in result.reason.lower()
 
     def test_under_budget_passes(self):
