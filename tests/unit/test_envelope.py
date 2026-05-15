@@ -216,6 +216,20 @@ class TestTokenEstimation:
         {"nested": {"a": {"b": {"c": "deep"}}}},
     ]
 
+    def test_estimate_tokens_consistent_with_packer_copy(self):
+        """envelope.estimate_tokens and packers._estimate_tokens return same value for same input.
+
+        MED-05: The slicer/packers.py copy was introduced to break an upward import.
+        This test ensures both copies remain equivalent and do not diverge.
+        """
+        from relay.slicer.packers import _estimate_tokens as packer_estimate
+
+        for payload in self.PAYLOADS:
+            assert packer_estimate(payload) == estimate_tokens(payload), (
+                f"Mismatch for {payload}: packer={packer_estimate(payload)} "
+                f"envelope={estimate_tokens(payload)}"
+            )
+
     def test_estimate_is_positive_for_all_representative_payloads(self):
         for payload in self.PAYLOADS:
             assert estimate_tokens(payload) > 0, f"Zero estimate for {payload}"
