@@ -72,7 +72,8 @@ class TestSuccessfulHandoff:
         assert isinstance(result2, Success)
         assert pipeline.get_current_envelope().step == 2
 
-        snapshot_id = pipeline._state.snapshot_ids.get(2)
+        with pipeline._state.transaction():
+            snapshot_id = pipeline._state.snapshot_ids.get(2)
         assert snapshot_id is not None
 
         load_result = pipeline._snapshot_store.load_snapshot(snapshot_id)
@@ -95,7 +96,8 @@ class TestRollbackOnContradiction:
         pipeline.execute_step(valid_next_payload)
 
         previous_step = pipeline.get_current_envelope().step
-        previous_snapshot_id = pipeline._state.snapshot_ids.get(previous_step)
+        with pipeline._state.transaction():
+            previous_snapshot_id = pipeline._state.snapshot_ids.get(previous_step)
 
         result = pipeline.execute_step(contradicting_payload)
 
@@ -132,8 +134,9 @@ class TestEdgeCases:
         pipeline.execute_step(valid_next_payload)
 
         step = 2
-        pipeline._state.snapshot_ids[step] = "new-id"
-        assert len([k for k in pipeline._state.snapshot_ids if k == step]) == 1
+        with pipeline._state.transaction():
+            pipeline._state.snapshot_ids[step] = "new-id"
+            assert len([k for k in pipeline._state.snapshot_ids if k == step]) == 1
 
     def test_broker_signs_envelope(self, pipeline, base_payload):
         result = pipeline.execute_step(base_payload)
