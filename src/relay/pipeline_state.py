@@ -73,6 +73,16 @@ class PipelineState:
         self._assert_lock_held()
         self._current_envelope = envelope
 
+    def push_current_to_history(self) -> None:
+        """Move current envelope to history without changing current.
+
+        Used by contradiction rollback to preserve the envelope for
+        potential subsequent manual rollback.
+        """
+        self._assert_lock_held()
+        if self._current_envelope is not None:
+            self._previous_envelopes.append(self._current_envelope)
+
     def archive_and_set(self, new_envelope: ContextEnvelope) -> None:
         self._assert_lock_held()
         if self._current_envelope is not None:
@@ -85,6 +95,8 @@ class PipelineState:
 
     def consume_last(self) -> ContextEnvelope:
         self._assert_lock_held()
+        if not self._previous_envelopes:
+            raise IndexError("No previous envelopes to consume")
         return self._previous_envelopes.pop()
 
     def has_history(self) -> bool:

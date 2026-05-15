@@ -5,6 +5,7 @@ Does NOT: define agent behaviour, manage prompts, implement token counting, or i
 """
 
 import asyncio
+import hashlib
 import uuid
 from dataclasses import dataclass, field
 from typing import Any
@@ -27,6 +28,19 @@ from relay.validator import (
     ValidationResult,
     validate_manifest_boundaries,
 )
+
+
+def _combine_manifest_hashes(manifests: list[AgentManifest]) -> str:
+    """Compute deterministic combined hash from a list of AgentManifests.
+
+    Sorts manifests by agent_id, computes each individual SHA256 hash,
+    concatenates them with '|' separators, then SHA256s the result.
+    This is deterministic regardless of fork ordering.
+    """
+    sorted_manifests = sorted(manifests, key=lambda m: m.agent_id)
+    hashes = [m.compute_hash() for m in sorted_manifests]
+    combined = "|".join(hashes)
+    return hashlib.sha256(combined.encode()).hexdigest()
 
 
 @dataclass
@@ -240,13 +254,12 @@ class CoreRelayPipeline:
             if isinstance(save_result, Failure):
                 return save_result
             self._state.register_snapshot(current_envelope.step, save_result.value)
-            self._state.archive_and_set(new_envelope)
-            rollback_result = self._rollback_on_contradiction(
-                new_envelope, validation_result.value
+            self._state.push_current_to_history()
+            return RollbackSuccess(
+                value=current_envelope,
+                reason=validation_result.value.contradiction_details
+                or "Contradiction detected",
             )
-            if isinstance(rollback_result, Failure):
-                self._state.set_current(current_envelope)
-            return rollback_result
 
         save_result = self._snapshot_store.save_snapshot(new_envelope)
         if isinstance(save_result, Failure):
@@ -282,17 +295,6 @@ class CoreRelayPipeline:
             compute_signature(envelope_with_hash, self._context_broker.signing_secret)
         )
         return Success(signed)
-
-    def _rollback_on_contradiction(
-        self, proposed_envelope: ContextEnvelope, validation: ValidationResult
-    ) -> Result[ContextEnvelope]:
-        """Rollback to previous envelope on contradiction.
-
-        REQUIRES: caller holds self._state._lock via transaction() context manager.
-        Must NOT call self._state.transaction() — lock is non-reentrant.
-        """
-        reason = validation.contradiction_details or "Contradiction detected"
-        return self._do_rollback(reason, consume=False)
 
     def _do_rollback(self, reason: str, consume: bool) -> Result[ContextEnvelope]:
         """Rollback to previous envelope with optional history consumption.
@@ -516,7 +518,13 @@ class CoreRelayPipeline:
         if not isinstance(commit_result, Success):
             return commit_result
 
-        envelope_with_meta = commit_result.value.with_fork_metadata(
+        combined_hash = _combine_manifest_hashes([s.manifest for s in fork_specs])
+        envelope_with_hash = commit_result.value.with_manifest_hash(combined_hash)
+        signed_envelope = envelope_with_hash.with_signature(
+            compute_signature(envelope_with_hash, self._context_broker.signing_secret)
+        )
+
+        envelope_with_meta = signed_envelope.with_fork_metadata(
             fork_id=parallel_id,
             join_strategy=join_strategy.value,
             fork_count=len(fork_specs),
