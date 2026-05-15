@@ -358,14 +358,14 @@ class SnapshotStore:
         join_strategy = data.get("join_strategy")
 
         fork_count: int | None = None
-        if "fork_count" in data:
+        if "fork_count" in data and data.get("fork_count") is not None:
             fc_result = self._require_int(data, "fork_count")
             if isinstance(fc_result, Failure):
                 return fc_result
             fork_count = fc_result.value
 
         forks_succeeded: int | None = None
-        if "forks_succeeded" in data:
+        if "forks_succeeded" in data and data.get("forks_succeeded") is not None:
             fs_result = self._require_int(data, "forks_succeeded")
             if isinstance(fs_result, Failure):
                 return fs_result

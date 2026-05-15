@@ -545,38 +545,38 @@ class TestValidateHandoffPayload:
 
     def test_validate_handoff_payload_skips_envelope_checks(self):
         """validate_handoff_payload does not check pipeline_id or step."""
-        with patch("relay.envelope.datetime") as mock_datetime:
-            mock_datetime.now.return_value = datetime(2024, 1, 1, tzinfo=timezone.utc)
-            previous_result = create_initial_envelope(
-                pipeline_id="pipeline-123",
-                initial_payload={"entities": ["a"]},
-                secret="a" * 32,
-                manifest_hash=""
-            )
-            previous_envelope = previous_result.value
+        ref_time = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        previous_result = create_initial_envelope(
+            pipeline_id="pipeline-123",
+            initial_payload={"entities": ["a"]},
+            secret="a" * 32,
+            manifest_hash="",
+            now=ref_time,
+        )
+        previous_envelope = previous_result.value
 
-            validator = HandoffValidator()
-            result = validator.validate_handoff_payload(
-                previous_envelope, {"entities": ["a", "b"]},
-            )
-            assert isinstance(result, Success)
+        validator = HandoffValidator()
+        result = validator.validate_handoff_payload(
+            previous_envelope, {"entities": ["a", "b"]},
+        )
+        assert isinstance(result, Success)
 
     def test_validate_handoff_payload_detects_contradiction(self):
         """validate_handoff_payload detects contradictions in raw payload."""
-        with patch("relay.envelope.datetime") as mock_datetime:
-            mock_datetime.now.return_value = datetime(2024, 1, 1, tzinfo=timezone.utc)
-            previous_result = create_initial_envelope(
-                pipeline_id="pipeline-123",
-                initial_payload={"entities": ["a"], "facts": ["f1"]},
-                secret="a" * 32,
-                manifest_hash=""
-            )
-            previous_envelope = previous_result.value
+        ref_time = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        previous_result = create_initial_envelope(
+            pipeline_id="pipeline-123",
+            initial_payload={"entities": ["a"], "facts": ["f1"]},
+            secret="a" * 32,
+            manifest_hash="",
+            now=ref_time,
+        )
+        previous_envelope = previous_result.value
 
-            validator = HandoffValidator()
-            result = validator.validate_handoff_payload(
-                previous_envelope, {"entities": ["a"]},
-            )
-            assert isinstance(result, Success)
-            assert result.value.has_contradiction is True
-            assert result.value.confidence_score == 0.0
+        validator = HandoffValidator()
+        result = validator.validate_handoff_payload(
+            previous_envelope, {"entities": ["a"]},
+        )
+        assert isinstance(result, Success)
+        assert result.value.has_contradiction is True
+        assert result.value.confidence_score == 0.0

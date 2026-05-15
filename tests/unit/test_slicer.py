@@ -132,7 +132,7 @@ class TestRelevanceSlicePacker:
         assert result.value == {}
 
     def test_selects_within_max_tokens_boundary(self):
-        """RelevanceSlicePacker skips sections exceeding remaining budget."""
+        """RelevanceSlicePacker stops when first-ranked section exceeds remaining budget."""
         provider = FixedEmbeddingProvider([1.0, 0.0])
         packer = RelevanceSlicePacker(provider)
         payload = {"big_section": "x" * 9000, "small_section": "a"}
@@ -140,7 +140,7 @@ class TestRelevanceSlicePacker:
         result = packer.pack(payload, manifest)
         assert isinstance(result, Success)
         assert "big_section" not in result.value
-        assert "small_section" in result.value
+        assert "small_section" not in result.value
 
 
 class TestCosineSimilarity:
