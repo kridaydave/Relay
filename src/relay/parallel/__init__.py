@@ -1,59 +1,17 @@
-"""Parallel execution types for Relay v0.4.
+"""Parallel execution support for Relay v0.4.
 
-Owns: JoinStrategy enum, ForkSpec, ForkResult.
-Does NOT: implement join logic, execute adapters, or manage pipeline state.
+Owns: JoinStrategy, ForkSpec, ForkResult types; fork runner; join strategies.
+Does NOT: manage pipeline state, acquire locks, or execute steps.
 """
 
-from enum import Enum
-from dataclasses import dataclass
-from typing import Any, TYPE_CHECKING
-
-from relay.types import Failure, Result
-
-if TYPE_CHECKING:
-    from relay.runners.protocol import AgentOutput
-    from relay.validator import ValidationResult
-    from relay.slicer.manifest import AgentManifest
-
-
-class JoinStrategy(str, Enum):
-    """Strategy for merging parallel fork outputs."""
-    UNION      = "UNION"
-    VOTE       = "VOTE"
-    FIRST_WINS = "FIRST_WINS"
-
-
-@dataclass(frozen=True)
-class ForkSpec:
-    """Specification for one fork in a parallel step.
-
-    Owns: the adapter name and manifest that define one fork's execution.
-    Does NOT: execute the adapter, hold results, or reference pipeline state.
-    """
-    adapter_name: str
-    manifest: "AgentManifest"
-
-
-@dataclass(frozen=True)
-class ForkResult:
-    """Result from one fork's execution and validation.
-
-    Owns: the fork's identity, output, and validation result.
-    Does NOT: write to pipeline state or reference the registry.
-
-    A ForkResult is always created — even for failed forks — so join
-    strategies have a complete picture of what happened.
-    """
-    fork_index: int
-    adapter_name: str
-    success: bool
-    agent_output: "AgentOutput | None"
-    validation: "ValidationResult | None"
-    failure: "Failure | None"
-
+from relay.parallel.fork_runner import _run_single_fork
+from relay.parallel.join import apply_join_strategy
+from relay.parallel.types import ForkResult, ForkSpec, JoinStrategy
 
 __all__ = [
     "JoinStrategy",
     "ForkSpec",
     "ForkResult",
+    "_run_single_fork",
+    "apply_join_strategy",
 ]

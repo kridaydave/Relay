@@ -12,6 +12,13 @@ from typing import Any
 from relay.budget import HardCapEnforcer, TokenCounter
 from relay.context_broker import ContextBroker, create_context_broker
 from relay.envelope import compute_signature, ContextEnvelope, estimate_tokens, serialize_slice
+from relay.parallel import (
+    _run_single_fork,
+    apply_join_strategy,
+    ForkResult,
+    ForkSpec,
+    JoinStrategy,
+)
 from relay.pipeline_rollback import RollbackHandler
 from relay.pipeline_state import PipelineState
 from relay.runners import AdapterRegistry, AgentOutput
@@ -49,8 +56,9 @@ def _agent_output_to_payload(
 class CoreRelayPipeline:
     """Base class for pipeline orchestration.
 
-    Owns: pipeline lifecycle, component coordination, budget enforcement, slicer dispatch.
-    Does NOT: define agent behavior, manage prompts.
+    Owns: pipeline lifecycle, component coordination, budget enforcement, slicer dispatch,
+          parallel fork-join orchestration.
+    Does NOT: define agent behavior, manage prompts, implement token counting, or implement slicing strategies.
     """
 
     signing_secret: str
@@ -404,6 +412,115 @@ class CoreRelayPipeline:
 
         payload = _agent_output_to_payload(agent_output, manifest)
         return self.execute_step_with_manifest(payload, manifest=manifest)
+
+    async def execute_parallel_step(
+        self,
+        fork_specs: list[ForkSpec],
+        join_strategy: JoinStrategy,
+    ) -> Result[ContextEnvelope]:
+        """Execute N adapter forks in parallel, merge via join strategy, commit one result.
+
+        Pipeline sequence:
+          1. Validate inputs (non-empty specs, registry set, at least one prior step).
+          2. Acquire lock: guard None envelope, build slices, check per-fork budgets. Release lock.
+          3. Execute forks concurrently (lock NOT held). All strategies route through
+             apply_join_strategy — no direct calls to private join functions.
+          4. On Failure from join: return immediately — state unchanged.
+          5. Commit merged payload via execute_step_with_manifest (unchanged public API).
+          6. Attach fork metadata, re-sign, re-save snapshot, update in-memory state.
+
+        Args:
+            fork_specs:     One ForkSpec per fork. Must be non-empty.
+            join_strategy:  How to merge results. See JoinStrategy enum.
+
+        Returns:
+            Success(envelope) — with fork metadata fields populated.
+            Failure — if input validation, all forks, or merge fails. State unchanged.
+            RollbackSuccess — if validator triggers rollback during commit.
+        """
+        if not fork_specs:
+            return Failure(
+                reason="fork_specs must be non-empty",
+                code=ErrorCode.INVALID_JOIN_STRATEGY,
+            )
+        if self.registry is None:
+            return Failure(
+                reason="No AdapterRegistry configured on this pipeline",
+                code=ErrorCode.NO_REGISTRY,
+            )
+
+        with self._state.transaction() as pre_fork_envelope:
+            if pre_fork_envelope is None:
+                return Failure(
+                    reason="execute_parallel_step requires at least one prior sequential step",
+                    code=ErrorCode.INVALID_STATE,
+                )
+            fork_slices = [
+                self._build_context_slice(pre_fork_envelope, spec.manifest)
+                for spec in fork_specs
+            ]
+            for spec in fork_specs:
+                budget_result = self._check_budget(spec.manifest, pre_fork_envelope)
+                if isinstance(budget_result, Failure):
+                    return budget_result
+
+        parallel_id = str(uuid.uuid4())
+        fork_coros = [
+            _run_single_fork(
+                fork_index=i,
+                spec=spec,
+                slice_=slice_,
+                pre_fork_envelope=pre_fork_envelope,
+                registry=self.registry,
+                validator=self._handoff_validator,
+            )
+            for i, (spec, slice_) in enumerate(zip(fork_specs, fork_slices))
+        ]
+
+        if join_strategy == JoinStrategy.FIRST_WINS:
+            merged_result = await apply_join_strategy(
+                join_strategy,
+                fork_results=[],
+                first_wins_coros=[
+                    (i, spec, coro)
+                    for i, (spec, coro) in enumerate(zip(fork_specs, fork_coros))
+                ],
+            )
+            forks_succeeded = 1 if isinstance(merged_result, Success) else 0
+        else:
+            collected: list[ForkResult] = list(await asyncio.gather(*fork_coros))
+            forks_succeeded = sum(1 for r in collected if r.success)
+            merged_result = await apply_join_strategy(join_strategy, collected, None)
+
+        if isinstance(merged_result, Failure):
+            return merged_result
+
+        if self._enforcer is not None:
+            merged_serialized = serialize_slice(merged_result.value)
+            budget_used = pre_fork_envelope.token_budget_used
+            enforcer_result = self._enforcer.check(budget_used, self.token_budget, merged_serialized)
+            if isinstance(enforcer_result, Failure):
+                return enforcer_result
+
+        commit_result = self.execute_step_with_manifest(merged_result.value, manifest=None)
+        if not isinstance(commit_result, Success):
+            return commit_result
+
+        envelope_with_meta = commit_result.value.with_fork_metadata(
+            fork_id=parallel_id,
+            join_strategy=join_strategy.value,
+            fork_count=len(fork_specs),
+            forks_succeeded=forks_succeeded,
+        )
+        signed = envelope_with_meta.with_signature(
+            compute_signature(envelope_with_meta, self._context_broker.signing_secret)
+        )
+        save_result = self._snapshot_store.save_snapshot(signed)
+        if isinstance(save_result, Failure):
+            return save_result
+        with self._state.transaction():
+            self._state.set_current(signed)
+        return Success(signed)
 
     def _build_context_slice(
         self,
