@@ -393,13 +393,13 @@ class TestEntityExtraction:
         assert "customer456" in entities
 
     def test_extract_entities_from_string_values(self):
-        """Test extraction from string values in payload."""
+        """Only strings under entity-named keys are extracted."""
         validator = HandoffValidator()
         payload = {"action": "process order_abc def"}
 
         entities = validator._extract_entities(payload)
 
-        assert "process order_abc def" in entities
+        assert entities == frozenset()
 
     def test_extract_entities_empty_payload(self):
         """Test extraction from empty payload."""

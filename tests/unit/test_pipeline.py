@@ -11,7 +11,8 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 
 from relay.envelope import RELAY_VERSION, ContextEnvelope
-from relay.core_pipeline import CoreRelayPipeline, _agent_output_to_payload
+from relay.core_pipeline import CoreRelayPipeline
+from relay.parallel import _agent_output_to_payload
 from relay.runners.protocol import AgentOutput, ContextSlice
 from relay.slicer import AgentManifest
 from relay.types import ErrorCode, Failure, Success, RollbackSuccess
@@ -497,8 +498,7 @@ class TestAgentOutputToPayload:
             text="hello", structured={"key": "val"}, tool_calls=["call1"],
             token_count=10, latency_ms=5, adapter="test",
         )
-        manifest = AgentManifest("a1", "task", frozenset(), frozenset(), 100)
-        result = _agent_output_to_payload(output, manifest)
+        result = _agent_output_to_payload(output)
         assert result["text"] == "hello"
         assert result["key"] == "val"
         assert result["tool_calls"] == ["call1"]
@@ -508,8 +508,7 @@ class TestAgentOutputToPayload:
             text="hello", structured={}, tool_calls=[],
             token_count=10, latency_ms=5, adapter="test",
         )
-        manifest = AgentManifest("a1", "task", frozenset(), frozenset(), 100)
-        result = _agent_output_to_payload(output, manifest)
+        result = _agent_output_to_payload(output)
         assert result["text"] == "hello"
         assert "tool_calls" not in result
 

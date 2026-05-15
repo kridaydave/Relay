@@ -97,7 +97,6 @@ class TestTiktokenCounterFallback:
     def test_tiktoken_counter_is_heuristic_when_tiktoken_unavailable(self, monkeypatch):
         import builtins
         import sys
-        was_cached = "tiktoken" in sys.modules
         real_import = builtins.__import__
         def mock_import(name, *args, **kwargs):
             if name == "tiktoken":
@@ -112,7 +111,3 @@ class TestTiktokenCounterFallback:
         importlib.reload(tc_mod)
 
         assert tc_mod.TiktokenCounter is tc_mod.HeuristicCounter
-
-        importlib.reload(tc_mod)
-        if was_cached:
-            import tiktoken as _  # noqa: F401 - re-import to restore sys.modules
