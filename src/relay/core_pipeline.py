@@ -234,9 +234,12 @@ class CoreRelayPipeline:
                 return save_result
             self._state.register_snapshot(current_envelope.step, save_result.value)
             self._state.archive_and_set(new_envelope)
-            return self._rollback_on_contradiction(
+            rollback_result = self._rollback_on_contradiction(
                 new_envelope, validation_result.value
             )
+            if isinstance(rollback_result, Failure):
+                self._state.set_current(current_envelope)
+            return rollback_result
 
         save_result = self._snapshot_store.save_snapshot(new_envelope)
         if isinstance(save_result, Failure):
@@ -508,10 +511,10 @@ class CoreRelayPipeline:
         signed = envelope_with_meta.with_signature(
             compute_signature(envelope_with_meta, self._context_broker.signing_secret)
         )
-        save_result = self._snapshot_store.save_snapshot(signed)
-        if isinstance(save_result, Failure):
-            return save_result
         with self._state.transaction():
+            save_result = self._snapshot_store.save_snapshot(signed)
+            if isinstance(save_result, Failure):
+                return save_result
             self._state.set_current(signed)
         return Success(signed)
 
