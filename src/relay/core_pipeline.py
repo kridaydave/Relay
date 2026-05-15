@@ -191,6 +191,11 @@ class CoreRelayPipeline:
                 if current_envelope is not None
                 else 0
             )
+            if budget_used < 0:
+                return Failure(
+                    reason=f"token_budget_used is negative: {budget_used}",
+                    code=ErrorCode.INVALID_TOKEN_COUNT,
+                )
             enforcer_result = self._enforcer.check(budget_used, self.token_budget, projected)
             if isinstance(enforcer_result, Failure):
                 return enforcer_result

@@ -80,6 +80,6 @@ try:
             """Exit the context manager and release resources."""
             self.close()
 
-    TiktokenCounter: type[HeuristicCounter] | type[_TiktokenCounter] = _TiktokenCounter
+    TiktokenCounter: type[TokenCounter] = _TiktokenCounter
 except ImportError:
     TiktokenCounter = HeuristicCounter

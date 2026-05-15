@@ -263,14 +263,19 @@ class HandoffValidator:
                 for key, value in obj.items():
                     in_entity_context = key in self.ENTITY_KEYS
                     if in_entity_context and isinstance(value, str):
-                        entities.add(value.lower())
+                        if (
+                            len(value) > 2
+                            and len(value) < 80
+                            and value.lower() not in self.STOP_WORDS
+                        ):
+                            entities.add(value.lower())
                     stack.append((value, depth + 1, in_entity_context))
             elif isinstance(obj, list):
                 for item in obj:
                     if is_entity_context and isinstance(item, str):
                         if (
                             len(item) > 2
-                            and len(item) < 100
+                            and len(item) < 80
                             and item.lower() not in self.STOP_WORDS
                         ):
                             entities.add(item.lower())

@@ -61,42 +61,17 @@ class TestPipelineCreatesEnvelope:
 
 
 class TestPipelineCreatesNextEnvelope:
-    @patch("relay.context_broker.ContextBroker.create_initial_envelope")
-    @patch("relay.context_broker.ContextBroker.create_next_envelope")
-    def test_pipeline_creates_next_envelope_on_subsequent_step(
-        self, mock_next, mock_initial, pipeline
-    ):
-        mock_initial.return_value = Success(
-            create_mock_envelope(1, pipeline._pipeline_id, {"initial": "data"})
-        )
-        mock_next.return_value = Success(
-            create_mock_envelope(2, pipeline._pipeline_id, {"next": "data"})
-        )
-
+    def test_pipeline_creates_next_envelope_on_subsequent_step(self, pipeline):
         pipeline.execute_step({"initial": "data"})
         result = pipeline.execute_step({"next": "data"})
 
         assert isinstance(result, Success)
         assert result.value.step == 2
         assert result.value.payload == {"next": "data"}
-        mock_next.assert_called_once()
 
 
 class TestPipelineValidationAndSnapshot:
-    @patch("relay.context_broker.ContextBroker.create_initial_envelope")
-    @patch("relay.context_broker.ContextBroker.create_next_envelope")
-    def test_pipeline_validates_and_saves_snapshot_on_clean_handoff(
-        self, mock_next, mock_initial, pipeline
-    ):
-        mock_initial.return_value = Success(
-            create_mock_envelope(1, pipeline._pipeline_id, {"entities": ["entity1"]})
-        )
-        mock_next.return_value = Success(
-            create_mock_envelope(
-                2, pipeline._pipeline_id, {"entities": ["entity1", "entity2"]}
-            )
-        )
-
+    def test_pipeline_validates_and_saves_snapshot_on_clean_handoff(self, pipeline):
         pipeline.execute_step({"entities": ["entity1"], "data": "initial"})
         result = pipeline.execute_step(
             {"entities": ["entity1", "entity2"], "data": "next"}
@@ -107,28 +82,9 @@ class TestPipelineValidationAndSnapshot:
 
 
 class TestPipelineRollback:
-    @patch("relay.context_broker.ContextBroker.create_initial_envelope")
-    @patch("relay.context_broker.ContextBroker.create_next_envelope")
-    def test_pipeline_triggers_rollback_on_contradiction(
-        self, mock_next, mock_initial, temp_storage
-    ):
-        mock_initial.return_value = Success(
-            create_mock_envelope(1, "test-pipeline", {"entities": ["entity1"]})
-        )
-        mock_next.return_value = Success(
-            create_mock_envelope(2, "test-pipeline", {"data": "next"})
-        )
-
+    def test_pipeline_triggers_rollback_on_contradiction(self, temp_storage):
         pipeline = CoreRelayPipeline(
             signing_secret="a" * 32, token_budget=8000, storage_path=temp_storage
-        )
-        pipeline_id = pipeline._pipeline_id
-
-        mock_initial.return_value = Success(
-            create_mock_envelope(1, pipeline_id, {"entities": ["entity1"]})
-        )
-        mock_next.return_value = Success(
-            create_mock_envelope(2, pipeline_id, {"data": "next"})
         )
 
         pipeline.execute_step({"entities": ["entity1"], "data": "initial"})
@@ -139,25 +95,9 @@ class TestPipelineRollback:
 
 
 class TestPipelineRollback2:
-    @patch("relay.context_broker.ContextBroker.create_initial_envelope")
-    @patch("relay.context_broker.ContextBroker.create_next_envelope")
-    def test_pipeline_rollback_restores_previous_envelope(
-        self, mock_next, mock_initial, temp_storage
-    ):
+    def test_pipeline_rollback_restores_previous_envelope(self, temp_storage):
         pipeline = CoreRelayPipeline(
             signing_secret="a" * 32, token_budget=8000, storage_path=temp_storage
-        )
-        pipeline_id = pipeline._pipeline_id
-
-        mock_initial.return_value = Success(
-            create_mock_envelope(
-                1,
-                pipeline_id,
-                {"entities": ["entity1"], "data": "initial"},
-            )
-        )
-        mock_next.return_value = Success(
-            create_mock_envelope(2, pipeline_id, {"data": "next"})
         )
 
         pipeline.execute_step({"entities": ["entity1"], "data": "initial"})
@@ -174,14 +114,7 @@ class TestPipelineGetCurrentEnvelope:
         result = pipeline.get_current_envelope()
         assert result is None
 
-    @patch("relay.context_broker.ContextBroker.create_initial_envelope")
-    def test_pipeline_get_current_envelope_returns_current_after_step(
-        self, mock_initial, pipeline
-    ):
-        mock_initial.return_value = Success(
-            create_mock_envelope(1, pipeline._pipeline_id, {"data": "test"})
-        )
-
+    def test_pipeline_get_current_envelope_returns_current_after_step(self, pipeline):
         pipeline.execute_step({"data": "test"})
         result = pipeline.get_current_envelope()
 
