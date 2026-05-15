@@ -1,7 +1,6 @@
 """Unit tests for relay.validator."""
 
 from datetime import datetime, timezone
-from unittest.mock import patch
 
 import pytest
 
@@ -36,15 +35,15 @@ def _make_envelope(
 
 
 class TestValidateHandoff:
-    @patch("relay.envelope.datetime")
-    def test_validate_handoff_pipeline_id_mismatch(self, mock_datetime):
+    def test_validate_handoff_pipeline_id_mismatch(self):
         """Mismatched pipeline IDs must return Failure."""
-        mock_datetime.now.return_value = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        ref_time = datetime(2024, 1, 1, tzinfo=timezone.utc)
         previous_result = create_initial_envelope(
             pipeline_id="pipeline-123",
             initial_payload={"entities": ["a"]},
             secret="a" * 32,
-            manifest_hash=""
+            manifest_hash="",
+            now=ref_time,
         )
         previous_envelope = previous_result.value
 
@@ -62,15 +61,15 @@ class TestValidateHandoff:
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.PIPELINE_MISMATCH
 
-    @patch("relay.envelope.datetime")
-    def test_validate_handoff_step_not_increasing(self, mock_datetime):
+    def test_validate_handoff_step_not_increasing(self):
         """Step must increase between envelopes."""
-        mock_datetime.now.return_value = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        ref_time = datetime(2024, 1, 1, tzinfo=timezone.utc)
         previous_result = create_initial_envelope(
             pipeline_id="pipeline-123",
             initial_payload={"entities": ["a"]},
             secret="a" * 32,
-            manifest_hash=""
+            manifest_hash="",
+            now=ref_time,
         )
         previous_envelope = previous_result.value
 
@@ -88,15 +87,15 @@ class TestValidateHandoff:
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.INVALID_STEP
 
-    @patch("relay.envelope.datetime")
-    def test_validator_passes_clean_handoff(self, mock_datetime):
-        mock_datetime.now.return_value = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    def test_validator_passes_clean_handoff(self):
+        ref_time = datetime(2024, 1, 1, tzinfo=timezone.utc)
 
         previous_result = create_initial_envelope(
             pipeline_id="pipeline-123",
             initial_payload={"entities": ["a"], "actions": ["b"], "facts": ["c"]},
             secret="a" * 32,
-            manifest_hash=""
+            manifest_hash="",
+            now=ref_time,
         )
         previous_envelope = previous_result.value
 
@@ -117,9 +116,8 @@ class TestValidateHandoff:
         assert validation_result.contradiction_details is None
         assert validation_result.confidence_score == pytest.approx(1.0)
 
-    @patch("relay.envelope.datetime")
-    def test_validator_detects_contradiction_when_critical_key_missing(self, mock_datetime):
-        mock_datetime.now.return_value = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    def test_validator_detects_contradiction_when_critical_key_missing(self):
+        ref_time = datetime(2024, 1, 1, tzinfo=timezone.utc)
 
         previous_envelope = _make_envelope(
             pipeline_id="pipeline-123",
@@ -177,15 +175,15 @@ class TestShouldRollback:
 
 
 class TestComputeDiff:
-    @patch("relay.envelope.datetime")
-    def test_validator_computes_diff_between_payloads(self, mock_datetime):
-        mock_datetime.now.return_value = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    def test_validator_computes_diff_between_payloads(self):
+        ref_time = datetime(2024, 1, 1, tzinfo=timezone.utc)
 
         previous_result = create_initial_envelope(
             pipeline_id="pipeline-123",
             initial_payload={"entities": ["a"], "actions": ["b"], "facts": ["c"]},
             secret="a" * 32,
-            manifest_hash=""
+            manifest_hash="",
+            now=ref_time,
         )
         previous_envelope = previous_result.value
 

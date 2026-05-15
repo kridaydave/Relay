@@ -106,7 +106,7 @@ class ContextEnvelope:
         """Return a copy of this envelope with parallel step metadata applied.
 
         WARNING: The returned copy is UNSIGNED and has an invalid signature field.
-        The caller MUST re-sign the envelope (e.g., via execute_step_with_manifest)
+        The caller MUST re-sign the envelope (e.g., via compute_signature)
         before persisting or transmitting.
         """
         return replace(
@@ -169,6 +169,7 @@ def create_initial_envelope(
     secret: str,
     manifest_hash: str,
     token_budget_total: int = 8000,
+    now: datetime | None = None,
 ) -> Result[ContextEnvelope]:
     """Create the first envelope for a pipeline.
 
@@ -176,6 +177,7 @@ def create_initial_envelope(
         secret: HMAC signing secret. REQUIRED - must be provided by caller.
             Do NOT use default or placeholder values in production.
         manifest_hash: Optional hash of the agent manifest. Pass "" if not using manifests.
+        now: Timestamp override for testing. Defaults to datetime.now(timezone.utc).
     """
     validation_result = _validate_pipeline_id(pipeline_id)
     if isinstance(validation_result, Failure):
@@ -188,7 +190,7 @@ def create_initial_envelope(
         relay_version=RELAY_VERSION,
         pipeline_id=pipeline_id,
         step=1,
-        timestamp=datetime.now(timezone.utc),
+        timestamp=now or datetime.now(timezone.utc),
         token_budget_used=token_used,
         token_budget_total=token_budget_total,
         payload=initial_payload,
@@ -205,6 +207,7 @@ def create_next_envelope(
     secret: str,
     agent_output: dict[str, Any],
     manifest_hash: str,
+    now: datetime | None = None,
 ) -> Result[ContextEnvelope]:
     """Create a subsequent envelope for the next step.
 
@@ -215,6 +218,7 @@ def create_next_envelope(
         secret: HMAC signing secret. REQUIRED - must be provided by caller.
             Do NOT use default or placeholder values in production.
         manifest_hash: Optional hash of the agent manifest. Pass "" if not using manifests.
+        now: Timestamp override for testing. Defaults to datetime.now(timezone.utc).
     """
     if not agent_output:
         return Failure(reason="agent_output cannot be empty", code=ErrorCode.INVALID_PAYLOAD)
@@ -225,7 +229,7 @@ def create_next_envelope(
         relay_version=RELAY_VERSION,
         pipeline_id=previous_envelope.pipeline_id,
         step=previous_envelope.step + 1,
-        timestamp=datetime.now(timezone.utc),
+        timestamp=now or datetime.now(timezone.utc),
         token_budget_used=token_used,
         token_budget_total=previous_envelope.token_budget_total,
         payload=agent_output,
