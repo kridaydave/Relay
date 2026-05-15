@@ -3,6 +3,7 @@
 import pytest
 
 from relay.budget import HardCapEnforcer, TokenCounter
+from relay.budget.token_counter import HeuristicCounter
 from relay.types import ErrorCode, Failure, Success
 from tests.conftest import FixedCounter
 
@@ -49,6 +50,11 @@ class TestTokenCounterProtocol:
         assert isinstance(counter, TokenCounter)
         assert counter.count("anything") == 42
 
+    def test_heuristic_counter_satisfies_token_counter_protocol(self):
+        """HeuristicCounter must satisfy TokenCounter protocol."""
+        from relay.budget.token_counter import HeuristicCounter
+        assert isinstance(HeuristicCounter(), TokenCounter)
+
 
 class TestEmbeddingProviderProtocol:
     def test_fixed_embedding_provider_is_protocol_compatible(self):
@@ -59,3 +65,51 @@ class TestEmbeddingProviderProtocol:
         assert isinstance(provider, EmbeddingProvider)
         vector = provider.embed("any text")
         assert vector == [0.1, 0.2, 0.3]
+
+
+class TestHeuristicCounter:
+    def test_count_returns_at_least_one_for_empty_string(self):
+        counter = HeuristicCounter()
+        assert counter.count("") == 1
+
+    def test_count_returns_char_length_divided_by_three(self):
+        counter = HeuristicCounter()
+        result = counter.count("hello world")  # 11 chars -> 11//3 = 3
+        assert result == 3
+
+    def test_count_returns_one_for_short_strings(self):
+        counter = HeuristicCounter()
+        assert counter.count("ab") == 1  # 2//3 = 0 -> max(1, 0) = 1
+
+    def test_context_manager_enter_returns_self(self):
+        counter = HeuristicCounter()
+        with counter as cm:
+            assert cm is counter
+
+    def test_context_manager_exit_does_not_raise(self):
+        counter = HeuristicCounter()
+        counter.__enter__()
+        counter.__exit__(None, None, None)
+
+    def test_close_does_not_raise(self):
+        counter = HeuristicCounter()
+        counter.close()
+
+
+class TestTiktokenCounterFallback:
+    def test_tiktoken_counter_is_heuristic_when_tiktoken_unavailable(self, monkeypatch):
+        import builtins
+        real_import = builtins.__import__
+        def mock_import(name, *args, **kwargs):
+            if name == "tiktoken":
+                raise ImportError
+            return real_import(name, *args, **kwargs)
+        monkeypatch.setattr(builtins, "__import__", mock_import)
+
+        import importlib
+        import relay.budget.token_counter as tc_mod
+        importlib.reload(tc_mod)
+
+        assert tc_mod.TiktokenCounter is tc_mod.HeuristicCounter
+
+        importlib.reload(tc_mod)
