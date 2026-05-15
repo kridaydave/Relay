@@ -13,6 +13,7 @@ from relay.budget import HardCapEnforcer, TokenCounter
 from relay.context_broker import ContextBroker, create_context_broker
 from relay.envelope import compute_signature, ContextEnvelope, estimate_tokens, serialize_slice
 from relay.parallel import (
+    _agent_output_to_payload,
     _run_single_fork,
     apply_join_strategy,
     ForkResult,
@@ -21,7 +22,7 @@ from relay.parallel import (
 )
 from relay.pipeline_rollback import RollbackHandler
 from relay.pipeline_state import PipelineState
-from relay.runners import AdapterRegistry, AgentOutput
+from relay.runners import AdapterRegistry
 from relay.runners.protocol import ContextSlice
 from relay.slicer import AgentManifest, SlicePacker
 from relay.snapshot import SnapshotStore
@@ -31,25 +32,6 @@ from relay.validator import (
     ValidationResult,
     validate_manifest_boundaries,
 )
-
-
-def _agent_output_to_payload(
-    output: AgentOutput,
-    manifest: AgentManifest,
-) -> dict[str, Any]:
-    """Convert AgentOutput to a payload dict suitable for execute_step_with_manifest.
-
-    Merges text, structured fields, and tool_calls into a dict unconditionally.
-    No filtering by manifest.writes is performed — that validation happens in
-    validate_manifest_boundaries inside execute_step_with_manifest.
-
-    This function does NOT validate — it only shapes the payload. Validation is
-    the responsibility of validate_manifest_boundaries inside execute_step_with_manifest.
-    """
-    raw: dict[str, Any] = {"text": output.text, **output.structured}
-    if output.tool_calls:
-        raw["tool_calls"] = output.tool_calls
-    return raw
 
 
 @dataclass
@@ -419,7 +401,7 @@ class CoreRelayPipeline:
                 code=ErrorCode.ADAPTER_EXECUTION_FAILED,
             )
 
-        payload = _agent_output_to_payload(agent_output, manifest)
+        payload = _agent_output_to_payload(agent_output)
         return self.execute_step_with_manifest(payload, manifest=manifest)
 
     async def execute_parallel_step(
