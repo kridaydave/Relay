@@ -422,6 +422,71 @@ class TestSnapshotDictToEnvelope:
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.INVALID_SNAPSHOT
 
+    def test_missing_pipeline_id_returns_failure(self):
+        sid = self._write_snapshot("p-pid", 1, {
+            "relay_version": RELAY_VERSION,
+            "step": 1, "timestamp": "2024-01-01T00:00:00+00:00",
+            "token_budget_used": 100, "token_budget_total": 8000,
+            "payload": {"k": "v"}, "manifest_hash": "", "signature": "s",
+        })
+        result = self.store.load_snapshot(sid)
+        assert isinstance(result, Failure)
+        assert result.code == ErrorCode.INVALID_SNAPSHOT
+
+    def test_missing_manifest_hash_returns_failure(self):
+        sid = self._write_snapshot("p-mh", 1, {
+            "relay_version": RELAY_VERSION, "pipeline_id": "p-mh",
+            "step": 1, "timestamp": "2024-01-01T00:00:00+00:00",
+            "token_budget_used": 100, "token_budget_total": 8000,
+            "payload": {"k": "v"}, "signature": "s",
+        })
+        result = self.store.load_snapshot(sid)
+        assert isinstance(result, Failure)
+        assert result.code == ErrorCode.INVALID_SNAPSHOT
+
+    def test_missing_signature_returns_failure(self):
+        sid = self._write_snapshot("p-sig", 1, {
+            "relay_version": RELAY_VERSION, "pipeline_id": "p-sig",
+            "step": 1, "timestamp": "2024-01-01T00:00:00+00:00",
+            "token_budget_used": 100, "token_budget_total": 8000,
+            "payload": {"k": "v"}, "manifest_hash": "",
+        })
+        result = self.store.load_snapshot(sid)
+        assert isinstance(result, Failure)
+        assert result.code == ErrorCode.INVALID_SNAPSHOT
+
+
+class TestSnapshotStoreSaveOSError:
+    def setup_method(self):
+        self.temp_dir = tempfile.mkdtemp()
+        self.store = SnapshotStore(storage_path=self.temp_dir)
+
+    def teardown_method(self):
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def _make_env(self):
+        return ContextEnvelope(
+            relay_version=RELAY_VERSION, pipeline_id="p-os",
+            step=1, timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            token_budget_used=100, token_budget_total=8000,
+            payload={"data": "test"}, manifest_hash="", signature="sig",
+        )
+
+    def test_save_snapshot_cleans_up_temp_file_on_replace_failure(self):
+        env = self._make_env()
+        with patch("os.replace", side_effect=OSError("replace failed")):
+            result = self.store.save_snapshot(env)
+        assert isinstance(result, Failure)
+        assert result.code == ErrorCode.SNAPSHOT_SAVE_FAILED
+
+    def test_os_error_during_temp_cleanup_does_not_raise(self):
+        env = self._make_env()
+        with patch("os.replace", side_effect=OSError("replace failed")):
+            with patch.object(Path, "unlink", side_effect=OSError("unlink failed")):
+                result = self.store.save_snapshot(env)
+        assert isinstance(result, Failure)
+        assert result.code == ErrorCode.SNAPSHOT_SAVE_FAILED
+
 
 class TestExtractStepFromSnapshotId:
     def test_extract_step_returns_correct_int(self):
