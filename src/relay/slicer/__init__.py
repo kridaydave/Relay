@@ -1,13 +1,7 @@
-"""Context slicing strategies and agent manifest boundaries.
+"""Context slicing strategies and agent manifest definitions.
 
-Provides pluggable context slicing strategies and agent manifest definitions.
-
-Exports:
-    AgentManifest: Manifest defining agent read/write permissions.
-    EmbeddingProvider: Protocol for embedding implementations.
-    RecencySlicePacker: Selects most recent sections by step order.
-    RelevanceSlicePacker: Ranks sections by cosine similarity.
-    StructuralSlicePacker: Selects sections in manifest reads.
+Owns: AgentManifest, SlicePacker protocol, EmbeddingProvider protocol.
+Does NOT: implement embedding providers or token counting.
 """
 
 from relay.slicer.manifest import AgentManifest
