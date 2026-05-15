@@ -152,9 +152,9 @@ class TestCosineSimilarity:
         result = _cosine_similarity([1.0, 0.0], [0.0, 1.0])
         assert result == pytest.approx(0.0)
 
-    def test_dimension_mismatch_returns_zero(self):
-        result = _cosine_similarity([1.0, 2.0], [1.0, 2.0, 3.0])
-        assert result == 0.0
+    def test_dimension_mismatch_raises_value_error(self):
+        with pytest.raises(ValueError, match="dimension mismatch"):
+            _cosine_similarity([1.0, 2.0], [1.0, 2.0, 3.0])
 
     def test_zero_vector_returns_zero(self):
         result = _cosine_similarity([0.0, 0.0], [1.0, 2.0])
