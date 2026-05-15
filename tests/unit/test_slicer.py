@@ -9,6 +9,7 @@ from relay.slicer import (
     RelevanceSlicePacker,
     StructuralSlicePacker,
 )
+from relay.slicer.packers import _cosine_similarity
 from relay.types import Failure, Success, ErrorCode
 from tests.conftest import FixedEmbeddingProvider
 
@@ -120,3 +121,73 @@ class TestRelevanceSlicePacker:
         result = packer.pack(payload, manifest)
         assert isinstance(result, Success)
         assert len(result.value) == 2
+
+    def test_empty_payload_returns_success(self):
+        """Empty payload in RelevanceSlicePacker returns Success with empty dict."""
+        provider = FixedEmbeddingProvider([1.0, 0.0])
+        packer = RelevanceSlicePacker(provider)
+        manifest = AgentManifest("a1", "test task", frozenset(), frozenset(), 1000)
+        result = packer.pack({}, manifest)
+        assert isinstance(result, Success)
+        assert result.value == {}
+
+    def test_selects_within_max_tokens_boundary(self):
+        """RelevanceSlicePacker skips sections exceeding remaining budget."""
+        provider = FixedEmbeddingProvider([1.0, 0.0])
+        packer = RelevanceSlicePacker(provider)
+        payload = {"big_section": "x" * 9000, "small_section": "a"}
+        manifest = AgentManifest("a1", "test task", frozenset(), frozenset(), 100)
+        result = packer.pack(payload, manifest)
+        assert isinstance(result, Success)
+        assert "big_section" not in result.value
+        assert "small_section" in result.value
+
+
+class TestCosineSimilarity:
+    def test_identical_vectors_returns_one(self):
+        result = _cosine_similarity([1.0, 2.0, 3.0], [1.0, 2.0, 3.0])
+        assert result == pytest.approx(1.0)
+
+    def test_orthogonal_vectors_returns_zero(self):
+        result = _cosine_similarity([1.0, 0.0], [0.0, 1.0])
+        assert result == pytest.approx(0.0)
+
+    def test_dimension_mismatch_returns_zero(self):
+        result = _cosine_similarity([1.0, 2.0], [1.0, 2.0, 3.0])
+        assert result == 0.0
+
+    def test_zero_vector_returns_zero(self):
+        result = _cosine_similarity([0.0, 0.0], [1.0, 2.0])
+        assert result == 0.0
+
+    def test_both_zero_vectors_returns_zero(self):
+        result = _cosine_similarity([0.0, 0.0], [0.0, 0.0])
+        assert result == 0.0
+
+
+class TestRecencySlicePackerEdgeCases:
+    def test_keys_without_numeric_suffix_default_to_zero(self):
+        packer = RecencySlicePacker()
+        payload = {"abc": "content", "section_1": "data"}
+        manifest = AgentManifest("a1", "task", frozenset(), frozenset(), 1000)
+        result = packer.pack(payload, manifest)
+        assert isinstance(result, Success)
+        assert "section_1" in result.value
+
+    def test_all_sections_over_budget(self):
+        packer = RecencySlicePacker()
+        payload = {"section_1": "x" * 5000, "section_2": "y" * 5000}
+        manifest = AgentManifest("a1", "task", frozenset(), frozenset(), 10)
+        result = packer.pack(payload, manifest)
+        assert isinstance(result, Success)
+        assert result.value == {}
+
+
+class TestStructuralSlicePackerEdgeCases:
+    def test_empty_reads_returns_empty_dict(self):
+        packer = StructuralSlicePacker()
+        payload = {"section_a": "content"}
+        manifest = AgentManifest("a1", "task", frozenset(), frozenset(), 1000)
+        result = packer.pack(payload, manifest)
+        assert isinstance(result, Success)
+        assert result.value == {}
