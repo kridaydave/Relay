@@ -38,6 +38,7 @@ class ValidationResult:
     has_contradiction: bool
     diff: dict[str, Any]
     contradiction_details: str | None
+    confidence_score: float = 1.0
 
 
 class HandoffValidator:
@@ -98,7 +99,12 @@ class HandoffValidator:
     def validate_handoff(
         self, previous_envelope: ContextEnvelope, current_envelope: ContextEnvelope
     ) -> Result[ValidationResult]:
-        """Validate a handoff between two envelopes."""
+        """Validate a handoff between two envelopes.
+
+        Delegates payload-level checks to _validate_payloads. Envelope-level
+        checks (pipeline_id, step) remain here because fork validation operates
+        on raw payloads, not envelopes.
+        """
         if previous_envelope.pipeline_id != current_envelope.pipeline_id:
             return Failure(
                 reason="Pipeline ID mismatch", code=ErrorCode.PIPELINE_MISMATCH
@@ -107,23 +113,70 @@ class HandoffValidator:
         if previous_envelope.step >= current_envelope.step:
             return Failure(reason="Step must increase", code=ErrorCode.INVALID_STEP)
 
+        return self._validate_payloads(
+            previous_envelope.payload, current_envelope.payload
+        )
+
+    def validate_handoff_payload(
+        self, previous_envelope: ContextEnvelope, new_payload: dict[str, Any]
+    ) -> Result[ValidationResult]:
+        """Validate a raw payload dict against the previous envelope.
+
+        Skips envelope-level checks (pipeline_id, step) — a raw payload has no
+        envelope metadata yet. Used by _run_single_fork to validate fork output
+        pre-commit.
+
+        REQUIRES: no lock — reads only immutable inputs.
+        """
+        return self._validate_payloads(
+            previous_envelope.payload, new_payload
+        )
+
+    def _validate_payloads(
+        self,
+        previous_payload: dict[str, Any],
+        new_payload: dict[str, Any],
+    ) -> Result[ValidationResult]:
+        """Core validation logic operating on raw payloads.
+
+        Extracted from validate_handoff so fork_runner can validate without a
+        full envelope. Logic is identical to validate_handoff() minus the
+        pipeline_id/step envelope checks.
+
+        REQUIRES: no lock — reads only immutable inputs. Stateless.
+        """
         contradiction_details: str | None = None
         has_contradiction = False
 
         hallucination_result = self._detect_hallucination(
-            previous_envelope.payload, current_envelope.payload
+            previous_payload, new_payload
         )
         if hallucination_result:
             has_contradiction = True
             contradiction_details = hallucination_result
 
-        diff = self._compute_diff(previous_envelope.payload, current_envelope.payload)
+        diff = self._compute_diff(previous_payload, new_payload)
         critical_missing = self._check_critical_keys_missing(diff)
         if critical_missing:
             has_contradiction = True
             contradiction_details = (
                 f"{contradiction_details}; " if contradiction_details else ""
             ) + critical_missing
+
+        if has_contradiction:
+            confidence_score = 0.0
+        else:
+            try:
+                new_entities = self._extract_entities(new_payload)
+                known_entities = self._extract_entities(previous_payload)
+            except MaxDepthExceededError:
+                confidence_score = 0.0
+            else:
+                if not new_entities:
+                    confidence_score = 1.0
+                else:
+                    preserved = len(new_entities & known_entities)
+                    confidence_score = preserved / len(new_entities)
 
         has_contradiction_str: str | None = (
             contradiction_details if has_contradiction else None
@@ -134,6 +187,7 @@ class HandoffValidator:
                 has_contradiction=has_contradiction,
                 diff=diff,
                 contradiction_details=has_contradiction_str,
+                confidence_score=confidence_score,
             )
         )
 

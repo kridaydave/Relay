@@ -115,6 +115,7 @@ class TestValidateHandoff:
         validation_result = result.value
         assert validation_result.has_contradiction is False
         assert validation_result.contradiction_details is None
+        assert validation_result.confidence_score == pytest.approx(1.0)
 
     @patch("relay.envelope.datetime")
     def test_validator_detects_contradiction_when_critical_key_missing(self, mock_datetime):
@@ -146,6 +147,7 @@ class TestValidateHandoff:
         assert "Critical keys removed" in validation_result.contradiction_details
         assert "facts" in validation_result.contradiction_details
         assert "constraints" in validation_result.contradiction_details
+        assert validation_result.confidence_score == 0.0
 
 
 class TestShouldRollback:
@@ -459,3 +461,124 @@ class TestEntityExtraction:
         result = validator._detect_hallucination({}, deeply_nested)
         assert result is not None
         assert "depth exceeds limit" in result
+
+
+class TestConfidenceScore:
+    def test_clean_handoff_has_high_confidence(self):
+        """Clean handoff with all entities preserved yields confidence 1.0."""
+        validator = HandoffValidator()
+        prev_payload = {"entities": ["alice", "bob"]}
+        curr_payload = {"entities": ["alice", "bob"]}
+        result = validator._validate_payloads(prev_payload, curr_payload)
+        assert isinstance(result, Success)
+        assert result.value.confidence_score == pytest.approx(1.0)
+
+    def test_contradiction_yields_zero_confidence(self):
+        """Contradiction detected → confidence_score is 0.0."""
+        validator = HandoffValidator()
+        prev_payload = {"entities": ["alice"], "facts": ["f1"]}
+        curr_payload = {"entities": ["alice"]}
+        result = validator._validate_payloads(prev_payload, curr_payload)
+        assert isinstance(result, Success)
+        assert result.value.confidence_score == 0.0
+
+    def test_deeply_nested_payload_yields_zero_confidence(self):
+        """MaxDepthExceededError → confidence_score is 0.0."""
+        validator = HandoffValidator()
+        deeply_nested: dict[str, Any] = {}
+        current = deeply_nested
+        for _ in range(60):
+            current["nested"] = {}
+            current = current["nested"]
+        result = validator._validate_payloads({}, deeply_nested)
+        assert isinstance(result, Success)
+        assert result.value.confidence_score == 0.0
+
+    def test_partial_entity_preservation(self):
+        """Some entities preserved → confidence = preserved / total_new."""
+        validator = HandoffValidator()
+        prev_payload = {"entities": ["alice", "bob"]}
+        curr_payload = {"entities": ["bob", "charlie", "david"]}
+        result = validator._validate_payloads(prev_payload, curr_payload)
+        assert isinstance(result, Success)
+        expected = 1 / 3
+        assert result.value.confidence_score == pytest.approx(expected)
+
+    def test_validation_result_default_confidence(self):
+        """ValidationResult without confidence_score defaults to 1.0."""
+        vr = ValidationResult(
+            has_contradiction=False, diff={}, contradiction_details=None,
+        )
+        assert vr.confidence_score == 1.0
+
+
+class TestValidateHandoffPayload:
+    def test_validate_handoff_payload_produces_same_result_as_validate_handoff(self):
+        """validate_handoff_payload produces identical ValidationResult to validate_handoff."""
+        from unittest.mock import patch
+        with patch("relay.envelope.datetime") as mock_datetime:
+            mock_datetime.now.return_value = datetime(2024, 1, 1, tzinfo=timezone.utc)
+            previous_result = create_initial_envelope(
+                pipeline_id="pipeline-123",
+                initial_payload={"entities": ["a"], "actions": ["b"]},
+                secret="a" * 32,
+                manifest_hash=""
+            )
+            previous_envelope = previous_result.value
+
+            new_payload = {"entities": ["a", "b"], "actions": ["b"]}
+
+            validator = HandoffValidator()
+            result_via_handoff = validator.validate_handoff(
+                previous_envelope,
+                _make_envelope("pipeline-123", 2, new_payload),
+            )
+            result_via_payload = validator.validate_handoff_payload(
+                previous_envelope, new_payload,
+            )
+
+            assert isinstance(result_via_handoff, Success)
+            assert isinstance(result_via_payload, Success)
+            assert result_via_handoff.value.has_contradiction == result_via_payload.value.has_contradiction
+            assert result_via_handoff.value.diff == result_via_payload.value.diff
+            assert result_via_handoff.value.confidence_score == pytest.approx(
+                result_via_payload.value.confidence_score
+            )
+
+    def test_validate_handoff_payload_skips_envelope_checks(self):
+        """validate_handoff_payload does not check pipeline_id or step."""
+        with patch("relay.envelope.datetime") as mock_datetime:
+            mock_datetime.now.return_value = datetime(2024, 1, 1, tzinfo=timezone.utc)
+            previous_result = create_initial_envelope(
+                pipeline_id="pipeline-123",
+                initial_payload={"entities": ["a"]},
+                secret="a" * 32,
+                manifest_hash=""
+            )
+            previous_envelope = previous_result.value
+
+            validator = HandoffValidator()
+            result = validator.validate_handoff_payload(
+                previous_envelope, {"entities": ["a", "b"]},
+            )
+            assert isinstance(result, Success)
+
+    def test_validate_handoff_payload_detects_contradiction(self):
+        """validate_handoff_payload detects contradictions in raw payload."""
+        with patch("relay.envelope.datetime") as mock_datetime:
+            mock_datetime.now.return_value = datetime(2024, 1, 1, tzinfo=timezone.utc)
+            previous_result = create_initial_envelope(
+                pipeline_id="pipeline-123",
+                initial_payload={"entities": ["a"], "facts": ["f1"]},
+                secret="a" * 32,
+                manifest_hash=""
+            )
+            previous_envelope = previous_result.value
+
+            validator = HandoffValidator()
+            result = validator.validate_handoff_payload(
+                previous_envelope, {"entities": ["a"]},
+            )
+            assert isinstance(result, Success)
+            assert result.value.has_contradiction is True
+            assert result.value.confidence_score == 0.0
