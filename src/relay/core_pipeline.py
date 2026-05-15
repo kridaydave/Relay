@@ -258,6 +258,10 @@ class CoreRelayPipeline:
     ) -> Result[ContextEnvelope]:
         """Apply manifest hash to envelope, validating write boundaries.
 
+        Skips re-signing when manifest_hash already matches — avoids wasting
+        the signature already computed by create_initial_envelope or
+        create_next_envelope.
+
         REQUIRES: caller holds self._state._lock via transaction() context manager.
         """
         if manifest is None:
@@ -265,7 +269,10 @@ class CoreRelayPipeline:
         result = validate_manifest_boundaries(manifest, set(envelope.payload.keys()))
         if isinstance(result, Failure):
             return result
-        envelope_with_hash = envelope.with_manifest_hash(manifest.compute_hash())
+        manifest_hash = manifest.compute_hash()
+        if envelope.manifest_hash == manifest_hash:
+            return Success(envelope)
+        envelope_with_hash = envelope.with_manifest_hash(manifest_hash)
         signed = envelope_with_hash.with_signature(
             compute_signature(envelope_with_hash, self._context_broker.signing_secret)
         )
