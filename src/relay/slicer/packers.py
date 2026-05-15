@@ -70,7 +70,7 @@ class RecencySlicePacker:
             section_tokens = _estimate_tokens({key: section_text})
 
             if manifest.max_tokens is not None and used_tokens + section_tokens > manifest.max_tokens:
-                continue
+                break
 
             result[key] = section_text
             used_tokens += section_tokens
@@ -142,7 +142,7 @@ class RelevanceSlicePacker:
 
         for key, _, section_tokens in similarities:
             if manifest.max_tokens is not None and used_tokens + section_tokens > manifest.max_tokens:
-                continue
+                break
 
             result[key] = payload[key]
             used_tokens += section_tokens
