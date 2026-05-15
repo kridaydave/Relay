@@ -6,10 +6,13 @@ from typing import Any
 
 import pytest
 
+import pytest
+
 from relay.parallel.types import ForkResult, ForkSpec, JoinStrategy
 from relay.runners.protocol import AgentOutput, ContextSlice
+from relay.runners.registry import AdapterRegistry
 from relay.slicer.manifest import AgentManifest
-from relay.validator import ValidationResult
+from relay.validator import HandoffValidator, ValidationResult
 
 
 def make_fork_spec(
@@ -78,3 +81,28 @@ class FixedForkRunner:
             tool_calls=[],
             token_count=10, latency_ms=5, adapter="fixed",
         )
+
+
+@pytest.fixture
+def make_pipeline_components():
+    """Fixture that returns (registry, validator) for fork runner tests."""
+    registry = AdapterRegistry()
+    validator = HandoffValidator()
+    return registry, validator
+
+
+def make_context_slice(
+    pipeline_id: str = "test-pipe",
+    step: int = 1,
+    agent_id: str = "test-agent",
+    sections: dict | None = None,
+    manifest_hash: str = "",
+) -> ContextSlice:
+    return ContextSlice(
+        pipeline_id=pipeline_id,
+        step=step,
+        agent_id=agent_id,
+        sections=sections or {},
+        token_count=0,
+        manifest_hash=manifest_hash,
+    )
