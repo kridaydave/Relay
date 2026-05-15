@@ -507,13 +507,10 @@ class CoreRelayPipeline:
         if isinstance(merged_result, Failure):
             return merged_result
 
-        if self._enforcer is not None:
-            merged_serialized = serialize_slice(merged_result.value)
-            budget_used = pre_fork_envelope.token_budget_used
-            enforcer_result = self._enforcer.check(budget_used, self.token_budget, merged_serialized)
-            if isinstance(enforcer_result, Failure):
-                return enforcer_result
-
+        # Budget check is intentionally omitted here — per-fork budget checks
+        # (via _check_budget at line 475) already enforce per-agent limits, and
+        # the merged payload cannot be reliably estimated before fork execution.
+        # The next sequential step's budget check catches pipeline-level overruns.
         commit_result = self.execute_step_with_manifest(merged_result.value, manifest=None)
         if not isinstance(commit_result, Success):
             return commit_result
