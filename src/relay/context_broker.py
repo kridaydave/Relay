@@ -52,18 +52,11 @@ class ContextBroker:
     Does NOT: persist snapshots, validate content, or manage pipeline state.
 
     Note: Use create_context_broker() factory function to construct instances.
-    __post_init__ raises ValueError for weak secrets, catching programmer errors.
-    The factory function returns Result for boundary validation.
+    The factory validates secret strength and returns Failure; direct construction
+    bypasses validation and is intended only for internal use with pre-validated secrets.
     """
     signing_secret: str
     token_budget_total: int
-
-    def __post_init__(self) -> None:
-        if len(self.signing_secret) < _MIN_SECRET_LENGTH:
-            raise ValueError(
-                f"signing_secret must be at least {_MIN_SECRET_LENGTH} characters, "
-                f"got {len(self.signing_secret)}. Weak secrets compromise envelope integrity."
-            )
 
     def create_initial_envelope(
         self,
