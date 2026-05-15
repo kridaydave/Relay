@@ -439,7 +439,7 @@ class CoreRelayPipeline:
         if not fork_specs:
             return Failure(
                 reason="fork_specs must be non-empty",
-                code=ErrorCode.INVALID_STATE,
+                code=ErrorCode.INVALID_JOIN_STRATEGY,
             )
         if self.registry is None:
             return Failure(
