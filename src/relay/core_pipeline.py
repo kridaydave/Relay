@@ -14,8 +14,8 @@ from relay.budget import HardCapEnforcer, TokenCounter
 from relay.context_broker import ContextBroker, create_context_broker
 from relay.envelope import compute_signature, ContextEnvelope, estimate_tokens, serialize_slice
 from relay.parallel import apply_join_strategy, ForkResult, ForkSpec, JoinStrategy
-from relay.parallel.fork_runner import _run_single_fork
-from relay.parallel.types import _agent_output_to_payload
+from relay.parallel.fork_runner import run_single_fork
+from relay.parallel.types import agent_output_to_payload
 from relay.pipeline_rollback import RollbackHandler
 from relay.pipeline_state import PipelineState
 from relay.runners import AdapterRegistry
@@ -419,7 +419,7 @@ class CoreRelayPipeline:
                 code=ErrorCode.ADAPTER_EXECUTION_FAILED,
             )
 
-        payload = _agent_output_to_payload(agent_output)
+        payload = agent_output_to_payload(agent_output)
         return self.execute_step_with_manifest(payload, manifest=manifest)
 
     async def execute_parallel_step(
@@ -478,7 +478,7 @@ class CoreRelayPipeline:
 
         parallel_id = str(uuid.uuid4())
         fork_coros = [
-            _run_single_fork(
+            run_single_fork(
                 fork_index=i,
                 spec=spec,
                 slice_=slice_,

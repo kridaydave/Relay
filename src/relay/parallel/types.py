@@ -59,7 +59,7 @@ class ForkResult:
     failure: "Failure | None"
 
 
-def _agent_output_to_payload(output: AgentOutput) -> dict[str, Any]:
+def agent_output_to_payload(output: AgentOutput) -> dict[str, Any]:
     """Shape AgentOutput into a payload dict for validation and merging.
 
     ``output.text`` always takes precedence when ``output.structured``

@@ -8,7 +8,7 @@ import asyncio
 from typing import TYPE_CHECKING, Any, Coroutine
 
 from relay.envelope import ContextEnvelope
-from relay.parallel.types import ForkResult, ForkSpec, JoinStrategy, _agent_output_to_payload
+from relay.parallel.types import ForkResult, ForkSpec, JoinStrategy, agent_output_to_payload
 from relay.types import ErrorCode, Failure, Result, Success
 
 if TYPE_CHECKING:
@@ -45,7 +45,7 @@ def _apply_union(fork_results: list[ForkResult]) -> Result[dict[str, Any]]:
                 ),
                 code=ErrorCode.UNKNOWN_ERROR,
             )
-        fork_payload = _agent_output_to_payload(result.agent_output)
+        fork_payload = agent_output_to_payload(result.agent_output)
         for key, value in fork_payload.items():
             if key in merged and merged[key] != value:
                 conflicts.append(key)
@@ -89,7 +89,7 @@ def _apply_vote(fork_results: list[ForkResult]) -> Result[dict[str, Any]]:
             ),
             code=ErrorCode.UNKNOWN_ERROR,
         )
-    return Success(_agent_output_to_payload(winner.agent_output))
+    return Success(agent_output_to_payload(winner.agent_output))
 
 
 async def _apply_first_wins(
@@ -116,7 +116,7 @@ async def _apply_first_wins(
             except Exception:
                 continue
             if result.success and result.agent_output is not None:
-                winner_payload = _agent_output_to_payload(result.agent_output)
+                winner_payload = agent_output_to_payload(result.agent_output)
                 break
         if winner_payload is not None:
             break

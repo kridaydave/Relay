@@ -29,12 +29,13 @@ __all__ = [
     "estimate_tokens",
     "serialize_slice",
     "compute_signature",
+    "validate_pipeline_id",
 ]
 PIPELINE_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{1,128}$")
 _MAX_STEP = 10**6  # 1 million steps should be plenty
 
 
-def _validate_pipeline_id(pipeline_id: str) -> Result[str]:
+def validate_pipeline_id(pipeline_id: str) -> Result[str]:
     """Validate pipeline_id format."""
     if not pipeline_id:
         return Failure(
@@ -184,7 +185,7 @@ def create_initial_envelope(
         manifest_hash: Optional hash of the agent manifest. Pass "" if not using manifests.
         now: Timestamp override for testing. Defaults to datetime.now(timezone.utc).
     """
-    validation_result = _validate_pipeline_id(pipeline_id)
+    validation_result = validate_pipeline_id(pipeline_id)
     if isinstance(validation_result, Failure):
         return validation_result
     if not initial_payload:

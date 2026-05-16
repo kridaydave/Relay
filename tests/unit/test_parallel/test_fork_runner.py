@@ -1,11 +1,11 @@
-"""Tests for parallel/fork_runner.py — _run_single_fork isolation and failure modes."""
+"""Tests for parallel/fork_runner.py — run_single_fork isolation and failure modes."""
 
 import asyncio
 
 import pytest
 
 from relay.envelope import RELAY_VERSION, ContextEnvelope
-from relay.parallel.fork_runner import _agent_output_to_payload, _run_single_fork
+from relay.parallel.fork_runner import agent_output_to_payload, run_single_fork
 from relay.parallel.types import ForkSpec
 from relay.runners.protocol import AgentOutput
 from relay.types import ErrorCode
@@ -43,7 +43,7 @@ class TestAgentOutputToPayload:
             tool_calls=[],
             token_count=5, latency_ms=1, adapter="test",
         )
-        payload = _agent_output_to_payload(output)
+        payload = agent_output_to_payload(output)
         assert payload == {"text": "hello", "key": "value"}
 
     def test_includes_tool_calls_when_present(self):
@@ -53,7 +53,7 @@ class TestAgentOutputToPayload:
             tool_calls=[{"name": "tool1"}],
             token_count=5, latency_ms=1, adapter="test",
         )
-        payload = _agent_output_to_payload(output)
+        payload = agent_output_to_payload(output)
         assert payload == {"text": "hello", "tool_calls": [{"name": "tool1"}]}
 
     def test_no_tool_calls_when_empty(self):
@@ -61,7 +61,7 @@ class TestAgentOutputToPayload:
             text="hello", structured={}, tool_calls=[],
             token_count=5, latency_ms=1, adapter="test",
         )
-        payload = _agent_output_to_payload(output)
+        payload = agent_output_to_payload(output)
         assert "tool_calls" not in payload
 
 
@@ -75,7 +75,7 @@ class TestRunSingleFork:
         env = _make_envelope()
         slice_ = make_context_slice(agent_id="agent-a")
 
-        result = await _run_single_fork(
+        result = await run_single_fork(
             fork_index=0, spec=spec, slice_=slice_,
             pre_fork_envelope=env, registry=registry, validator=validator,
         )
@@ -94,7 +94,7 @@ class TestRunSingleFork:
         env = _make_envelope()
         slice_ = make_context_slice()
 
-        result = await _run_single_fork(
+        result = await run_single_fork(
             fork_index=0, spec=spec, slice_=slice_,
             pre_fork_envelope=env, registry=registry, validator=validator,
         )
@@ -114,7 +114,7 @@ class TestRunSingleFork:
         env = _make_envelope()
         slice_ = make_context_slice(agent_id="agent-a")
 
-        result = await _run_single_fork(
+        result = await run_single_fork(
             fork_index=0, spec=spec, slice_=slice_,
             pre_fork_envelope=env, registry=registry, validator=validator,
         )
@@ -127,7 +127,7 @@ class TestRunSingleFork:
 
     @pytest.mark.asyncio
     async def test_concurrent_forks_do_not_share_state(self, make_pipeline_components):
-        """N concurrent _run_single_fork calls on same envelope produce N independent results."""
+        """N concurrent run_single_fork calls on same envelope produce N independent results."""
         registry, validator = make_pipeline_components
         registry.register("agent-a", FixedForkRunner(output_text="output-a"))
         registry.register("agent-b", FixedForkRunner(output_text="output-b"))
@@ -138,8 +138,8 @@ class TestRunSingleFork:
         slice_b = make_context_slice(agent_id="agent-b")
 
         results = await asyncio.gather(
-            _run_single_fork(0, spec_a, slice_a, env, registry, validator),
-            _run_single_fork(1, spec_b, slice_b, env, registry, validator),
+            run_single_fork(0, spec_a, slice_a, env, registry, validator),
+            run_single_fork(1, spec_b, slice_b, env, registry, validator),
         )
         assert len(results) == 2
         assert results[0].fork_index == 0
@@ -160,7 +160,7 @@ class TestRunSingleFork:
         env = _make_envelope(payload={"entities": ["alice"]})
         slice_ = make_context_slice(agent_id="agent-a")
 
-        result = await _run_single_fork(
+        result = await run_single_fork(
             fork_index=0, spec=spec, slice_=slice_,
             pre_fork_envelope=env, registry=registry, validator=validator,
         )
@@ -180,7 +180,7 @@ class TestRunSingleFork:
         env = _make_envelope()
         slice_ = make_context_slice(agent_id="agent-a")
 
-        result = await _run_single_fork(
+        result = await run_single_fork(
             fork_index=0, spec=spec, slice_=slice_,
             pre_fork_envelope=env, registry=registry, validator=validator,
         )
@@ -203,8 +203,8 @@ class TestRunSingleFork:
         slice_slow = make_context_slice(agent_id="slow")
 
         results = await asyncio.gather(
-            _run_single_fork(0, spec_fast, slice_fast, env, registry, validator),
-            _run_single_fork(1, spec_slow, slice_slow, env, registry, validator),
+            run_single_fork(0, spec_fast, slice_fast, env, registry, validator),
+            run_single_fork(1, spec_slow, slice_slow, env, registry, validator),
         )
         indices = {r.fork_index for r in results}
         assert indices == {0, 1}

@@ -11,7 +11,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 from relay.envelope import ContextEnvelope
-from relay.parallel.types import ForkResult, ForkSpec, _agent_output_to_payload
+from relay.parallel.types import ForkResult, ForkSpec, agent_output_to_payload
 from relay.runners.protocol import AgentOutput, ContextSlice
 from relay.types import ErrorCode, Failure, Success
 from relay.validator import HandoffValidator, validate_manifest_boundaries
@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     from relay.slicer.manifest import AgentManifest
 
 
-async def _run_single_fork(
+async def run_single_fork(
     fork_index: int,
     spec: ForkSpec,
     slice_: ContextSlice,
@@ -73,7 +73,7 @@ async def _run_single_fork(
             ),
         )
 
-    fork_payload = _agent_output_to_payload(agent_output)
+    fork_payload = agent_output_to_payload(agent_output)
 
     scope_keys = spec.manifest.reads | spec.manifest.writes
     filtered_payload = {
