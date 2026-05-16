@@ -16,26 +16,26 @@ from relay.envelope import (
     serialize_slice,
     verify_signature,
 )
-from relay.types import ErrorCode, Failure, Success
+from relay.types import ErrorCode, Failure, JSONDict, Success
 
 
 @pytest.fixture
-def secret():
+def secret() -> str:
     return "a" * 32
 
 
 @pytest.fixture
-def initial_payload():
+def initial_payload() -> JSONDict:
     return {"data": "test", "count": 42}
 
 
 @pytest.fixture
-def next_payload():
+def next_payload() -> JSONDict:
     return {"data": "updated", "count": 43}
 
 
 class TestCreateInitialEnvelope:
-    def test_create_initial_envelope_with_valid_inputs(self, secret, initial_payload):
+    def test_create_initial_envelope_with_valid_inputs(self, secret: str, initial_payload: JSONDict) -> None:
         result = create_initial_envelope(
             pipeline_id="pipeline-123",
             initial_payload=initial_payload,
@@ -43,6 +43,7 @@ class TestCreateInitialEnvelope:
             manifest_hash="",
         )
 
+        assert isinstance(result, Success)
         assert isinstance(result.value, ContextEnvelope)
         envelope = result.value
         assert envelope.relay_version == RELAY_VERSION
@@ -53,7 +54,7 @@ class TestCreateInitialEnvelope:
         assert envelope.manifest_hash == ""
         assert envelope.signature != ""
 
-    def test_create_initial_envelope_with_manifest_hash(self, secret, initial_payload):
+    def test_create_initial_envelope_with_manifest_hash(self, secret: str, initial_payload: JSONDict) -> None:
         result = create_initial_envelope(
             pipeline_id="pipeline-123",
             initial_payload=initial_payload,
@@ -61,11 +62,12 @@ class TestCreateInitialEnvelope:
             manifest_hash="abc123",
         )
 
+        assert isinstance(result, Success)
         assert result.value.manifest_hash == "abc123"
 
     def test_create_initial_envelope_fails_on_empty_pipeline_id(
-        self, secret, initial_payload
-    ):
+        self, secret: str, initial_payload: JSONDict
+    ) -> None:
         result = create_initial_envelope(
             pipeline_id="",
             initial_payload=initial_payload,
@@ -78,8 +80,8 @@ class TestCreateInitialEnvelope:
         assert result.code == ErrorCode.INVALID_PIPELINE_ID
 
     def test_create_initial_envelope_fails_on_empty_payload(
-        self, secret, initial_payload
-    ):
+        self, secret: str, initial_payload: JSONDict
+    ) -> None:
         result = create_initial_envelope(
             pipeline_id="pipeline-123",
             initial_payload={},
@@ -93,15 +95,16 @@ class TestCreateInitialEnvelope:
 
 
 class TestCreateNextEnvelope:
-    def test_create_next_envelope_increments_step(
-        self, secret, initial_payload, next_payload
-    ):
+    def test_step_increments_when_next_envelope_created(
+        self, secret: str, initial_payload: JSONDict, next_payload: JSONDict
+    ) -> None:
         first = create_initial_envelope(
             pipeline_id="pipeline-123",
             initial_payload=initial_payload,
             secret=secret,
             manifest_hash="",
         )
+        assert isinstance(first, Success)
         second = create_next_envelope(
             previous_envelope=first.value,
             secret=secret,
@@ -109,12 +112,13 @@ class TestCreateNextEnvelope:
             manifest_hash="",
         )
 
+        assert isinstance(second, Success)
         assert second.value.step == 2
         assert second.value.pipeline_id == "pipeline-123"
 
     def test_create_next_envelope_updates_token_budget(
-        self, secret, initial_payload, next_payload
-    ):
+        self, secret: str, initial_payload: JSONDict, next_payload: JSONDict
+    ) -> None:
         first = create_initial_envelope(
             pipeline_id="pipeline-123",
             initial_payload=initial_payload,
@@ -122,6 +126,7 @@ class TestCreateNextEnvelope:
             token_budget_total=8000,
             manifest_hash="",
         )
+        assert isinstance(first, Success)
         second = create_next_envelope(
             previous_envelope=first.value,
             secret=secret,
@@ -129,17 +134,19 @@ class TestCreateNextEnvelope:
             manifest_hash="",
         )
 
+        assert isinstance(second, Success)
         assert second.value.token_budget_used >= first.value.token_budget_used
 
-    def test_create_next_envelope_inherits_previous_fields(
-        self, secret, initial_payload, next_payload
-    ):
+    def test_fields_are_inherited_when_next_envelope_created(
+        self, secret: str, initial_payload: JSONDict, next_payload: JSONDict
+    ) -> None:
         first = create_initial_envelope(
             pipeline_id="pipeline-123",
             initial_payload=initial_payload,
             secret=secret,
             manifest_hash="",
         )
+        assert isinstance(first, Success)
         second = create_next_envelope(
             previous_envelope=first.value,
             secret=secret,
@@ -147,18 +154,20 @@ class TestCreateNextEnvelope:
             manifest_hash="",
         )
 
+        assert isinstance(second, Success)
         assert second.value.pipeline_id == first.value.pipeline_id
         assert second.value.token_budget_total == first.value.token_budget_total
 
     def test_create_next_envelope_fails_on_empty_agent_output(
-        self, secret, initial_payload
-    ):
+        self, secret: str, initial_payload: JSONDict
+    ) -> None:
         first = create_initial_envelope(
             pipeline_id="pipeline-123",
             initial_payload=initial_payload,
             secret=secret,
             manifest_hash="",
         )
+        assert isinstance(first, Success)
 
         second = create_next_envelope(
             previous_envelope=first.value,
@@ -173,36 +182,42 @@ class TestCreateNextEnvelope:
 
 class TestVerifySignature:
     def test_verify_signature_returns_true_for_valid_signature(
-        self, secret, initial_payload
-    ):
-        envelope = create_initial_envelope(
+        self, secret: str, initial_payload: JSONDict
+    ) -> None:
+        first = create_initial_envelope(
             pipeline_id="pipeline-123",
             initial_payload=initial_payload,
             secret=secret,
             manifest_hash="",
-        ).value
+        )
+        assert isinstance(first, Success)
+        envelope = first.value
 
         assert verify_signature(envelope, secret) is True
 
     def test_verify_signature_returns_false_for_invalid_signature(
-        self, secret, initial_payload
-    ):
-        envelope = create_initial_envelope(
+        self, secret: str, initial_payload: JSONDict
+    ) -> None:
+        first = create_initial_envelope(
             pipeline_id="pipeline-123",
             initial_payload=initial_payload,
             secret=secret,
             manifest_hash="",
-        ).value
+        )
+        assert isinstance(first, Success)
+        envelope = first.value
 
         assert verify_signature(envelope, "wrong-secret") is False
 
-    def test_verify_signature_fails_on_tampered_budget(self, secret, initial_payload):
-        envelope = create_initial_envelope(
+    def test_verify_signature_fails_on_tampered_budget(self, secret: str, initial_payload: JSONDict) -> None:
+        first = create_initial_envelope(
             pipeline_id="pipeline-123",
             initial_payload=initial_payload,
             secret=secret,
             manifest_hash="",
-        ).value
+        )
+        assert isinstance(first, Success)
+        envelope = first.value
 
         tampered = ContextEnvelope(
             relay_version=envelope.relay_version,
@@ -231,7 +246,7 @@ class TestTokenEstimation:
     broken implementation (returning 0, returning len, etc.).
     """
 
-    PAYLOADS = [
+    PAYLOADS: list[JSONDict] = [
         {"summary": "Apple reported strong Q4 revenue growth.", "step": 1},
         {
             "entities": ["Alice", "Bob", "Charlie"],
@@ -241,7 +256,7 @@ class TestTokenEstimation:
         {"nested": {"a": {"b": {"c": "deep"}}}},
     ]
 
-    def test_estimate_tokens_importable_from_packers(self):
+    def test_estimate_tokens_is_importable_when_using_packers(self) -> None:
         """packers re-exports estimate_tokens from envelope (consolidated, no duplicate)."""
         from relay.slicer.packers import estimate_tokens as packer_estimate
 
@@ -249,11 +264,11 @@ class TestTokenEstimation:
         for payload in self.PAYLOADS:
             assert packer_estimate(payload) == estimate_tokens(payload)
 
-    def test_estimate_is_positive_for_all_representative_payloads(self):
+    def test_estimate_is_positive_for_all_representative_payloads(self) -> None:
         for payload in self.PAYLOADS:
             assert estimate_tokens(payload) > 0, f"Zero estimate for {payload}"
 
-    def test_estimate_stays_within_3x_of_char_based_reference(self):
+    def test_estimate_stays_within_tolerance_when_measured(self) -> None:
         for payload in self.PAYLOADS:
             estimate = estimate_tokens(payload)
             json_len = len(json.dumps(payload, sort_keys=True))
@@ -265,14 +280,14 @@ class TestTokenEstimation:
                 f"Estimate {estimate} too high vs baseline {baseline} for {payload}"
             )
 
-    def test_larger_payload_produces_larger_estimate(self):
-        small = {"x": "a" * 10}
-        large = {"x": "a" * 1000}
+    def test_estimate_increases_when_payload_is_larger(self) -> None:
+        small: JSONDict = {"x": "a" * 10}
+        large: JSONDict = {"x": "a" * 1000}
         assert estimate_tokens(large) > estimate_tokens(small)
 
 
 class TestContextEnvelope:
-    def test_context_envelope_is_frozen_dataclass(self):
+    def test_envelope_is_immutable_when_frozen(self) -> None:
         envelope = ContextEnvelope(
             relay_version=RELAY_VERSION,
             pipeline_id="test",
@@ -286,13 +301,13 @@ class TestContextEnvelope:
         )
 
         with pytest.raises(Exception):
-            envelope.step = 2
+            envelope.step = 2  # type: ignore[misc]
 
 
 class TestContextEnvelopeWithManifestHash:
     """Tests for ContextEnvelope.with_manifest_hash()."""
 
-    def test_with_manifest_hash_returns_new_envelope(self):
+    def test_with_manifest_hash_returns_new_envelope(self) -> None:
         original = ContextEnvelope(
             relay_version=RELAY_VERSION,
             pipeline_id="test-pipeline",
@@ -314,7 +329,7 @@ class TestContextEnvelopeWithManifestHash:
         assert result.payload == {"data": "test"}
         assert result.signature == "original-sig"
 
-    def test_with_manifest_hash_preserves_all_other_fields(self):
+    def test_with_manifest_hash_preserves_all_other_fields(self) -> None:
         original = ContextEnvelope(
             relay_version=RELAY_VERSION,
             pipeline_id="pipeline-abc",
@@ -339,7 +354,7 @@ class TestContextEnvelopeWithManifestHash:
         assert result.manifest_hash == "new-hash-xyz"
         assert result.signature == "sig-xyz"
 
-    def test_with_manifest_hash_is_idempotent(self):
+    def test_with_manifest_hash_is_idempotent(self) -> None:
         original = ContextEnvelope(
             relay_version=RELAY_VERSION,
             pipeline_id="test",
@@ -361,7 +376,7 @@ class TestContextEnvelopeWithManifestHash:
 
 
 class TestPipelineIdValidation:
-    def test_rejects_pipeline_id_with_invalid_chars(self, secret, initial_payload):
+    def test_rejects_pipeline_id_with_invalid_chars(self, secret: str, initial_payload: JSONDict) -> None:
         result = create_initial_envelope(
             pipeline_id="bad pipe!",
             initial_payload=initial_payload,
@@ -371,7 +386,7 @@ class TestPipelineIdValidation:
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.INVALID_PIPELINE_ID
 
-    def test_rejects_pipeline_id_too_long(self, secret, initial_payload):
+    def test_initial_envelope_fails_when_pipeline_id_is_too_long(self, secret: str, initial_payload: JSONDict) -> None:
         result = create_initial_envelope(
             pipeline_id="x" * 129,
             initial_payload=initial_payload,
@@ -383,7 +398,7 @@ class TestPipelineIdValidation:
 
 
 class TestWithSignature:
-    def test_with_signature_returns_new_envelope(self):
+    def test_with_signature_returns_new_envelope(self) -> None:
         original = ContextEnvelope(
             relay_version=RELAY_VERSION,
             pipeline_id="test",
@@ -402,46 +417,55 @@ class TestWithSignature:
 
 
 class TestComputeSignature:
-    def test_compute_signature_is_deterministic(self, secret):
-        env1 = create_initial_envelope(
+    def test_signature_is_deterministic_when_inputs_are_same(self, secret: str) -> None:
+        res1 = create_initial_envelope(
             pipeline_id="pipe",
             initial_payload={"k": "v"},
             secret=secret,
             manifest_hash="",
-        ).value
-        env2 = create_initial_envelope(
+        )
+        assert isinstance(res1, Success)
+        env1 = res1.value
+
+        res2 = create_initial_envelope(
             pipeline_id="pipe",
             initial_payload={"k": "v"},
             secret=secret,
             manifest_hash="",
-        ).value
+        )
+        assert isinstance(res2, Success)
+        env2 = res2.value
+
         sig1 = compute_signature(env1, secret)
         sig2 = compute_signature(env2, secret)
         assert sig1 == sig2
 
-    def test_compute_signature_differs_for_different_secret(self, secret):
-        env = create_initial_envelope(
+    def test_compute_signature_differs_for_different_secret(self, secret: str) -> None:
+        res = create_initial_envelope(
             pipeline_id="pipe",
             initial_payload={"k": "v"},
             secret=secret,
             manifest_hash="",
-        ).value
+        )
+        assert isinstance(res, Success)
+        env = res.value
+
         sig1 = compute_signature(env, secret)
         sig2 = compute_signature(env, "x" * 32)
         assert sig1 != sig2
 
 
 class TestSerializeSlice:
-    def test_serialize_slice_returns_compact_json(self):
+    def test_serialize_slice_returns_compact_json(self) -> None:
         result = serialize_slice({"b": 2, "a": 1})
         assert result == '{"a":1,"b":2}'
 
-    def test_serialize_slice_empty_dict(self):
+    def test_serialize_slice_returns_empty_json_when_dict_is_empty(self) -> None:
         assert serialize_slice({}) == "{}"
 
 
 class TestForkFields:
-    def test_sequential_envelope_has_none_fork_fields(self):
+    def test_fork_fields_are_none_when_envelope_is_sequential(self) -> None:
         """Sequential envelopes have all fork fields as None."""
         from relay.envelope import create_initial_envelope
 
@@ -458,16 +482,18 @@ class TestForkFields:
         assert env.fork_count is None
         assert env.forks_succeeded is None
 
-    def test_with_fork_metadata_sets_all_fields(self):
+    def test_with_fork_metadata_sets_all_fields(self) -> None:
         """with_fork_metadata returns envelope with all four fork fields set."""
         from relay.envelope import create_initial_envelope
 
-        env = create_initial_envelope(
+        res = create_initial_envelope(
             pipeline_id="test",
             initial_payload={"data": "x"},
             secret="a" * 32,
             manifest_hash="",
-        ).value
+        )
+        assert isinstance(res, Success)
+        env = res.value
         meta = env.with_fork_metadata(
             fork_id="uuid-1",
             join_strategy="UNION",
@@ -480,16 +506,18 @@ class TestForkFields:
         assert meta.forks_succeeded == 2
         assert meta.signature == ""
 
-    def test_with_fork_metadata_invalidates_signature(self):
+    def test_with_fork_metadata_invalidates_signature(self) -> None:
         """with_fork_metadata sets signature to empty string."""
         from relay.envelope import create_initial_envelope
 
-        env = create_initial_envelope(
+        res = create_initial_envelope(
             pipeline_id="test",
             initial_payload={"data": "x"},
             secret="a" * 32,
             manifest_hash="",
-        ).value
+        )
+        assert isinstance(res, Success)
+        env = res.value
         meta = env.with_fork_metadata(
             fork_id="uuid-1",
             join_strategy="VOTE",
@@ -498,7 +526,7 @@ class TestForkFields:
         )
         assert meta.signature == ""
 
-    def test_sequential_envelope_signature_unchanged(self):
+    def test_signature_is_unchanged_when_envelope_is_sequential(self) -> None:
         """Sequential envelope (fork fields None) produces same signature as v0.3 format."""
         from datetime import datetime, timezone
 
@@ -534,7 +562,7 @@ class TestForkFields:
         sig_with_none = compute_signature(env_with_fork_none, secret)
         assert sig == sig_with_none
 
-    def test_parallel_envelope_signature_includes_fork_suffix(self):
+    def test_signature_includes_fork_suffix_when_envelope_is_parallel(self) -> None:
         """Parallel envelope signature differs from sequential when fork_id is set."""
         from datetime import datetime, timezone
 
@@ -568,16 +596,18 @@ class TestForkFields:
         secret = "a" * 32
         assert compute_signature(env_seq, secret) != compute_signature(env_par, secret)
 
-    def test_verify_signature_passes_after_re_signing_fork_metadata(self):
+    def test_verify_signature_passes_after_re_signing_fork_metadata(self) -> None:
         """Envelope with fork metadata verifies after re-signing."""
         from relay.envelope import create_initial_envelope
 
-        env = create_initial_envelope(
+        res = create_initial_envelope(
             pipeline_id="test",
             initial_payload={"data": "x"},
             secret="a" * 32,
             manifest_hash="",
-        ).value
+        )
+        assert isinstance(res, Success)
+        env = res.value
         meta = env.with_fork_metadata(
             fork_id="uuid-1",
             join_strategy="UNION",
@@ -589,7 +619,7 @@ class TestForkFields:
 
 
 class TestContextEnvelopeFieldConstraints:
-    def test_negative_token_budget_used_rejected(self):
+    def test_constructor_fails_when_token_budget_used_is_negative(self) -> None:
         """Negative token_budget_used raises ValueError."""
         from datetime import datetime, timezone
 
@@ -606,7 +636,7 @@ class TestContextEnvelopeFieldConstraints:
                 signature="",
             )
 
-    def test_negative_token_budget_total_rejected(self):
+    def test_constructor_fails_when_token_budget_total_is_negative(self) -> None:
         """Negative token_budget_total raises ValueError."""
         from datetime import datetime, timezone
 
@@ -623,7 +653,7 @@ class TestContextEnvelopeFieldConstraints:
                 signature="",
             )
 
-    def test_negative_step_rejected(self):
+    def test_constructor_fails_when_step_is_negative(self) -> None:
         """Negative step raises ValueError."""
         from datetime import datetime, timezone
 
@@ -640,7 +670,7 @@ class TestContextEnvelopeFieldConstraints:
                 signature="",
             )
 
-    def test_excessive_step_number_rejected(self):
+    def test_constructor_fails_when_step_exceeds_maximum(self) -> None:
         """Step number above _MAX_STEP raises ValueError (Issue #7)."""
         from datetime import datetime, timezone
 
@@ -659,7 +689,7 @@ class TestContextEnvelopeFieldConstraints:
                 signature="",
             )
 
-    def test_step_zero_rejected(self):
+    def test_constructor_fails_when_step_is_zero(self) -> None:
         """Step == 0 raises ValueError."""
         from datetime import datetime, timezone
 
@@ -675,3 +705,4 @@ class TestContextEnvelopeFieldConstraints:
                 manifest_hash="",
                 signature="",
             )
+

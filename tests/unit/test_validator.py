@@ -1,18 +1,19 @@
 """Unit tests for relay.validator."""
 
 from datetime import datetime, timezone
+from typing import Any, Mapping
 
 import pytest
 
 from relay.envelope import RELAY_VERSION, ContextEnvelope, create_initial_envelope
 from relay.validator import HandoffValidator, MaxDepthExceededError, ValidationResult, validate_manifest_boundaries
-from relay.types import Success, Failure, ErrorCode
+from relay.types import Success, Failure, ErrorCode, JSONDict, unwrap
 
 
 def _make_envelope(
     pipeline_id: str,
     step: int,
-    payload: dict,
+    payload: JSONDict,
     token_budget_used: int = 100,
     token_budget_total: int = 8000,
     timestamp: datetime | None = None,
@@ -35,7 +36,7 @@ def _make_envelope(
 
 
 class TestValidateHandoff:
-    def test_validate_handoff_pipeline_id_mismatch(self):
+    def test_validate_handoff_fails_when_pipeline_id_mismatch(self) -> None:
         """Mismatched pipeline IDs must return Failure."""
         ref_time = datetime(2024, 1, 1, tzinfo=timezone.utc)
         previous_result = create_initial_envelope(
@@ -45,7 +46,7 @@ class TestValidateHandoff:
             manifest_hash="",
             now=ref_time,
         )
-        previous_envelope = previous_result.value
+        previous_envelope = unwrap(previous_result)
 
         current_envelope = _make_envelope(
             pipeline_id="different-pipeline",  # Different pipeline ID
@@ -61,7 +62,7 @@ class TestValidateHandoff:
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.PIPELINE_MISMATCH
 
-    def test_validate_handoff_step_not_increasing(self):
+    def test_validate_handoff_fails_when_step_not_increasing(self) -> None:
         """Step must increase between envelopes."""
         ref_time = datetime(2024, 1, 1, tzinfo=timezone.utc)
         previous_result = create_initial_envelope(
@@ -71,7 +72,7 @@ class TestValidateHandoff:
             manifest_hash="",
             now=ref_time,
         )
-        previous_envelope = previous_result.value
+        previous_envelope = unwrap(previous_result)
 
         current_envelope = _make_envelope(
             pipeline_id="pipeline-123",
@@ -87,7 +88,7 @@ class TestValidateHandoff:
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.INVALID_STEP
 
-    def test_validator_passes_clean_handoff(self):
+    def test_validate_handoff_passes_when_clean(self) -> None:
         ref_time = datetime(2024, 1, 1, tzinfo=timezone.utc)
 
         previous_result = create_initial_envelope(
@@ -97,7 +98,7 @@ class TestValidateHandoff:
             manifest_hash="",
             now=ref_time,
         )
-        previous_envelope = previous_result.value
+        previous_envelope = unwrap(previous_result)
 
         current_envelope = _make_envelope(
             pipeline_id="pipeline-123",
@@ -116,7 +117,7 @@ class TestValidateHandoff:
         assert validation_result.contradiction_details is None
         assert validation_result.confidence_score == pytest.approx(1.0)
 
-    def test_validator_detects_contradiction_when_critical_key_missing(self):
+    def test_validator_detects_contradiction_when_critical_key_missing(self) -> None:
         ref_time = datetime(2024, 1, 1, tzinfo=timezone.utc)
 
         previous_envelope = _make_envelope(
@@ -142,6 +143,7 @@ class TestValidateHandoff:
         assert isinstance(result, Success)
         validation_result = result.value
         assert validation_result.has_contradiction is True
+        assert validation_result.contradiction_details is not None
         assert "Critical keys removed" in validation_result.contradiction_details
         assert "facts" in validation_result.contradiction_details
         assert "constraints" in validation_result.contradiction_details
@@ -149,7 +151,7 @@ class TestValidateHandoff:
 
 
 class TestShouldRollback:
-    def test_validator_should_rollback_returns_true_on_contradiction(self):
+    def test_validator_should_rollback_returns_true_on_contradiction(self) -> None:
         validation_result = ValidationResult(
             has_contradiction=True,
             diff={"added": [], "removed": [], "modified": []},
@@ -161,7 +163,7 @@ class TestShouldRollback:
 
         assert should_rollback is True
 
-    def test_validator_should_rollback_returns_false_on_clean_validation(self):
+    def test_validator_should_rollback_returns_false_on_clean_validation(self) -> None:
         validation_result = ValidationResult(
             has_contradiction=False,
             diff={"added": [], "removed": [], "modified": []},
@@ -175,7 +177,7 @@ class TestShouldRollback:
 
 
 class TestComputeDiff:
-    def test_validator_computes_diff_between_payloads(self):
+    def test_validate_handoff_computes_diff_on_payload_change(self) -> None:
         ref_time = datetime(2024, 1, 1, tzinfo=timezone.utc)
 
         previous_result = create_initial_envelope(
@@ -185,7 +187,7 @@ class TestComputeDiff:
             manifest_hash="",
             now=ref_time,
         )
-        previous_envelope = previous_result.value
+        previous_envelope = unwrap(previous_result)
 
         current_envelope = _make_envelope(
             pipeline_id="pipeline-123",
@@ -200,10 +202,17 @@ class TestComputeDiff:
 
         assert isinstance(result, Success)
         diff = result.value.diff
-        assert "new_field" in diff["added"]
-        assert "actions" in diff["removed"]
-        assert "entities" in diff["modified"]
-        assert "facts" in diff["modified"]
+        # Use cast or explicit type check to avoid "object" in operator error
+        added = diff["added"]
+        removed = diff["removed"]
+        modified = diff["modified"]
+        assert isinstance(added, list)
+        assert isinstance(removed, list)
+        assert isinstance(modified, list)
+        assert "new_field" in added
+        assert "actions" in removed
+        assert "entities" in modified
+        assert "facts" in modified
 
 
 class TestHallucinationGroundTruth:
@@ -233,13 +242,13 @@ class TestHallucinationGroundTruth:
       appear as "kept" entities (e.g., prev: ["Apple"], curr: ["Apple", "Apple-2"]).
     """
 
-    def test_hallucination_detector_fires_on_textbook_fabrication(self):
+    def test_hallucination_detector_fires_on_textbook_fabrication(self) -> None:
         validator = HandoffValidator()
-        previous_payload = {
+        previous_payload: JSONDict = {
             "entities": ["Apple-Inc", "Steve-Jobs", "Tim-Cook", "Cupertino"],
             "facts": ["fact1"],
         }
-        current_payload = {
+        current_payload: JSONDict = {
             "entities": [
                 "Apple-Inc", "Steve-Jobs", "Tim-Cook", "Cupertino",
                 "Microsoft", "Bill-Gates", "Satya-Nadella", "Redmond", "Silicon-Valley"
@@ -250,28 +259,28 @@ class TestHallucinationGroundTruth:
         assert result is not None
         assert "Entity fabrication detected" in result
 
-    def test_hallucination_detector_is_silent_on_clean_addition(self):
+    def test_hallucination_detector_is_silent_on_clean_addition(self) -> None:
         validator = HandoffValidator()
-        previous_payload = {
+        previous_payload: JSONDict = {
             "entities": ["Apple-Inc", "Steve-Jobs", "Tim-Cook"],
         }
-        current_payload = {
+        current_payload: JSONDict = {
             "entities": ["Apple-Inc", "Steve-Jobs", "Tim-Cook", "iPhone", "MacBook"],
         }
         result = validator._detect_hallucination(previous_payload, current_payload)
         assert result is None
 
-    def test_hallucination_detector_is_silent_on_entity_decay(self):
+    def test_hallucination_detector_is_silent_on_entity_decay(self) -> None:
         validator = HandoffValidator()
-        previous_payload = {"entities": ["Apple", "Microsoft", "Google"]}
-        current_payload = {"entities": ["Apple"]}
+        previous_payload: JSONDict = {"entities": ["Apple", "Microsoft", "Google"]}
+        current_payload: JSONDict = {"entities": ["Apple"]}
         result = validator._detect_hallucination(previous_payload, current_payload)
 
         assert result is None
 
 
 class TestValidateManifestBoundaries:
-    def test_valid_manifest_returns_success(self):
+    def test_valid_manifest_returns_success(self) -> None:
         """Agent writing only to permitted sections returns Success."""
         from relay.slicer import AgentManifest
         manifest = AgentManifest(
@@ -286,7 +295,7 @@ class TestValidateManifestBoundaries:
         assert isinstance(result, Success)
         assert result.value is None
 
-    def test_unauthorized_section_returns_failure(self):
+    def test_unauthorized_section_returns_failure(self) -> None:
         """Agent writing to unauthorized section returns Failure."""
         from relay.slicer import AgentManifest
         manifest = AgentManifest(
@@ -303,7 +312,7 @@ class TestValidateManifestBoundaries:
         assert "unauthorized_section" in result.reason
 
 class TestHallucinationDetection:
-    def test_hallucination_detection_at_threshold(self):
+    def test_detect_hallucination_is_silent_when_at_threshold_boundary(self) -> None:
         """Test that exactly 2.0x ratio is not flagged (boundary case).
 
         Uses 3+ char entity names that _extract_entities actually parses.
@@ -311,14 +320,14 @@ class TestHallucinationDetection:
         Ratio: new=2, removed=0 -> replaced with 1 -> ratio=2.0 exactly (not > threshold).
         """
         validator = HandoffValidator()
-        previous_payload = {"entities": ["alice", "bob"]}
-        current_payload = {"entities": ["alice", "bob", "charlie", "david"]}
+        previous_payload: JSONDict = {"entities": ["alice", "bob"]}
+        current_payload: JSONDict = {"entities": ["alice", "bob", "charlie", "david"]}
 
         result = validator._detect_hallucination(previous_payload, current_payload)
 
         assert result is None
 
-    def test_hallucination_detection_above_threshold(self):
+    def test_detect_hallucination_fails_when_above_threshold(self) -> None:
         """Test that ratio above 2.0x triggers detection.
 
         Uses 3+ char entity names in keys that _extract_entities recognizes.
@@ -326,15 +335,15 @@ class TestHallucinationDetection:
         Ratio: new=3, removed=0 -> replaced with 1 -> ratio=3.0 > 2.0 threshold.
         """
         validator = HandoffValidator()
-        previous_payload = {"entity": "alice", "id": "bob"}
-        current_payload = {"entity": "alice", "id": "bob", "name": "charlie", "identifier": "david", "subject": "eve"}
+        previous_payload: JSONDict = {"entity": "alice", "id": "bob"}
+        current_payload: JSONDict = {"entity": "alice", "id": "bob", "name": "charlie", "identifier": "david", "subject": "eve"}
 
         result = validator._detect_hallucination(previous_payload, current_payload)
 
         assert result is not None
         assert "Entity fabrication detected" in result
 
-    def test_hallucination_detection_below_threshold(self):
+    def test_detect_hallucination_is_silent_when_below_threshold(self) -> None:
         """Test that ratio below 2.0x does not trigger detection.
 
         Uses 3+ char entity names that _extract_entities extracts from list values.
@@ -342,43 +351,43 @@ class TestHallucinationDetection:
         Ratio: new=1, removed=0 -> replaced with 1 -> ratio=1.0 < 2.0 threshold.
         """
         validator = HandoffValidator()
-        previous_payload = {"entities": ["alice", "bob", "charlie"]}
-        current_payload = {"entities": ["alice", "bob", "charlie", "david"]}
+        previous_payload: JSONDict = {"entities": ["alice", "bob", "charlie"]}
+        current_payload: JSONDict = {"entities": ["alice", "bob", "charlie", "david"]}
 
         result = validator._detect_hallucination(previous_payload, current_payload)
 
         assert result is None
 
-    def test_hallucination_detection_deletion_threshold_positive(self):
+    def test_detect_hallucination_fires_on_excessive_deletion(self) -> None:
         validator = HandoffValidator()
-        previous = {"entities": ["alice", "bob", "charlie", "david", "eve"]}
-        current = {"entities": []}
+        previous: JSONDict = {"entities": ["alice", "bob", "charlie", "david", "eve"]}
+        current: JSONDict = {"entities": []}
         result = validator._detect_hallucination(previous, current)
         assert result is not None
         assert "Excessive entity deletion" in result
 
-    def test_hallucination_detection_deletion_threshold_negative(self):
+    def test_detect_hallucination_is_silent_on_moderate_deletion(self) -> None:
         validator = HandoffValidator()
-        previous = {"entities": ["alice", "bob"]}
-        current = {"entities": []}
+        previous: JSONDict = {"entities": ["alice", "bob"]}
+        current: JSONDict = {"entities": []}
         result = validator._detect_hallucination(previous, current)
         assert result is None
 
 
 class TestEntityExtraction:
-    def test_extract_entities_from_entities_list(self):
+    def test_extract_entities_works_with_entities_key(self) -> None:
         """Test extraction from payload with entities key."""
         validator = HandoffValidator()
-        payload = {"entities": ["Alice", "Bob", "Charlie"]}
+        payload: JSONDict = {"entities": ["Alice", "Bob", "Charlie"]}
 
         entities = validator._extract_entities(payload)
 
         assert entities == frozenset({"alice", "bob", "charlie"})
 
-    def test_extract_entities_from_nested_structure(self):
+    def test_extract_entities_works_with_nested_structure(self) -> None:
         """Test extraction from nested payload structure."""
         validator = HandoffValidator()
-        payload = {
+        payload: JSONDict = {
             "data": {
                 "subject": "Order123",
                 "object": "Customer456"
@@ -390,119 +399,120 @@ class TestEntityExtraction:
         assert "order123" in entities
         assert "customer456" in entities
 
-    def test_extract_entities_from_string_values(self):
+    def test_extract_entities_returns_empty_on_non_entity_keys(self) -> None:
         """Only strings under entity-named keys are extracted."""
         validator = HandoffValidator()
-        payload = {"action": "process order_abc def"}
+        payload: JSONDict = {"action": "process order_abc def"}
 
         entities = validator._extract_entities(payload)
 
         assert entities == frozenset()
 
-    def test_extract_entities_empty_payload(self):
+    def test_extract_entities_returns_empty_when_payload_empty(self) -> None:
         """Test extraction from empty payload."""
         validator = HandoffValidator()
-        payload = {}
+        payload: JSONDict = {}
 
         entities = validator._extract_entities(payload)
 
         assert entities == frozenset()
 
-    def test_extract_entities_no_new_entities(self):
+    def test_detect_hallucination_is_silent_when_no_new_entities(self) -> None:
         """Test that entity removal does not trigger hallucination."""
         validator = HandoffValidator()
-        previous_payload = {"entities": ["a", "b", "c"]}
-        current_payload = {"entities": ["a", "b"]}
+        previous_payload: JSONDict = {"entities": ["a", "b", "c"]}
+        current_payload: JSONDict = {"entities": ["a", "b"]}
 
         result = validator._detect_hallucination(previous_payload, current_payload)
 
         assert result is None
 
-    def test_detect_hallucination_returns_none_when_threshold_disabled(self):
+    def test_detect_hallucination_returns_none_when_threshold_disabled(self) -> None:
         validator = HandoffValidator(hallucination_ratio_threshold=None)
-        prev = {"entities": ["Apple", "Microsoft", "Google"]}
-        curr = {"entities": ["Apple", "Microsoft", "Google", "Amazon", "Meta", "Netflix"]}
+        prev: JSONDict = {"entities": ["Apple", "Microsoft", "Google"]}
+        curr: JSONDict = {"entities": ["Apple", "Microsoft", "Google", "Amazon", "Meta", "Netflix"]}
         result = validator._detect_hallucination(prev, curr)
         assert result is None
 
-    def test_hallucination_detection_with_both_hallucination_and_missing_keys(self):
+    def test_hallucination_detection_with_both_hallucination_and_missing_keys(self) -> None:
         """Combined hallucination and critical key removal concatenates details."""
-        from datetime import datetime, timezone
-        prev_payload = {"entities": ["alice", "bob"], "facts": ["fact1"], "constraints": ["x"]}
-        curr_payload = {"entities": ["alice", "bob", "charlie", "david", "eve", "frank"]}
+        prev_payload: JSONDict = {"entities": ["alice", "bob"], "facts": ["fact1"], "constraints": ["x"]}
+        curr_payload: JSONDict = {"entities": ["alice", "bob", "charlie", "david", "eve", "frank"]}
         prev = _make_envelope("pipe", 1, prev_payload)
         curr = _make_envelope("pipe", 2, curr_payload)
         validator = HandoffValidator()
         result = validator.validate_handoff(prev, curr)
         assert isinstance(result, Success)
-        assert result.value.has_contradiction is True
-        assert "Entity fabrication" in result.value.contradiction_details
-        assert "Critical keys removed" in result.value.contradiction_details
+        validation_result = result.value
+        assert validation_result.has_contradiction is True
+        assert validation_result.contradiction_details is not None
+        assert "Entity fabrication" in validation_result.contradiction_details
+        assert "Critical keys removed" in validation_result.contradiction_details
 
-    def test_extract_entities_raises_on_excessive_depth(self):
+    def test_extract_entities_raises_on_excessive_depth(self) -> None:
         validator = HandoffValidator()
-        deeply_nested = {}
+        deeply_nested: JSONDict = {}
         current = deeply_nested
-        for i in range(60):
+        for _ in range(60):
             current["nested"] = {}
-            current = current["nested"]
+            current = current["nested"]  # type: ignore[assignment]
         with pytest.raises(MaxDepthExceededError):
             validator._extract_entities(deeply_nested)
 
-    def test_detect_hallucination_propagates_max_depth_error(self):
+    def test_detect_hallucination_fails_on_max_depth_exceeded(self) -> None:
         validator = HandoffValidator()
-        deeply_nested = {}
+        deeply_nested: JSONDict = {}
         current = deeply_nested
-        for i in range(60):
+        for _ in range(60):
             current["nested"] = {}
-            current = current["nested"]
+            current = current["nested"]  # type: ignore[assignment]
         result = validator._detect_hallucination({}, deeply_nested)
         assert result is not None
         assert "depth exceeds limit" in result
 
 
 class TestConfidenceScore:
-    def test_clean_handoff_has_high_confidence(self):
+    def test_validate_payloads_has_high_confidence_when_clean_handoff(self) -> None:
         """Clean handoff with all entities preserved yields confidence 1.0."""
         validator = HandoffValidator()
-        prev_payload = {"entities": ["alice", "bob"]}
-        curr_payload = {"entities": ["alice", "bob"]}
+        prev_payload: JSONDict = {"entities": ["alice", "bob"]}
+        curr_payload: JSONDict = {"entities": ["alice", "bob"]}
         result = validator._validate_payloads(prev_payload, curr_payload)
         assert isinstance(result, Success)
         assert result.value.confidence_score == pytest.approx(1.0)
 
-    def test_contradiction_yields_zero_confidence(self):
+    def test_validate_payloads_yields_zero_confidence_on_contradiction(self) -> None:
         """Contradiction detected → confidence_score is 0.0."""
         validator = HandoffValidator()
-        prev_payload = {"entities": ["alice"], "facts": ["f1"]}
-        curr_payload = {"entities": ["alice"]}
+        prev_payload: JSONDict = {"entities": ["alice"], "facts": ["f1"]}
+        curr_payload: JSONDict = {"entities": ["alice"]}
         result = validator._validate_payloads(prev_payload, curr_payload)
         assert isinstance(result, Success)
         assert result.value.confidence_score == 0.0
 
-    def test_deeply_nested_payload_yields_zero_confidence(self):
+    def test_validate_payloads_yield_zero_confidence_when_deeply_nested(self) -> None:
         """MaxDepthExceededError → confidence_score is 0.0."""
         validator = HandoffValidator()
-        deeply_nested: dict[str, Any] = {}
+        deeply_nested: JSONDict = {}
         current = deeply_nested
         for _ in range(60):
             current["nested"] = {}
-            current = current["nested"]
+            current = current["nested"]  # type: ignore[assignment]
         result = validator._validate_payloads({}, deeply_nested)
         assert isinstance(result, Success)
         assert result.value.confidence_score == 0.0
 
-    def test_partial_entity_preservation(self):
+    def test_validate_payloads_calculates_confidence_on_partial_preservation(self) -> None:
         """Some entities preserved → confidence = preserved / total_new."""
         validator = HandoffValidator()
-        prev_payload = {"entities": ["alice", "bob"]}
-        curr_payload = {"entities": ["bob", "charlie", "david"]}
+        prev_payload: JSONDict = {"entities": ["alice", "bob"]}
+        curr_payload: JSONDict = {"entities": ["bob", "charlie", "david"]}
         result = validator._validate_payloads(prev_payload, curr_payload)
         assert isinstance(result, Success)
         expected = 1 / 3
         assert result.value.confidence_score == pytest.approx(expected)
 
-    def test_validation_result_default_confidence(self):
+    def test_validation_result_sets_high_confidence_by_default(self) -> None:
         """ValidationResult without confidence_score defaults to 1.0."""
         vr = ValidationResult(
             has_contradiction=False, diff={}, contradiction_details=None,
@@ -511,20 +521,21 @@ class TestConfidenceScore:
 
 
 class TestValidateHandoffPayload:
-    def test_validate_handoff_payload_produces_same_result_as_validate_handoff(self):
+    def test_validate_handoff_payload_succeeds_with_matching_result(self) -> None:
         """validate_handoff_payload produces identical ValidationResult to validate_handoff."""
-        from unittest.mock import patch
+        from unittest.mock import patch, MagicMock
         with patch("relay.envelope.datetime") as mock_datetime:
-            mock_datetime.now.return_value = datetime(2024, 1, 1, tzinfo=timezone.utc)
+            mock_now: MagicMock = mock_datetime.now
+            mock_now.return_value = datetime(2024, 1, 1, tzinfo=timezone.utc)
             previous_result = create_initial_envelope(
                 pipeline_id="pipeline-123",
                 initial_payload={"entities": ["a"], "actions": ["b"]},
                 secret="a" * 32,
                 manifest_hash=""
             )
-            previous_envelope = previous_result.value
+            previous_envelope = unwrap(previous_result)
 
-            new_payload = {"entities": ["a", "b"], "actions": ["b"]}
+            new_payload: JSONDict = {"entities": ["a", "b"], "actions": ["b"]}
 
             validator = HandoffValidator()
             result_via_handoff = validator.validate_handoff(
@@ -537,13 +548,15 @@ class TestValidateHandoffPayload:
 
             assert isinstance(result_via_handoff, Success)
             assert isinstance(result_via_payload, Success)
-            assert result_via_handoff.value.has_contradiction == result_via_payload.value.has_contradiction
-            assert result_via_handoff.value.diff == result_via_payload.value.diff
-            assert result_via_handoff.value.confidence_score == pytest.approx(
-                result_via_payload.value.confidence_score
+            validation_h = result_via_handoff.value
+            validation_p = result_via_payload.value
+            assert validation_h.has_contradiction == validation_p.has_contradiction
+            assert validation_h.diff == validation_p.diff
+            assert validation_h.confidence_score == pytest.approx(
+                validation_p.confidence_score
             )
 
-    def test_validate_handoff_payload_skips_envelope_checks(self):
+    def test_validate_handoff_payload_succeeds_when_ignores_envelope_metadata(self) -> None:
         """validate_handoff_payload does not check pipeline_id or step."""
         ref_time = datetime(2024, 1, 1, tzinfo=timezone.utc)
         previous_result = create_initial_envelope(
@@ -553,7 +566,7 @@ class TestValidateHandoffPayload:
             manifest_hash="",
             now=ref_time,
         )
-        previous_envelope = previous_result.value
+        previous_envelope = unwrap(previous_result)
 
         validator = HandoffValidator()
         result = validator.validate_handoff_payload(
@@ -561,7 +574,7 @@ class TestValidateHandoffPayload:
         )
         assert isinstance(result, Success)
 
-    def test_validate_handoff_payload_detects_contradiction(self):
+    def test_validate_handoff_payload_fails_on_contradiction_in_raw_data(self) -> None:
         """validate_handoff_payload detects contradictions in raw payload."""
         ref_time = datetime(2024, 1, 1, tzinfo=timezone.utc)
         previous_result = create_initial_envelope(
@@ -571,7 +584,7 @@ class TestValidateHandoffPayload:
             manifest_hash="",
             now=ref_time,
         )
-        previous_envelope = previous_result.value
+        previous_envelope = unwrap(previous_result)
 
         validator = HandoffValidator()
         result = validator.validate_handoff_payload(

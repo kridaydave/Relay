@@ -9,25 +9,25 @@ from tests.conftest import FixedCounter
 
 
 class TestHardCapEnforcer:
-    def test_exact_boundary_passes(self):
+    def test_check_passes_when_exact_boundary_reached(self) -> None:
         """Exact boundary (used + projected == total) must pass."""
         enforcer = HardCapEnforcer(FixedCounter(10))
         result = enforcer.check(90, 100, "any text")
         assert isinstance(result, Success)
 
-    def test_check_returns_failure_when_over_budget(self):
+    def test_check_returns_failure_when_over_budget(self) -> None:
         enforcer = HardCapEnforcer(FixedCounter(10))
         result = enforcer.check(91, 100, "any text")
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.BUDGET_EXCEEDED
 
-    def test_zero_token_slice_passes(self):
+    def test_check_passes_for_zero_token_slice_even_at_limit(self) -> None:
         """Zero-token slice always passes regardless of budget state."""
         enforcer = HardCapEnforcer(FixedCounter(0))
         result = enforcer.check(100, 100, "")
         assert isinstance(result, Success)
 
-    def test_negative_count_returns_failure(self):
+    def test_negative_count_returns_failure(self) -> None:
         """Negative count must return Failure immediately."""
         enforcer = HardCapEnforcer(FixedCounter(-5))
         result = enforcer.check(0, 1000, "any text")
@@ -35,7 +35,7 @@ class TestHardCapEnforcer:
         assert result.code == ErrorCode.INVALID_TOKEN_COUNT
         assert "negative" in result.reason.lower()
 
-    def test_under_budget_passes(self):
+    def test_check_passes_when_under_budget(self) -> None:
         """Under budget should pass and return Success."""
         enforcer = HardCapEnforcer(FixedCounter(30))
         result = enforcer.check(50, 100, "any text")
@@ -43,20 +43,20 @@ class TestHardCapEnforcer:
 
 
 class TestTokenCounterProtocol:
-    def test_fixed_counter_is_protocol_compatible(self):
+    def test_fixed_counter_complies_with_token_counter_protocol(self) -> None:
         """Test that FixedCounter satisfies TokenCounter protocol."""
         counter = FixedCounter(42)
         assert isinstance(counter, TokenCounter)
         assert counter.count("anything") == 42
 
-    def test_heuristic_counter_satisfies_token_counter_protocol(self):
+    def test_heuristic_counter_complies_with_token_counter_protocol(self) -> None:
         """HeuristicCounter must satisfy TokenCounter protocol."""
         from relay.budget.token_counter import HeuristicCounter
         assert isinstance(HeuristicCounter(), TokenCounter)
 
 
 class TestEmbeddingProviderProtocol:
-    def test_fixed_embedding_provider_is_protocol_compatible(self):
+    def test_fixed_embedding_provider_complies_with_embedding_provider_protocol(self) -> None:
         """Test that FixedEmbeddingProvider satisfies EmbeddingProvider protocol."""
         from relay.slicer.providers import EmbeddingProvider
         from tests.conftest import FixedEmbeddingProvider
@@ -67,34 +67,34 @@ class TestEmbeddingProviderProtocol:
 
 
 class TestHeuristicCounter:
-    def test_count_returns_at_least_one_for_empty_string(self):
+    def test_count_returns_at_least_one_for_empty_string(self) -> None:
         counter = HeuristicCounter()
         assert counter.count("") == 1
 
-    def test_count_returns_char_length_divided_by_three(self):
+    def test_count_returns_char_length_divided_by_three(self) -> None:
         counter = HeuristicCounter()
         result = counter.count("hello world")  # 11 chars -> 11//3 = 3
         assert result == 3
 
-    def test_count_returns_one_for_short_strings(self):
+    def test_count_returns_one_for_short_strings(self) -> None:
         counter = HeuristicCounter()
         assert counter.count("ab") == 1  # 2//3 = 0 -> max(1, 0) = 1
 
-    def test_context_manager_enter_returns_self(self):
+    def test_context_manager_enter_returns_self(self) -> None:
         counter = HeuristicCounter()
         with counter as cm:
             assert cm is counter
 
-    def test_context_manager_exit_does_not_raise(self):
+    def test_context_manager_exit_does_not_raise_when_called(self) -> None:
         counter = HeuristicCounter()
         counter.__enter__()
         counter.__exit__(None, None, None)
 
-    def test_close_does_not_raise(self):
+    def test_close_does_not_raise_when_called(self) -> None:
         counter = HeuristicCounter()
         counter.close()
 
-    def test_heuristic_counter_benchmark(self):
+    def test_heuristic_counter_approximates_bpe_when_benchmarked(self) -> None:
         """HeuristicCounter (len//3) approximates BPE within a documented tolerance.
 
         This is a ground-truth benchmark per Rule 6.2 — heuristic accuracy is
@@ -126,7 +126,7 @@ class TestHeuristicCounter:
 
 
 class TestTiktokenCounterFallback:
-    def test_tiktoken_counter_is_heuristic_when_tiktoken_unavailable(self):
+    def test_tiktoken_counter_is_heuristic_when_tiktoken_unavailable(self) -> None:
         """Isolated in subprocess because it mutates sys.modules and builtins.__import__."""
         import subprocess
         import sys
