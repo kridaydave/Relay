@@ -16,9 +16,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from typing import Any
 
-from relay.types import ErrorCode, Failure, Result, Success
-
-RELAY_VERSION = "0.4.1"
+from relay.types import ErrorCode, Failure, Result, Success, __version__ as RELAY_VERSION
 
 __all__ = [
     "RELAY_VERSION",

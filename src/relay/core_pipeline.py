@@ -236,7 +236,7 @@ class CoreRelayPipeline:
         Saves snapshot BEFORE advancing state to ensure consistency.
 
         REQUIRES: caller holds self._state._lock via transaction() context manager.
-        Must NOT call self._state.transaction() — lock is is non-reentrant.
+        Must NOT call self._state.transaction() — lock is non-reentrant.
         """
         validation_result = self._handoff_validator.validate_handoff(
             previous_envelope=current_envelope, current_envelope=new_envelope

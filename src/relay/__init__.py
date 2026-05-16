@@ -13,7 +13,7 @@ from relay.pipeline_rollback import RollbackHandler
 from relay.pipeline_state import PipelineState
 from relay.slicer import AgentManifest, SlicePacker
 from relay.snapshot import SnapshotStore
-from relay.types import ErrorCode, Failure, Result, RollbackSuccess, Success
+from relay.types import ErrorCode, Failure, Result, RollbackSuccess, Success, __version__
 from relay.validator import HandoffValidator
 
 __all__: list[str] = [
@@ -37,4 +37,5 @@ __all__: list[str] = [
     "SnapshotStore",
     "Success",
     "TokenCounter",
+    "__version__",
 ]

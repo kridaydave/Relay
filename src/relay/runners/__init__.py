@@ -5,17 +5,15 @@ Owns: AgentRunner protocol, AgentOutput/ContextSlice data models,
 Does NOT: execute agents directly, manage LLM sessions, or own pipeline state.
 
 Import-safe: all framework dependencies (langchain, crewai, autogen, httpx)
-are lazy-imported inside adapter methods. This module can be imported in any
-environment without those packages installed.
+are lazy-imported. RawSDKAdapter is safe to import eagerly (stdlib only).
 """
+
+import importlib
+import sys
 
 from relay.runners.protocol import AgentOutput, AgentRunner, ContextSlice
 from relay.runners.registry import AdapterRegistry
 from relay.runners.raw_sdk import RawSDKAdapter
-from relay.runners.langchain import LangChainAdapter
-from relay.runners.crewai import CrewAIAdapter
-from relay.runners.autogen import AutoGenAdapter
-from relay.runners.local_model import LocalModelAdapter
 
 __all__ = [
     "AgentOutput",
@@ -28,3 +26,19 @@ __all__ = [
     "AutoGenAdapter",
     "LocalModelAdapter",
 ]
+
+_LAZY_ADAPTERS: dict[str, str] = {
+    "LangChainAdapter": "relay.runners.langchain",
+    "CrewAIAdapter": "relay.runners.crewai",
+    "AutoGenAdapter": "relay.runners.autogen",
+    "LocalModelAdapter": "relay.runners.local_model",
+}
+
+
+def __getattr__(name: str) -> object:
+    if name in _LAZY_ADAPTERS:
+        module = importlib.import_module(_LAZY_ADAPTERS[name])
+        adapter = getattr(module, name)
+        setattr(sys.modules[__name__], name, adapter)
+        return adapter
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

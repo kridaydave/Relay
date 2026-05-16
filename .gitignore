@@ -43,8 +43,6 @@ relay_data/
 env/
 venv/
 ENV/
-#build
-dist/
 # AI
 .claude/
 .gemini/

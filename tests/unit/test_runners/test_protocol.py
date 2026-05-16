@@ -35,7 +35,7 @@ class TestAgentOutput:
         output = AgentOutput(text="hi", structured={}, tool_calls=[],
                              token_count=10, latency_ms=5, adapter="test")
         with pytest.raises(Exception):
-            output.text = "changed"  # type: ignore[misc]
+            setattr(output, "text", "changed")
 
     def test_agent_output_with_structured_data(self):
         output = AgentOutput(text="", structured={"score": 0.9}, tool_calls=[],
@@ -64,7 +64,7 @@ class TestContextSlice:
         from .conftest import make_test_slice
         slice_ = make_test_slice()
         with pytest.raises(Exception):
-            slice_.step = 99  # type: ignore[misc]
+            setattr(slice_, "step", 99)
 
     def test_context_slice_sections_reflects_manifest_reads(self):
         """sections must only contain keys from manifest.reads."""

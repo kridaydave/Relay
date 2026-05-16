@@ -62,7 +62,3 @@ precision = 2
 show_missing = true
 skip_covered = false
 
-[tool.mypy]
-python_version = "3.12"
-warn_return_any = true
-warn_unused_configs = true

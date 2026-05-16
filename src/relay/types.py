@@ -1,12 +1,14 @@
 """Result types and error handling for Relay.
 
-Owns: Success, Failure, and Result union types.
+Owns: Success, Failure, and Result union types, __version__.
 Does NOT: handle specific domain errors, validate data, or make decisions.
 """
 
 from dataclasses import dataclass
 from enum import Enum
 from typing import Callable, Generic, TypeVar
+
+__version__ = "0.4.1"
 
 T = TypeVar("T")
 
