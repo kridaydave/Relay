@@ -9,7 +9,9 @@ from relay.envelope import RELAY_VERSION, ContextEnvelope
 from relay.pipeline_state import PipelineState
 
 
-def create_mock_envelope(step: int, pipeline_id: str = "test-pipeline") -> ContextEnvelope:
+def create_mock_envelope(
+    step: int, pipeline_id: str = "test-pipeline"
+) -> ContextEnvelope:
     return ContextEnvelope(
         relay_version=RELAY_VERSION,
         pipeline_id=pipeline_id,
@@ -161,3 +163,10 @@ class TestLockAssertions:
         env = create_mock_envelope(1)
         with pytest.raises(RuntimeError, match="Lock must be held via transaction"):
             state.set_current(env)
+
+    def test_transaction_raises_on_reentrant_call(self, state):
+        """Re-entrant call to transaction() should raise RuntimeError (Issue #4)."""
+        with state.transaction():
+            with pytest.raises(RuntimeError, match="Re-entrant lock access detected"):
+                with state.transaction():
+                    pass

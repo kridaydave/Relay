@@ -511,6 +511,10 @@ class CoreRelayPipeline:
         # (via _check_budget at line 475) already enforce per-agent limits, and
         # the merged payload cannot be reliably estimated before fork execution.
         # The next sequential step's budget check catches pipeline-level overruns.
+        # manifest=None: the combined manifest hash is applied below instead of here.
+        # Individual fork manifests are encoded into combined_hash (line 518), which
+        # is sufficient for integrity verification. Per-fork agent IDs are not tracked
+        # individually in the envelope body; external logging is needed for that granularity.
         commit_result = self.execute_step_with_manifest(merged_result.value, manifest=None)
         if not isinstance(commit_result, Success):
             return commit_result

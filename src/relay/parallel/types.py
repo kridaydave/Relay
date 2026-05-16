@@ -4,22 +4,23 @@ Owns: JoinStrategy enum, ForkSpec, ForkResult.
 Does NOT: implement join logic, execute adapters, or manage pipeline state.
 """
 
-from enum import Enum
 from dataclasses import dataclass
-from typing import Any, TYPE_CHECKING
+from enum import Enum
+from typing import TYPE_CHECKING, Any
 
 from relay.runners.protocol import AgentOutput
 from relay.types import Failure, Result
 
 if TYPE_CHECKING:
-    from relay.validator import ValidationResult
     from relay.slicer.manifest import AgentManifest
+    from relay.validator import ValidationResult
 
 
 class JoinStrategy(str, Enum):
     """Strategy for merging parallel fork outputs."""
-    UNION      = "UNION"
-    VOTE       = "VOTE"
+
+    UNION = "UNION"
+    VOTE = "VOTE"
     FIRST_WINS = "FIRST_WINS"
 
 
@@ -30,6 +31,7 @@ class ForkSpec:
     Owns: the adapter name and manifest that define one fork's execution.
     Does NOT: execute the adapter, hold results, or reference pipeline state.
     """
+
     adapter_name: str
     manifest: "AgentManifest"
 
@@ -43,7 +45,12 @@ class ForkResult:
 
     A ForkResult is always created — even for failed forks — so join
     strategies have a complete picture of what happened.
+
+    Note: For FIRST_WINS strategy, the forks_succeeded field in the final
+    envelope may not reflect the actual count of passing forks due to
+    cancellation. The value 1 indicates at least one fork succeeded.
     """
+
     fork_index: int
     adapter_name: str
     success: bool

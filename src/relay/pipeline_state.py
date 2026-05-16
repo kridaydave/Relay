@@ -57,6 +57,8 @@ class PipelineState:
         Yields the current envelope while holding the lock.
         Automatically acquires and releases the lock.
         """
+        if threading.get_ident() == self._lock_owner:
+            raise RuntimeError("Re-entrant lock access detected")
         with self._lock:
             self._lock_owner = threading.get_ident()
             try:

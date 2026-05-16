@@ -12,12 +12,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from relay.envelope import PIPELINE_ID_PATTERN, ContextEnvelope
+from relay.envelope import PIPELINE_ID_PATTERN, ContextEnvelope, _validate_pipeline_id
 from relay.types import ErrorCode, Failure, Result, Success
 
-SNAPSHOT_ID_PATTERN = re.compile(
-    r"^[a-zA-Z0-9_-]{1,128}@\d+_[a-f0-9]{12}$"
-)
+SNAPSHOT_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{1,128}@\d+_[a-f0-9]{12}$")
 
 __all__ = [
     "SnapshotStore",
@@ -317,6 +315,10 @@ class SnapshotStore:
         if isinstance(pid_result, Failure):
             return pid_result
         pipeline_id: str = pid_result.value
+
+        pid_validation = _validate_pipeline_id(pipeline_id)
+        if isinstance(pid_validation, Failure):
+            return pid_validation
 
         step_result = self._require_int(data, "step")
         if isinstance(step_result, Failure):

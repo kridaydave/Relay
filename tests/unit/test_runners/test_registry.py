@@ -38,6 +38,15 @@ class TestAdapterRegistryRegister:
         with pytest.raises(ValueError, match="AgentRunner protocol"):
             AdapterRegistry().register("bad", object())
 
+    def test_raises_on_sync_run_method(self):
+        """Adapter with sync run() is rejected at registration time (Issue #2)."""
+        class SyncRunner:
+            def run(self, slice, manifest):  # type: ignore[override]
+                return None
+
+        with pytest.raises(ValueError, match="async def run"):
+            AdapterRegistry().register("sync", SyncRunner())
+
     def test_list_names_returns_sorted(self):
         from .conftest import FixedAgentRunner
         registry = AdapterRegistry()

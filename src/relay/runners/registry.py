@@ -9,6 +9,7 @@ Names are case-sensitive strings. Registration is final — re-registering
 under the same name raises ValueError (fail fast, no silent overwrites).
 """
 
+import inspect
 from dataclasses import dataclass, field
 
 from relay.runners.protocol import AgentRunner
@@ -43,6 +44,11 @@ class AdapterRegistry:
             raise ValueError(
                 f"Object of type {type(adapter).__name__} does not satisfy AgentRunner protocol. "
                 "Implement: async def run(self, slice: ContextSlice, manifest: AgentManifest) -> AgentOutput"
+            )
+        run_method = getattr(type(adapter), "run", None)
+        if run_method is not None and not inspect.iscoroutinefunction(run_method):
+            raise ValueError(
+                f"Adapter '{name}' must implement async def run(...), got sync method"
             )
         self._adapters[name] = adapter
 

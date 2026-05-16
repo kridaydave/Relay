@@ -112,6 +112,24 @@ class TestSnapshotStore:
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.INVALID_SNAPSHOT
 
+    def test_load_snapshot_fails_when_body_pipeline_id_is_invalid(self):
+        """Snapshot where body pipeline_id is malicious is rejected (Issue #1)."""
+        import json
+        from pathlib import Path
+
+        pipeline_id = "valid-pid"
+        env = self._create_envelope(pipeline_id=pipeline_id, step=1)
+        snapshot_id = self.store.save_snapshot(env).value
+
+        path = Path(self.temp_dir) / pipeline_id / f"{snapshot_id}.json"
+        data = json.loads(path.read_text())
+        data["pipeline_id"] = "../../../etc"
+        path.write_text(json.dumps(data))
+
+        result = self.store.load_snapshot(snapshot_id)
+        assert isinstance(result, Failure)
+        assert result.code == ErrorCode.INVALID_PIPELINE_ID
+
     def test_snapshot_index_sorts_numerically(self):
         pipeline_id = "pipeline-sort"
         # Create envelopes in arbitrary order, but their steps matter

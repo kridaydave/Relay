@@ -31,12 +31,15 @@ __all__ = [
     "compute_signature",
 ]
 PIPELINE_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{1,128}$")
+_MAX_STEP = 10**6  # 1 million steps should be plenty
 
 
 def _validate_pipeline_id(pipeline_id: str) -> Result[str]:
     """Validate pipeline_id format."""
     if not pipeline_id:
-        return Failure(reason="pipeline_id cannot be empty", code=ErrorCode.INVALID_PIPELINE_ID)
+        return Failure(
+            reason="pipeline_id cannot be empty", code=ErrorCode.INVALID_PIPELINE_ID
+        )
     if not PIPELINE_ID_PATTERN.match(pipeline_id):
         return Failure(
             reason="Invalid pipeline_id: must match pattern ^[a-zA-Z0-9_-]{1,128}$",
@@ -79,6 +82,8 @@ class ContextEnvelope:
     def __post_init__(self) -> None:
         if self.step < 1:
             raise ValueError(f"step must be >= 1, got {self.step}")
+        if self.step > _MAX_STEP:
+            raise ValueError(f"step exceeds maximum {_MAX_STEP}, got {self.step}")
         if self.token_budget_used < 0:
             raise ValueError(
                 f"token_budget_used must be >= 0, got {self.token_budget_used}"
@@ -183,7 +188,9 @@ def create_initial_envelope(
     if isinstance(validation_result, Failure):
         return validation_result
     if not initial_payload:
-        return Failure(reason="initial_payload cannot be empty", code=ErrorCode.INVALID_PAYLOAD)
+        return Failure(
+            reason="initial_payload cannot be empty", code=ErrorCode.INVALID_PAYLOAD
+        )
 
     token_used = estimate_tokens(initial_payload)
     envelope = ContextEnvelope(
@@ -221,7 +228,9 @@ def create_next_envelope(
         now: Timestamp override for testing. Defaults to datetime.now(timezone.utc).
     """
     if not agent_output:
-        return Failure(reason="agent_output cannot be empty", code=ErrorCode.INVALID_PAYLOAD)
+        return Failure(
+            reason="agent_output cannot be empty", code=ErrorCode.INVALID_PAYLOAD
+        )
 
     token_used = previous_envelope.token_budget_used + estimate_tokens(agent_output)
 

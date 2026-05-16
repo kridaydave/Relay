@@ -12,9 +12,9 @@ from relay.envelope import (
     compute_signature,
     create_initial_envelope,
     create_next_envelope,
+    estimate_tokens,
     serialize_slice,
     verify_signature,
-    estimate_tokens,
 )
 from relay.types import ErrorCode, Failure, Success
 
@@ -67,16 +67,24 @@ class TestCreateInitialEnvelope:
         self, secret, initial_payload
     ):
         result = create_initial_envelope(
-            pipeline_id="", initial_payload=initial_payload, secret=secret, manifest_hash=""
+            pipeline_id="",
+            initial_payload=initial_payload,
+            secret=secret,
+            manifest_hash="",
         )
 
         assert isinstance(result, Failure)
         assert "pipeline_id" in result.reason.lower()
         assert result.code == ErrorCode.INVALID_PIPELINE_ID
 
-    def test_create_initial_envelope_fails_on_empty_payload(self, secret, initial_payload):
+    def test_create_initial_envelope_fails_on_empty_payload(
+        self, secret, initial_payload
+    ):
         result = create_initial_envelope(
-            pipeline_id="pipeline-123", initial_payload={}, secret=secret, manifest_hash=""
+            pipeline_id="pipeline-123",
+            initial_payload={},
+            secret=secret,
+            manifest_hash="",
         )
 
         assert isinstance(result, Failure)
@@ -85,12 +93,20 @@ class TestCreateInitialEnvelope:
 
 
 class TestCreateNextEnvelope:
-    def test_create_next_envelope_increments_step(self, secret, initial_payload, next_payload):
+    def test_create_next_envelope_increments_step(
+        self, secret, initial_payload, next_payload
+    ):
         first = create_initial_envelope(
-            pipeline_id="pipeline-123", initial_payload=initial_payload, secret=secret, manifest_hash=""
+            pipeline_id="pipeline-123",
+            initial_payload=initial_payload,
+            secret=secret,
+            manifest_hash="",
         )
         second = create_next_envelope(
-            previous_envelope=first.value, secret=secret, agent_output=next_payload, manifest_hash=""
+            previous_envelope=first.value,
+            secret=secret,
+            agent_output=next_payload,
+            manifest_hash="",
         )
 
         assert second.value.step == 2
@@ -134,13 +150,21 @@ class TestCreateNextEnvelope:
         assert second.value.pipeline_id == first.value.pipeline_id
         assert second.value.token_budget_total == first.value.token_budget_total
 
-    def test_create_next_envelope_fails_on_empty_agent_output(self, secret, initial_payload):
+    def test_create_next_envelope_fails_on_empty_agent_output(
+        self, secret, initial_payload
+    ):
         first = create_initial_envelope(
-            pipeline_id="pipeline-123", initial_payload=initial_payload, secret=secret, manifest_hash=""
+            pipeline_id="pipeline-123",
+            initial_payload=initial_payload,
+            secret=secret,
+            manifest_hash="",
         )
 
         second = create_next_envelope(
-            previous_envelope=first.value, secret=secret, agent_output={}, manifest_hash=""
+            previous_envelope=first.value,
+            secret=secret,
+            agent_output={},
+            manifest_hash="",
         )
 
         assert isinstance(second, Failure)
@@ -172,9 +196,7 @@ class TestVerifySignature:
 
         assert verify_signature(envelope, "wrong-secret") is False
 
-    def test_verify_signature_fails_on_tampered_budget(
-        self, secret, initial_payload
-    ):
+    def test_verify_signature_fails_on_tampered_budget(self, secret, initial_payload):
         envelope = create_initial_envelope(
             pipeline_id="pipeline-123",
             initial_payload=initial_payload,
@@ -211,7 +233,10 @@ class TestTokenEstimation:
 
     PAYLOADS = [
         {"summary": "Apple reported strong Q4 revenue growth.", "step": 1},
-        {"entities": ["Alice", "Bob", "Charlie"], "facts": ["revenue up", "costs flat"]},
+        {
+            "entities": ["Alice", "Bob", "Charlie"],
+            "facts": ["revenue up", "costs flat"],
+        },
         {"data": "x" * 200},
         {"nested": {"a": {"b": {"c": "deep"}}}},
     ]
@@ -338,16 +363,20 @@ class TestContextEnvelopeWithManifestHash:
 class TestPipelineIdValidation:
     def test_rejects_pipeline_id_with_invalid_chars(self, secret, initial_payload):
         result = create_initial_envelope(
-            pipeline_id="bad pipe!", initial_payload=initial_payload,
-            secret=secret, manifest_hash="",
+            pipeline_id="bad pipe!",
+            initial_payload=initial_payload,
+            secret=secret,
+            manifest_hash="",
         )
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.INVALID_PIPELINE_ID
 
     def test_rejects_pipeline_id_too_long(self, secret, initial_payload):
         result = create_initial_envelope(
-            pipeline_id="x" * 129, initial_payload=initial_payload,
-            secret=secret, manifest_hash="",
+            pipeline_id="x" * 129,
+            initial_payload=initial_payload,
+            secret=secret,
+            manifest_hash="",
         )
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.INVALID_PIPELINE_ID
@@ -357,10 +386,14 @@ class TestWithSignature:
     def test_with_signature_returns_new_envelope(self):
         original = ContextEnvelope(
             relay_version=RELAY_VERSION,
-            pipeline_id="test", step=1,
+            pipeline_id="test",
+            step=1,
             timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
-            token_budget_used=100, token_budget_total=8000,
-            payload={"k": "v"}, manifest_hash="", signature="old",
+            token_budget_used=100,
+            token_budget_total=8000,
+            payload={"k": "v"},
+            manifest_hash="",
+            signature="old",
         )
         result = original.with_signature("new-sig")
         assert result is not original
@@ -371,12 +404,16 @@ class TestWithSignature:
 class TestComputeSignature:
     def test_compute_signature_is_deterministic(self, secret):
         env1 = create_initial_envelope(
-            pipeline_id="pipe", initial_payload={"k": "v"},
-            secret=secret, manifest_hash="",
+            pipeline_id="pipe",
+            initial_payload={"k": "v"},
+            secret=secret,
+            manifest_hash="",
         ).value
         env2 = create_initial_envelope(
-            pipeline_id="pipe", initial_payload={"k": "v"},
-            secret=secret, manifest_hash="",
+            pipeline_id="pipe",
+            initial_payload={"k": "v"},
+            secret=secret,
+            manifest_hash="",
         ).value
         sig1 = compute_signature(env1, secret)
         sig2 = compute_signature(env2, secret)
@@ -384,8 +421,10 @@ class TestComputeSignature:
 
     def test_compute_signature_differs_for_different_secret(self, secret):
         env = create_initial_envelope(
-            pipeline_id="pipe", initial_payload={"k": "v"},
-            secret=secret, manifest_hash="",
+            pipeline_id="pipe",
+            initial_payload={"k": "v"},
+            secret=secret,
+            manifest_hash="",
         ).value
         sig1 = compute_signature(env, secret)
         sig2 = compute_signature(env, "x" * 32)
@@ -405,9 +444,12 @@ class TestForkFields:
     def test_sequential_envelope_has_none_fork_fields(self):
         """Sequential envelopes have all fork fields as None."""
         from relay.envelope import create_initial_envelope
+
         result = create_initial_envelope(
-            pipeline_id="test", initial_payload={"data": "x"},
-            secret="a" * 32, manifest_hash="",
+            pipeline_id="test",
+            initial_payload={"data": "x"},
+            secret="a" * 32,
+            manifest_hash="",
         )
         assert isinstance(result, Success)
         env = result.value
@@ -419,13 +461,18 @@ class TestForkFields:
     def test_with_fork_metadata_sets_all_fields(self):
         """with_fork_metadata returns envelope with all four fork fields set."""
         from relay.envelope import create_initial_envelope
+
         env = create_initial_envelope(
-            pipeline_id="test", initial_payload={"data": "x"},
-            secret="a" * 32, manifest_hash="",
+            pipeline_id="test",
+            initial_payload={"data": "x"},
+            secret="a" * 32,
+            manifest_hash="",
         ).value
         meta = env.with_fork_metadata(
-            fork_id="uuid-1", join_strategy="UNION",
-            fork_count=3, forks_succeeded=2,
+            fork_id="uuid-1",
+            join_strategy="UNION",
+            fork_count=3,
+            forks_succeeded=2,
         )
         assert meta.fork_id == "uuid-1"
         assert meta.join_strategy == "UNION"
@@ -436,32 +483,53 @@ class TestForkFields:
     def test_with_fork_metadata_invalidates_signature(self):
         """with_fork_metadata sets signature to empty string."""
         from relay.envelope import create_initial_envelope
+
         env = create_initial_envelope(
-            pipeline_id="test", initial_payload={"data": "x"},
-            secret="a" * 32, manifest_hash="",
+            pipeline_id="test",
+            initial_payload={"data": "x"},
+            secret="a" * 32,
+            manifest_hash="",
         ).value
         meta = env.with_fork_metadata(
-            fork_id="uuid-1", join_strategy="VOTE",
-            fork_count=1, forks_succeeded=1,
+            fork_id="uuid-1",
+            join_strategy="VOTE",
+            fork_count=1,
+            forks_succeeded=1,
         )
         assert meta.signature == ""
 
     def test_sequential_envelope_signature_unchanged(self):
         """Sequential envelope (fork fields None) produces same signature as v0.3 format."""
         from datetime import datetime, timezone
+
         ts = datetime(2024, 1, 1, tzinfo=timezone.utc)
         env = ContextEnvelope(
-            relay_version=RELAY_VERSION, pipeline_id="test", step=1,
-            timestamp=ts, token_budget_used=100, token_budget_total=8000,
-            payload={"data": "x"}, manifest_hash="", signature="",
+            relay_version=RELAY_VERSION,
+            pipeline_id="test",
+            step=1,
+            timestamp=ts,
+            token_budget_used=100,
+            token_budget_total=8000,
+            payload={"data": "x"},
+            manifest_hash="",
+            signature="",
         )
         secret = "a" * 32
         sig = compute_signature(env, secret)
         env_with_fork_none = ContextEnvelope(
-            relay_version=RELAY_VERSION, pipeline_id="test", step=1,
-            timestamp=ts, token_budget_used=100, token_budget_total=8000,
-            payload={"data": "x"}, manifest_hash="", signature="",
-            fork_id=None, join_strategy=None, fork_count=None, forks_succeeded=None,
+            relay_version=RELAY_VERSION,
+            pipeline_id="test",
+            step=1,
+            timestamp=ts,
+            token_budget_used=100,
+            token_budget_total=8000,
+            payload={"data": "x"},
+            manifest_hash="",
+            signature="",
+            fork_id=None,
+            join_strategy=None,
+            fork_count=None,
+            forks_succeeded=None,
         )
         sig_with_none = compute_signature(env_with_fork_none, secret)
         assert sig == sig_with_none
@@ -469,17 +537,33 @@ class TestForkFields:
     def test_parallel_envelope_signature_includes_fork_suffix(self):
         """Parallel envelope signature differs from sequential when fork_id is set."""
         from datetime import datetime, timezone
+
         ts = datetime(2024, 1, 1, tzinfo=timezone.utc)
         env_seq = ContextEnvelope(
-            relay_version=RELAY_VERSION, pipeline_id="test", step=1,
-            timestamp=ts, token_budget_used=100, token_budget_total=8000,
-            payload={"data": "x"}, manifest_hash="", signature="",
+            relay_version=RELAY_VERSION,
+            pipeline_id="test",
+            step=1,
+            timestamp=ts,
+            token_budget_used=100,
+            token_budget_total=8000,
+            payload={"data": "x"},
+            manifest_hash="",
+            signature="",
         )
         env_par = ContextEnvelope(
-            relay_version=RELAY_VERSION, pipeline_id="test", step=1,
-            timestamp=ts, token_budget_used=100, token_budget_total=8000,
-            payload={"data": "x"}, manifest_hash="", signature="",
-            fork_id="uuid-1", join_strategy="UNION", fork_count=2, forks_succeeded=2,
+            relay_version=RELAY_VERSION,
+            pipeline_id="test",
+            step=1,
+            timestamp=ts,
+            token_budget_used=100,
+            token_budget_total=8000,
+            payload={"data": "x"},
+            manifest_hash="",
+            signature="",
+            fork_id="uuid-1",
+            join_strategy="UNION",
+            fork_count=2,
+            forks_succeeded=2,
         )
         secret = "a" * 32
         assert compute_signature(env_seq, secret) != compute_signature(env_par, secret)
@@ -487,13 +571,18 @@ class TestForkFields:
     def test_verify_signature_passes_after_re_signing_fork_metadata(self):
         """Envelope with fork metadata verifies after re-signing."""
         from relay.envelope import create_initial_envelope
+
         env = create_initial_envelope(
-            pipeline_id="test", initial_payload={"data": "x"},
-            secret="a" * 32, manifest_hash="",
+            pipeline_id="test",
+            initial_payload={"data": "x"},
+            secret="a" * 32,
+            manifest_hash="",
         ).value
         meta = env.with_fork_metadata(
-            fork_id="uuid-1", join_strategy="UNION",
-            fork_count=2, forks_succeeded=2,
+            fork_id="uuid-1",
+            join_strategy="UNION",
+            fork_count=2,
+            forks_succeeded=2,
         )
         signed = meta.with_signature(compute_signature(meta, "a" * 32))
         assert verify_signature(signed, "a" * 32)
@@ -503,43 +592,86 @@ class TestContextEnvelopeFieldConstraints:
     def test_negative_token_budget_used_rejected(self):
         """Negative token_budget_used raises ValueError."""
         from datetime import datetime, timezone
+
         with pytest.raises(ValueError, match="token_budget_used"):
             ContextEnvelope(
-                relay_version=RELAY_VERSION, pipeline_id="test", step=1,
+                relay_version=RELAY_VERSION,
+                pipeline_id="test",
+                step=1,
                 timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
-                token_budget_used=-100, token_budget_total=8000,
-                payload={"data": "x"}, manifest_hash="", signature="",
+                token_budget_used=-100,
+                token_budget_total=8000,
+                payload={"data": "x"},
+                manifest_hash="",
+                signature="",
             )
 
     def test_negative_token_budget_total_rejected(self):
         """Negative token_budget_total raises ValueError."""
         from datetime import datetime, timezone
+
         with pytest.raises(ValueError, match="token_budget_total"):
             ContextEnvelope(
-                relay_version=RELAY_VERSION, pipeline_id="test", step=1,
+                relay_version=RELAY_VERSION,
+                pipeline_id="test",
+                step=1,
                 timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
-                token_budget_used=100, token_budget_total=-1,
-                payload={"data": "x"}, manifest_hash="", signature="",
+                token_budget_used=100,
+                token_budget_total=-1,
+                payload={"data": "x"},
+                manifest_hash="",
+                signature="",
             )
 
     def test_negative_step_rejected(self):
         """Negative step raises ValueError."""
         from datetime import datetime, timezone
+
         with pytest.raises(ValueError, match="step"):
             ContextEnvelope(
-                relay_version=RELAY_VERSION, pipeline_id="test", step=-1,
+                relay_version=RELAY_VERSION,
+                pipeline_id="test",
+                step=-1,
                 timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
-                token_budget_used=100, token_budget_total=8000,
-                payload={"data": "x"}, manifest_hash="", signature="",
+                token_budget_used=100,
+                token_budget_total=8000,
+                payload={"data": "x"},
+                manifest_hash="",
+                signature="",
+            )
+
+    def test_excessive_step_number_rejected(self):
+        """Step number above _MAX_STEP raises ValueError (Issue #7)."""
+        from datetime import datetime, timezone
+
+        # We expect _MAX_STEP to be 10^6
+        max_step = 10**6
+        with pytest.raises(ValueError, match=f"step exceeds maximum {max_step}"):
+            ContextEnvelope(
+                relay_version=RELAY_VERSION,
+                pipeline_id="test",
+                step=max_step + 1,
+                timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
+                token_budget_used=100,
+                token_budget_total=8000,
+                payload={"data": "x"},
+                manifest_hash="",
+                signature="",
             )
 
     def test_step_zero_rejected(self):
         """Step == 0 raises ValueError."""
         from datetime import datetime, timezone
+
         with pytest.raises(ValueError, match="step"):
             ContextEnvelope(
-                relay_version=RELAY_VERSION, pipeline_id="test", step=0,
+                relay_version=RELAY_VERSION,
+                pipeline_id="test",
+                step=0,
                 timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
-                token_budget_used=0, token_budget_total=8000,
-                payload={"data": "x"}, manifest_hash="", signature="",
+                token_budget_used=0,
+                token_budget_total=8000,
+                payload={"data": "x"},
+                manifest_hash="",
+                signature="",
             )
