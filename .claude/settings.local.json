@@ -19,7 +19,10 @@
       "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\NewAdmin\\\\Desktop\\\\Relay\" -Recurse -Force)",
       "Bash(Select-Object FullName, PSIsContainer)",
       "Bash(Sort-Object FullName)",
-      "Bash(ConvertTo-Json)"
+      "Bash(ConvertTo-Json)",
+      "Bash(python -m pytest tests/unit/test_pipeline_state.py::TestLockAssertions::test_transaction_raises_on_reentrant_call tests/unit/test_runners/test_registry.py::TestAdapterRegistryRegister::test_raises_on_sync_run_method tests/unit/test_snapshot.py tests/unit/test_envelope.py -x -q)",
+      "Bash(python -m pytest -x -q)",
+      "Skill(caveman:caveman-commit)"
     ]
   }
 }
