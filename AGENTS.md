@@ -36,3 +36,13 @@ python -m mypy --strict src/relay             # must pass with zero # type: igno
 - Framework adapters (`langchain`, `crewai`, `autogen`, `httpx`) are **lazy-imported** — importing `relay.runners` does not require them
 - Budget enforcement is advisory under concurrent load (lock released before `adapter.run()`)
 - Existing full rulebook: `docs/Relay Coding Rules.md`
+
+## Workflows
+
+Use these superpowers skill workflows in sequence (process → implement → verify):
+
+- **Feature work**: `brainstorming` → `writing-plans` → `test-driven-development` → `verification-before-completion`
+- **Bug fix**: `systematic-debugging` → `test-driven-development` → `verification-before-completion`
+- **Multi-step parallel work**: `brainstorming` → `writing-plans` → `dispatching-parallel-agents` → `verification-before-completion`
+- **Refactoring**: `request-refactor-plan` → `using-git-worktrees` → incremental commits → `verification-before-completion`
+- **Design prototype**: `brainstorming` → `huashu-design` → `requesting-code-review`
