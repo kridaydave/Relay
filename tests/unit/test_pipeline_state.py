@@ -40,7 +40,7 @@ class TestInitialization:
         with state.transaction() as _:
             assert state.current() is None
 
-    def test_initial_state_has_no_history(self, state: PipelineState) -> None:
+    def test_initial_state_returns_no_history_when_checked(self, state: PipelineState) -> None:
         with state.transaction() as _:
             assert state.has_history() is False
 
@@ -172,4 +172,3 @@ class TestLockAssertions:
             with pytest.raises(RuntimeError, match="Re-entrant lock access detected"):
                 with state.transaction():
                     pass
-ss

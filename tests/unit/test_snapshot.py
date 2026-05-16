@@ -141,7 +141,7 @@ class TestSnapshotStore:
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.INVALID_PIPELINE_ID
 
-    def test_snapshot_index_sorts_ids_numerically(self) -> None:
+    def test_snapshot_index_sorts_ids_numerically_for_consistency(self) -> None:
         pipeline_id = "pipeline-sort"
         env2 = self._create_envelope(pipeline_id=pipeline_id, step=2)
         env10 = self._create_envelope(pipeline_id=pipeline_id, step=10)
@@ -311,7 +311,7 @@ class TestSnapshotStoreLoadErrors:
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.SNAPSHOT_LOAD_FAILED
 
-    def test_load_snapshot_rejects_invalid_format(self) -> None:
+    def test_load_snapshot_fails_on_invalid_format(self) -> None:
         result = self.store.load_snapshot("no-at-sign")
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.INVALID_SNAPSHOT_ID
@@ -345,7 +345,7 @@ class TestSnapshotStoreListErrors:
     def teardown_method(self) -> None:
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
-    def test_list_snapshots_propagates_index_read_failure(self) -> None:
+    def test_list_snapshots_fails_when_index_read_propagates_failure(self) -> None:
         pipeline_dir = Path(self.temp_dir) / "pipeline-fail"
         pipeline_dir.mkdir(parents=True)
         index_path = pipeline_dir / "index.json"
@@ -366,7 +366,7 @@ class TestSnapshotStoreLoadIndexErrors:
     def teardown_method(self) -> None:
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
-    def test_load_index_corrupted_json(self) -> None:
+    def test_load_index_fails_on_corrupted_json(self) -> None:
         pipeline_dir = Path(self.temp_dir) / "pipe-x"
         pipeline_dir.mkdir(parents=True)
         (pipeline_dir / "index.json").write_text("{{{broken")
@@ -376,7 +376,7 @@ class TestSnapshotStoreLoadIndexErrors:
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.CORRUPTED_INDEX
 
-    def test_load_index_os_error(self) -> None:
+    def test_load_index_fails_on_os_error(self) -> None:
         pipeline_dir = Path(self.temp_dir) / "pipe-x"
         pipeline_dir.mkdir(parents=True)
         (pipeline_dir / "index.json").write_text("{}")
