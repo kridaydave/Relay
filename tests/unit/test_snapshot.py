@@ -554,7 +554,7 @@ class TestExtractStepFromSnapshotId:
 
 
 class TestSnapshotIdPattern:
-    def test_valid_snapshot_id_matches_pattern(self) -> None:
+    def test_valid_snapshot_id_matches_pattern_for_validation(self) -> None:
         assert SNAPSHOT_ID_PATTERN.match("pipeline-123@1_a1b2c3d4e5f6")
 
     def test_snapshot_id_with_path_traversal_does_not_match(self) -> None:

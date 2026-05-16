@@ -76,7 +76,7 @@ class TestArchiveAndSet:
 
 
 class TestSnapshotIds:
-    def test_snapshot_ids_dict_is_empty_initially(self, state: PipelineState) -> None:
+    def test_snapshot_ids_dict_returns_empty_on_initialization(self, state: PipelineState) -> None:
         with state.transaction():
             assert state.snapshot_ids == {}
 
@@ -172,3 +172,4 @@ class TestLockAssertions:
             with pytest.raises(RuntimeError, match="Re-entrant lock access detected"):
                 with state.transaction():
                     pass
+ss
