@@ -11,22 +11,22 @@ import pytest
 
 from relay.envelope import RELAY_VERSION, ContextEnvelope, create_initial_envelope
 from relay.snapshot import SNAPSHOT_ID_PATTERN, SnapshotStore, InvalidSnapshotIdError, _extract_step_from_snapshot_id
-from relay.types import Failure, Success, ErrorCode
+from relay.types import Failure, Success, ErrorCode, JSONDict
 
 
 class TestSnapshotStore:
-    def setup_method(self):
+    def setup_method(self) -> None:
         self.temp_dir = tempfile.mkdtemp()
         self.store = SnapshotStore(storage_path=self.temp_dir)
 
-    def teardown_method(self):
+    def teardown_method(self) -> None:
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def _create_envelope(
         self,
         pipeline_id: str = "pipeline-123",
         step: int = 1,
-        payload: dict | None = None,
+        payload: JSONDict | None = None,
     ) -> ContextEnvelope:
         if payload is None:
             payload = {"data": "test"}
@@ -42,7 +42,7 @@ class TestSnapshotStore:
             signature="test-signature",
         )
 
-    def test_snapshot_saves_envelope_returns_snapshot_id(self):
+    def test_snapshot_saves_envelope_returns_snapshot_id(self) -> None:
         envelope = self._create_envelope()
 
         result = self.store.save_snapshot(envelope)
@@ -51,9 +51,10 @@ class TestSnapshotStore:
         assert result.value.startswith("pipeline-123@1_")
         assert result.value.endswith(".json") is False
 
-    def test_snapshot_loads_saved_envelope(self):
+    def test_snapshot_loads_saved_envelope(self) -> None:
         envelope = self._create_envelope(pipeline_id="pipeline-456", step=2)
         save_result = self.store.save_snapshot(envelope)
+        assert isinstance(save_result, Success)
         snapshot_id = save_result.value
 
         result = self.store.load_snapshot(snapshot_id)
@@ -62,7 +63,7 @@ class TestSnapshotStore:
         assert result.value.step == 2
         assert result.value.pipeline_id == "pipeline-456"
 
-    def test_snapshot_get_latest_returns_most_recent(self):
+    def test_snapshot_get_latest_returns_most_recent(self) -> None:
         pipeline_id = "pipeline-789"
         envelope1 = self._create_envelope(pipeline_id=pipeline_id, step=1)
         envelope2 = self._create_envelope(pipeline_id=pipeline_id, step=2)
@@ -77,15 +78,21 @@ class TestSnapshotStore:
         assert isinstance(result, Success)
         assert result.value.step == 3
 
-    def test_snapshot_list_snapshots_returns_all_ids(self):
+    def test_snapshot_list_snapshots_returns_all_ids(self) -> None:
         pipeline_id = "pipeline-abc"
         envelope1 = self._create_envelope(pipeline_id=pipeline_id, step=1)
         envelope2 = self._create_envelope(pipeline_id=pipeline_id, step=2)
         envelope3 = self._create_envelope(pipeline_id=pipeline_id, step=3)
 
-        id1 = self.store.save_snapshot(envelope1).value
-        id2 = self.store.save_snapshot(envelope2).value
-        id3 = self.store.save_snapshot(envelope3).value
+        s1 = self.store.save_snapshot(envelope1)
+        assert isinstance(s1, Success)
+        id1 = s1.value
+        s2 = self.store.save_snapshot(envelope2)
+        assert isinstance(s2, Success)
+        id2 = s2.value
+        s3 = self.store.save_snapshot(envelope3)
+        assert isinstance(s3, Success)
+        id3 = s3.value
 
         result = self.store.list_snapshots(pipeline_id)
 
@@ -95,44 +102,47 @@ class TestSnapshotStore:
         assert id2 in result.value
         assert id3 in result.value
 
-    def test_load_snapshot_fails_when_body_step_mismatches_filename(self):
+    def test_load_snapshot_fails_when_body_step_mismatches_filename(self) -> None:
         """Tampered snapshot where body step differs from filename is rejected."""
         import json
         from pathlib import Path
 
         env = self._create_envelope(step=1)
-        snapshot_id = self.store.save_snapshot(env).value
+        save_result = self.store.save_snapshot(env)
+        assert isinstance(save_result, Success)
+        snapshot_id = save_result.value
 
         path = Path(self.temp_dir) / env.pipeline_id / f"{snapshot_id}.json"
-        data = json.loads(path.read_text())
-        data["step"] = 99
-        path.write_text(json.dumps(data))
+        read_data: JSONDict = json.loads(path.read_text())
+        read_data["step"] = 99
+        path.write_text(json.dumps(read_data))
 
         result = self.store.load_snapshot(snapshot_id)
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.INVALID_SNAPSHOT
 
-    def test_load_snapshot_fails_when_body_pipeline_id_is_invalid(self):
+    def test_load_snapshot_fails_when_body_pipeline_id_is_invalid(self) -> None:
         """Snapshot where body pipeline_id is malicious is rejected (Issue #1)."""
         import json
         from pathlib import Path
 
         pipeline_id = "valid-pid"
         env = self._create_envelope(pipeline_id=pipeline_id, step=1)
-        snapshot_id = self.store.save_snapshot(env).value
+        save_result = self.store.save_snapshot(env)
+        assert isinstance(save_result, Success)
+        snapshot_id = save_result.value
 
         path = Path(self.temp_dir) / pipeline_id / f"{snapshot_id}.json"
-        data = json.loads(path.read_text())
-        data["pipeline_id"] = "../../../etc"
-        path.write_text(json.dumps(data))
+        read_data: JSONDict = json.loads(path.read_text())
+        read_data["pipeline_id"] = "../../../etc"
+        path.write_text(json.dumps(read_data))
 
         result = self.store.load_snapshot(snapshot_id)
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.INVALID_PIPELINE_ID
 
-    def test_snapshot_index_sorts_numerically(self):
+    def test_snapshot_index_sorts_numerically(self) -> None:
         pipeline_id = "pipeline-sort"
-        # Create envelopes in arbitrary order, but their steps matter
         env2 = self._create_envelope(pipeline_id=pipeline_id, step=2)
         env10 = self._create_envelope(pipeline_id=pipeline_id, step=10)
         env1 = self._create_envelope(pipeline_id=pipeline_id, step=1)
@@ -143,30 +153,29 @@ class TestSnapshotStore:
 
         result = self.store.list_snapshots(pipeline_id)
         assert isinstance(result, Success)
-        # Should be sorted 1, 2, 10
         assert "pipeline-sort@1_" in result.value[0]
         assert "pipeline-sort@2_" in result.value[1]
         assert "pipeline-sort@10_" in result.value[2]
 
-    def test_snapshot_fails_on_nonexistent_load(self):
+    def test_snapshot_fails_on_nonexistent_load(self) -> None:
         result = self.store.load_snapshot("nonexistent_id")
 
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.INVALID_SNAPSHOT_ID
 
-    def test_load_snapshot_rejects_path_traversal_attempt(self):
+    def test_load_snapshot_rejects_path_traversal_attempt(self) -> None:
         result = self.store.load_snapshot("../etc/passwd")
 
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.INVALID_SNAPSHOT_ID
 
-    def test_snapshot_get_latest_fails_when_no_snapshots(self):
+    def test_snapshot_get_latest_fails_when_no_snapshots(self) -> None:
         result = self.store.get_latest_snapshot("nonexistent-pipeline")
 
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.PIPELINE_NOT_FOUND
 
-    def test_get_latest_snapshot_propagates_corrupted_index_failure(self):
+    def test_get_latest_snapshot_propagates_corrupted_index_failure(self) -> None:
         """Corrupted index must not be silently converted to PIPELINE_NOT_FOUND."""
         from pathlib import Path
 
@@ -179,7 +188,7 @@ class TestSnapshotStore:
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.CORRUPTED_INDEX
 
-    def test_get_latest_snapshot_propagates_index_read_failure(self):
+    def test_get_latest_snapshot_propagates_index_read_failure(self) -> None:
         """OS-level read errors must propagate, not become PIPELINE_NOT_FOUND."""
         from pathlib import Path
         from unittest.mock import patch
@@ -194,7 +203,7 @@ class TestSnapshotStore:
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.INDEX_READ_FAILED
 
-    def test_get_latest_snapshot_propagates_invalid_index_failure(self):
+    def test_get_latest_snapshot_propagates_invalid_index_failure(self) -> None:
         """Index with wrong schema (not a dict) must propagate, not become PIPELINE_NOT_FOUND."""
         from pathlib import Path
 
@@ -207,7 +216,7 @@ class TestSnapshotStore:
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.INVALID_INDEX
 
-    def test_list_snapshots_returns_empty_for_unknown_pipeline(self):
+    def test_list_snapshots_returns_empty_for_unknown_pipeline(self) -> None:
         result = self.store.list_snapshots("does-not-exist")
 
         assert isinstance(result, Success)
@@ -215,14 +224,16 @@ class TestSnapshotStore:
 
 
 class TestSnapshotStoreSaveErrors:
-    def setup_method(self):
+    def setup_method(self) -> None:
         self.temp_dir = tempfile.mkdtemp()
         self.store = SnapshotStore(storage_path=self.temp_dir)
 
-    def teardown_method(self):
+    def teardown_method(self) -> None:
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
-    def _make_env(self, pipeline_id="pipeline-err", step=1):
+    def _make_env(
+        self, pipeline_id: str = "pipeline-err", step: int = 1
+    ) -> ContextEnvelope:
         return ContextEnvelope(
             relay_version=RELAY_VERSION,
             pipeline_id=pipeline_id,
@@ -235,14 +246,14 @@ class TestSnapshotStoreSaveErrors:
             signature="sig",
         )
 
-    def test_save_snapshot_fails_on_os_error(self):
+    def test_save_snapshot_fails_on_os_error(self) -> None:
         with patch("builtins.open", side_effect=OSError("disk full")):
             result = self.store.save_snapshot(self._make_env())
 
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.SNAPSHOT_SAVE_FAILED
 
-    def test_save_snapshot_fails_on_index_update(self):
+    def test_save_snapshot_fails_on_index_update(self) -> None:
         env = self._make_env()
         with patch.object(self.store, "_add_to_index", return_value=Failure(reason="index fail", code=ErrorCode.INDEX_UPDATE_FAILED)):
             result = self.store.save_snapshot(env)
@@ -250,16 +261,12 @@ class TestSnapshotStoreSaveErrors:
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.INDEX_UPDATE_FAILED
 
-    def test_save_snapshot_cleans_up_snapshot_file_on_index_failure(self):
+    def test_save_snapshot_cleans_up_snapshot_file_on_index_failure(self) -> None:
         env = self._make_env()
-        original_add = self.store._add_to_index
-
-        def failing_add(pid, sid):
-            return Failure(reason="index fail", code=ErrorCode.INDEX_UPDATE_FAILED)
-
-        self.store._add_to_index = failing_add
-        result = self.store.save_snapshot(env)
-        self.store._add_to_index = original_add
+        with patch.object(self.store, "_add_to_index", return_value=Failure(
+            reason="index fail", code=ErrorCode.INDEX_UPDATE_FAILED,
+        )):
+            result = self.store.save_snapshot(env)
 
         assert isinstance(result, Failure)
         pipeline_path = Path(self.temp_dir) / env.pipeline_id
@@ -268,20 +275,20 @@ class TestSnapshotStoreSaveErrors:
 
 
 class TestSnapshotStoreLoadErrors:
-    def setup_method(self):
+    def setup_method(self) -> None:
         self.temp_dir = tempfile.mkdtemp()
         self.store = SnapshotStore(storage_path=self.temp_dir)
 
-    def teardown_method(self):
+    def teardown_method(self) -> None:
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
-    def test_load_snapshot_fails_on_file_not_found(self):
+    def test_load_snapshot_fails_on_file_not_found(self) -> None:
         result = self.store.load_snapshot("pipeline-valid@1_abcdef123456")
 
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.SNAPSHOT_NOT_FOUND
 
-    def test_load_snapshot_fails_on_corrupted_json(self):
+    def test_load_snapshot_fails_on_corrupted_json(self) -> None:
         pipeline_dir = Path(self.temp_dir) / "pipeline-x"
         pipeline_dir.mkdir(parents=True)
         snapshot_file = pipeline_dir / "pipeline-x@1_abcdef123456.json"
@@ -292,7 +299,7 @@ class TestSnapshotStoreLoadErrors:
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.SNAPSHOT_LOAD_FAILED
 
-    def test_load_snapshot_fails_on_os_error(self):
+    def test_load_snapshot_fails_on_os_error(self) -> None:
         pipeline_dir = Path(self.temp_dir) / "pipeline-x"
         pipeline_dir.mkdir(parents=True)
         snapshot_file = pipeline_dir / "pipeline-x@1_abcdef123456.json"
@@ -304,21 +311,21 @@ class TestSnapshotStoreLoadErrors:
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.SNAPSHOT_LOAD_FAILED
 
-    def test_load_snapshot_rejects_invalid_format(self):
+    def test_load_snapshot_rejects_invalid_format(self) -> None:
         result = self.store.load_snapshot("no-at-sign")
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.INVALID_SNAPSHOT_ID
 
 
 class TestSnapshotStoreGetLatestErrors:
-    def setup_method(self):
+    def setup_method(self) -> None:
         self.temp_dir = tempfile.mkdtemp()
         self.store = SnapshotStore(storage_path=self.temp_dir)
 
-    def teardown_method(self):
+    def teardown_method(self) -> None:
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
-    def test_get_latest_snapshot_fails_on_empty_snapshots_list(self):
+    def test_get_latest_snapshot_fails_on_empty_snapshots_list(self) -> None:
         pipeline_dir = Path(self.temp_dir) / "pipeline-empty"
         pipeline_dir.mkdir(parents=True)
         index_path = pipeline_dir / "index.json"
@@ -331,14 +338,14 @@ class TestSnapshotStoreGetLatestErrors:
 
 
 class TestSnapshotStoreListErrors:
-    def setup_method(self):
+    def setup_method(self) -> None:
         self.temp_dir = tempfile.mkdtemp()
         self.store = SnapshotStore(storage_path=self.temp_dir)
 
-    def teardown_method(self):
+    def teardown_method(self) -> None:
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
-    def test_list_snapshots_propagates_index_read_failure(self):
+    def test_list_snapshots_propagates_index_read_failure(self) -> None:
         pipeline_dir = Path(self.temp_dir) / "pipeline-fail"
         pipeline_dir.mkdir(parents=True)
         index_path = pipeline_dir / "index.json"
@@ -352,14 +359,14 @@ class TestSnapshotStoreListErrors:
 
 
 class TestSnapshotStoreLoadIndexErrors:
-    def setup_method(self):
+    def setup_method(self) -> None:
         self.temp_dir = tempfile.mkdtemp()
         self.store = SnapshotStore(storage_path=self.temp_dir)
 
-    def teardown_method(self):
+    def teardown_method(self) -> None:
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
-    def test_load_index_corrupted_json(self):
+    def test_load_index_corrupted_json(self) -> None:
         pipeline_dir = Path(self.temp_dir) / "pipe-x"
         pipeline_dir.mkdir(parents=True)
         (pipeline_dir / "index.json").write_text("{{{broken")
@@ -369,7 +376,7 @@ class TestSnapshotStoreLoadIndexErrors:
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.CORRUPTED_INDEX
 
-    def test_load_index_os_error(self):
+    def test_load_index_os_error(self) -> None:
         pipeline_dir = Path(self.temp_dir) / "pipe-x"
         pipeline_dir.mkdir(parents=True)
         (pipeline_dir / "index.json").write_text("{}")
@@ -382,21 +389,21 @@ class TestSnapshotStoreLoadIndexErrors:
 
 
 class TestSnapshotDictToEnvelope:
-    def setup_method(self):
+    def setup_method(self) -> None:
         self.temp_dir = tempfile.mkdtemp()
         self.store = SnapshotStore(storage_path=self.temp_dir)
 
-    def teardown_method(self):
+    def teardown_method(self) -> None:
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
-    def _write_snapshot(self, pipeline_id: str, step: int, data: dict) -> str:
+    def _write_snapshot(self, pipeline_id: str, step: int, data: dict[str, object]) -> str:
         pipeline_dir = Path(self.temp_dir) / pipeline_id
         pipeline_dir.mkdir(parents=True)
         snapshot_id = f"{pipeline_id}@{step}_abcdef123456"
         (pipeline_dir / f"{snapshot_id}.json").write_text(json.dumps(data))
         return snapshot_id
 
-    def test_missing_relay_version_returns_failure(self):
+    def test_missing_relay_version_returns_failure(self) -> None:
         sid = self._write_snapshot("p-miss", 1, {
             "pipeline_id": "p-miss", "step": 1,
             "timestamp": "2024-01-01T00:00:00+00:00",
@@ -407,7 +414,7 @@ class TestSnapshotDictToEnvelope:
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.INVALID_SNAPSHOT
 
-    def test_invalid_timestamp_format_returns_failure(self):
+    def test_invalid_timestamp_format_returns_failure(self) -> None:
         sid = self._write_snapshot("p-ts", 1, {
             "relay_version": RELAY_VERSION, "pipeline_id": "p-ts",
             "step": 1, "timestamp": "not-a-date",
@@ -418,7 +425,7 @@ class TestSnapshotDictToEnvelope:
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.INVALID_SNAPSHOT
 
-    def test_invalid_payload_type_returns_failure(self):
+    def test_invalid_payload_type_returns_failure(self) -> None:
         sid = self._write_snapshot("p-pay", 1, {
             "relay_version": RELAY_VERSION, "pipeline_id": "p-pay",
             "step": 1, "timestamp": "2024-01-01T00:00:00+00:00",
@@ -429,7 +436,7 @@ class TestSnapshotDictToEnvelope:
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.INVALID_SNAPSHOT
 
-    def test_invalid_step_type_returns_failure(self):
+    def test_invalid_step_type_returns_failure(self) -> None:
         sid = self._write_snapshot("p-step", 1, {
             "relay_version": RELAY_VERSION, "pipeline_id": "p-step",
             "step": "not-an-int", "timestamp": "2024-01-01T00:00:00+00:00",
@@ -440,7 +447,7 @@ class TestSnapshotDictToEnvelope:
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.INVALID_SNAPSHOT
 
-    def test_missing_pipeline_id_returns_failure(self):
+    def test_missing_pipeline_id_returns_failure(self) -> None:
         sid = self._write_snapshot("p-pid", 1, {
             "relay_version": RELAY_VERSION,
             "step": 1, "timestamp": "2024-01-01T00:00:00+00:00",
@@ -451,7 +458,7 @@ class TestSnapshotDictToEnvelope:
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.INVALID_SNAPSHOT
 
-    def test_missing_manifest_hash_returns_failure(self):
+    def test_missing_manifest_hash_returns_failure(self) -> None:
         sid = self._write_snapshot("p-mh", 1, {
             "relay_version": RELAY_VERSION, "pipeline_id": "p-mh",
             "step": 1, "timestamp": "2024-01-01T00:00:00+00:00",
@@ -462,7 +469,7 @@ class TestSnapshotDictToEnvelope:
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.INVALID_SNAPSHOT
 
-    def test_missing_signature_returns_failure(self):
+    def test_missing_signature_returns_failure(self) -> None:
         sid = self._write_snapshot("p-sig", 1, {
             "relay_version": RELAY_VERSION, "pipeline_id": "p-sig",
             "step": 1, "timestamp": "2024-01-01T00:00:00+00:00",
@@ -473,7 +480,7 @@ class TestSnapshotDictToEnvelope:
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.INVALID_SNAPSHOT
 
-    def test_corrupted_fork_count_type_returns_failure(self):
+    def test_corrupted_fork_count_type_returns_failure(self) -> None:
         """Fork metadata with wrong types must be caught by _dict_to_envelope."""
         sid = self._write_snapshot("p-fork", 1, {
             "relay_version": RELAY_VERSION, "pipeline_id": "p-fork",
@@ -487,7 +494,7 @@ class TestSnapshotDictToEnvelope:
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.INVALID_SNAPSHOT
 
-    def test_corrupted_forks_succeeded_type_returns_failure(self):
+    def test_corrupted_forks_succeeded_type_returns_failure(self) -> None:
         sid = self._write_snapshot("p-fs", 1, {
             "relay_version": RELAY_VERSION, "pipeline_id": "p-fs",
             "step": 1, "timestamp": "2024-01-01T00:00:00+00:00",
@@ -502,14 +509,14 @@ class TestSnapshotDictToEnvelope:
 
 
 class TestSnapshotStoreSaveOSError:
-    def setup_method(self):
+    def setup_method(self) -> None:
         self.temp_dir = tempfile.mkdtemp()
         self.store = SnapshotStore(storage_path=self.temp_dir)
 
-    def teardown_method(self):
+    def teardown_method(self) -> None:
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
-    def _make_env(self):
+    def _make_env(self) -> ContextEnvelope:
         return ContextEnvelope(
             relay_version=RELAY_VERSION, pipeline_id="p-os",
             step=1, timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
@@ -517,14 +524,14 @@ class TestSnapshotStoreSaveOSError:
             payload={"data": "test"}, manifest_hash="", signature="sig",
         )
 
-    def test_save_snapshot_cleans_up_temp_file_on_replace_failure(self):
+    def test_save_snapshot_cleans_up_temp_file_on_replace_failure(self) -> None:
         env = self._make_env()
         with patch("os.replace", side_effect=OSError("replace failed")):
             result = self.store.save_snapshot(env)
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.SNAPSHOT_SAVE_FAILED
 
-    def test_os_error_during_temp_cleanup_does_not_raise(self):
+    def test_os_error_during_temp_cleanup_does_not_raise(self) -> None:
         env = self._make_env()
         with patch("os.replace", side_effect=OSError("replace failed")):
             with patch.object(Path, "unlink", side_effect=OSError("unlink failed")):
@@ -534,33 +541,33 @@ class TestSnapshotStoreSaveOSError:
 
 
 class TestExtractStepFromSnapshotId:
-    def test_extract_step_returns_correct_int(self):
+    def test_extract_step_returns_correct_int(self) -> None:
         assert _extract_step_from_snapshot_id("pipe@42_abc123") == 42
 
-    def test_extract_step_raises_on_missing_at_symbol(self):
+    def test_extract_step_raises_on_missing_at_symbol(self) -> None:
         with pytest.raises(InvalidSnapshotIdError, match="Invalid snapshot ID format"):
             _extract_step_from_snapshot_id("no-at-sign")
 
-    def test_extract_step_raises_on_non_numeric_step(self):
+    def test_extract_step_raises_on_non_numeric_step(self) -> None:
         with pytest.raises(InvalidSnapshotIdError, match="Invalid snapshot ID format"):
             _extract_step_from_snapshot_id("pipe@abc_xyz")
 
 
 class TestSnapshotIdPattern:
-    def test_valid_snapshot_id_matches(self):
+    def test_valid_snapshot_id_matches(self) -> None:
         assert SNAPSHOT_ID_PATTERN.match("pipeline-123@1_a1b2c3d4e5f6")
 
-    def test_snapshot_id_with_path_traversal_does_not_match(self):
+    def test_snapshot_id_with_path_traversal_does_not_match(self) -> None:
         assert SNAPSHOT_ID_PATTERN.match("../etc/passwd") is None
 
 
 class TestPreV04SnapshotCompat:
-    def test_loading_snapshot_without_fork_fields_succeeds(self):
+    def test_loading_snapshot_without_fork_fields_succeeds(self) -> None:
         """Pre-v0.4 snapshot (no fork keys in JSON) loads with fork fields as None."""
         import tempfile
         import shutil
         store = SnapshotStore(storage_path=tempfile.mkdtemp())
-        data = {
+        snapshot_data: dict[str, object] = {
             "relay_version": "0.3.3",
             "pipeline_id": "test-pipe",
             "step": 1,
@@ -571,7 +578,7 @@ class TestPreV04SnapshotCompat:
             "manifest_hash": "",
             "signature": "sig",
         }
-        result = store._dict_to_envelope(data)
+        result = store._dict_to_envelope(snapshot_data)
         assert isinstance(result, Success)
         env = result.value
         assert env.fork_id is None
@@ -579,7 +586,7 @@ class TestPreV04SnapshotCompat:
         assert env.fork_count is None
         assert env.forks_succeeded is None
 
-    def test_envelope_to_dict_includes_fork_fields(self):
+    def test_envelope_to_dict_includes_fork_fields(self) -> None:
         """_envelope_to_dict serializes all four fork fields."""
         import tempfile
         store = SnapshotStore(storage_path=tempfile.mkdtemp())
@@ -597,7 +604,7 @@ class TestPreV04SnapshotCompat:
         assert d["fork_count"] == 2
         assert d["forks_succeeded"] == 2
 
-    def test_roundtrip_envelope_with_fork_fields(self):
+    def test_roundtrip_envelope_with_fork_fields(self) -> None:
         """Save and load envelope with fork fields preserves all values."""
         import tempfile
         import shutil

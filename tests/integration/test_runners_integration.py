@@ -17,14 +17,14 @@ from tests.conftest import FixedCounter
 from tests.unit.test_runners.conftest import FixedAgentRunner
 
 
-@pytest.fixture
+@pytest.fixture()
 def temp_storage(tmp_path: Path) -> str:
     """Temporary storage path for integration tests."""
     return str(tmp_path / "snapshots")
 
 
 @pytest.mark.asyncio
-async def test_pipeline_runs_adapter_and_creates_correct_envelope(temp_storage: str):
+async def test_pipeline_runs_adapter_and_creates_correct_envelope(temp_storage: str) -> None:
     """execute_step_with_runner must create correct step-2 envelope."""
     from relay.core_pipeline import CoreRelayPipeline
     from relay.types import Success
@@ -56,7 +56,7 @@ async def test_pipeline_runs_adapter_and_creates_correct_envelope(temp_storage: 
 
 
 @pytest.mark.asyncio
-async def test_pipeline_returns_failure_when_adapter_raises(temp_storage: str):
+async def test_pipeline_returns_failure_when_adapter_raises(temp_storage: str) -> None:
     """Adapter exception must return Failure(code=ADAPTER_EXECUTION_FAILED)."""
     from relay.core_pipeline import CoreRelayPipeline
     from relay.types import Failure
@@ -79,7 +79,7 @@ async def test_pipeline_returns_failure_when_adapter_raises(temp_storage: str):
 
 
 @pytest.mark.asyncio
-async def test_pipeline_returns_failure_without_registry(temp_storage: str):
+async def test_pipeline_returns_failure_without_registry(temp_storage: str) -> None:
     """No registry configured must return Failure(code=NO_REGISTRY)."""
     from relay.core_pipeline import CoreRelayPipeline
     from relay.types import Failure
@@ -96,7 +96,7 @@ async def test_pipeline_returns_failure_without_registry(temp_storage: str):
 
 
 @pytest.mark.asyncio
-async def test_pipeline_returns_failure_for_unknown_adapter(temp_storage: str):
+async def test_pipeline_returns_failure_for_unknown_adapter(temp_storage: str) -> None:
     """Unknown adapter name must return Failure(code=ADAPTER_NOT_FOUND)."""
     from relay.core_pipeline import CoreRelayPipeline
     from relay.types import Failure
@@ -115,19 +115,18 @@ async def test_pipeline_returns_failure_for_unknown_adapter(temp_storage: str):
 
 
 @pytest.mark.asyncio
-async def test_context_slice_excludes_sections_outside_manifest_reads(temp_storage: str):
+async def test_context_slice_excludes_sections_outside_manifest_reads(temp_storage: str) -> None:
     """Agent must not receive payload sections outside its manifest.reads."""
     from relay.core_pipeline import CoreRelayPipeline
 
     received_slices: list[ContextSlice] = []
 
     class CapturingRunner:
-        async def run(self, slice: ContextSlice, manifest: AgentManifest) -> AgentOutput:
-            received_slices.append(slice)
+        async def run(self, slice_: ContextSlice, manifest: AgentManifest) -> AgentOutput:
+            received_slices.append(slice_)
             return AgentOutput(text="ok", structured={}, tool_calls=[],
                                token_count=10, latency_ms=1, adapter="capture")
 
-    from relay.runners.protocol import AgentRunner
     registry = AdapterRegistry()
     registry.register("capture", CapturingRunner())
     pipeline = CoreRelayPipeline(
@@ -150,15 +149,15 @@ async def test_context_slice_excludes_sections_outside_manifest_reads(temp_stora
 
 
 @pytest.mark.asyncio
-async def test_context_slice_empty_on_first_step(temp_storage: str):
+async def test_context_slice_empty_on_first_step(temp_storage: str) -> None:
     """First step (no current envelope) produces empty sections."""
     from relay.core_pipeline import CoreRelayPipeline
 
     captured_slice: list[ContextSlice] = []
 
     class SliceCapturingRunner:
-        async def run(self, slice: ContextSlice, manifest: AgentManifest) -> AgentOutput:
-            captured_slice.append(slice)
+        async def run(self, slice_: ContextSlice, manifest: AgentManifest) -> AgentOutput:
+            captured_slice.append(slice_)
             return AgentOutput(text="first", structured={}, tool_calls=[],
                                token_count=1, latency_ms=1, adapter="first")
 
@@ -183,7 +182,7 @@ async def test_context_slice_empty_on_first_step(temp_storage: str):
 
 
 @pytest.mark.asyncio
-async def test_pipeline_returns_failure_when_pipeline_budget_exceeded(temp_storage: str):
+async def test_pipeline_returns_failure_when_pipeline_budget_exceeded(temp_storage: str) -> None:
     """Pipeline budget exceeded must return Failure(code=BUDGET_EXCEEDED)."""
     from relay.core_pipeline import CoreRelayPipeline
     from relay.types import Failure
@@ -216,7 +215,7 @@ async def test_pipeline_returns_failure_when_pipeline_budget_exceeded(temp_stora
 
 
 @pytest.mark.asyncio
-async def test_pipeline_returns_failure_when_agent_max_tokens_exceeded(temp_storage: str):
+async def test_pipeline_returns_failure_when_agent_max_tokens_exceeded(temp_storage: str) -> None:
     """Agent manifest.max_tokens exceeded must return Failure(code=TOKEN_BUDGET_EXCEEDED)."""
     from relay.core_pipeline import CoreRelayPipeline
     from relay.types import Failure

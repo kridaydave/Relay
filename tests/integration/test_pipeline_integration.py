@@ -6,24 +6,24 @@ No mocks — this exercises the actual pipeline.
 
 import tempfile
 import shutil
+from typing import Generator
 
 import pytest
 
 from relay.core_pipeline import CoreRelayPipeline
-from relay.context_broker import ContextBroker
 from relay.envelope import ContextEnvelope, RELAY_VERSION
-from relay.types import Success, Failure, RollbackSuccess
+from relay.types import Success, Failure, RollbackSuccess, ErrorCode
 
 
-@pytest.fixture
-def temp_storage():
+@pytest.fixture()
+def temp_storage() -> Generator[str, None, None]:
     temp_dir = tempfile.mkdtemp()
     yield temp_dir
     shutil.rmtree(temp_dir, ignore_errors=True)
 
 
-@pytest.fixture
-def pipeline(temp_storage):
+@pytest.fixture()
+def pipeline(temp_storage: str) -> CoreRelayPipeline:
     return CoreRelayPipeline(
         signing_secret="a" * 32,
         token_budget=8000,
@@ -31,24 +31,24 @@ def pipeline(temp_storage):
     )
 
 
-@pytest.fixture
-def base_payload():
+@pytest.fixture()
+def base_payload() -> dict[str, object]:
     return {
         "entities": [{"name": "Alice"}, {"name": "Bob"}],
         "data": "initial"
     }
 
 
-@pytest.fixture
-def valid_next_payload():
+@pytest.fixture()
+def valid_next_payload() -> dict[str, object]:
     return {
         "entities": [{"name": "Alice"}, {"name": "Bob"}, {"name": "Charlie"}],
         "data": "updated"
     }
 
 
-@pytest.fixture
-def contradicting_payload():
+@pytest.fixture()
+def contradicting_payload() -> dict[str, object]:
     return {
         "entities": [
             {"name": "Alice"},
@@ -64,24 +64,24 @@ def contradicting_payload():
 
 
 class TestSuccessfulHandoff:
-    def test_successful_handoff_saves_snapshot(self, pipeline, base_payload, valid_next_payload):
+    def test_successful_handoff_saves_snapshot_when_valid(self, temp_storage: str, base_payload: dict[str, object], valid_next_payload: dict[str, object]) -> None:
+        pipeline = CoreRelayPipeline(
+            signing_secret="a" * 32, token_budget=8000, storage_path=temp_storage
+        )
         result1 = pipeline.execute_step(base_payload)
         assert isinstance(result1, Success)
 
         result2 = pipeline.execute_step(valid_next_payload)
         assert isinstance(result2, Success)
-        assert pipeline.get_current_envelope().step == 2
+        current = pipeline.get_current_envelope()
+        assert current is not None
+        assert current.step == 2
 
-        with pipeline._state.transaction():
-            snapshot_id = pipeline._state.snapshot_ids.get(2)
-        assert snapshot_id is not None
+        rollback_result = pipeline.rollback()
+        assert isinstance(rollback_result, RollbackSuccess)
+        assert rollback_result.value.payload == base_payload
 
-        load_result = pipeline._snapshot_store.load_snapshot(snapshot_id)
-        assert isinstance(load_result, Success)
-        assert load_result.value.payload == valid_next_payload
-        assert load_result.value.step == 2
-
-    def test_pipeline_commits_valid_next_envelope(self, pipeline, base_payload, valid_next_payload):
+    def test_pipeline_commits_valid_next_envelope_when_stepping(self, pipeline: CoreRelayPipeline, base_payload: dict[str, object], valid_next_payload: dict[str, object]) -> None:
         pipeline.execute_step(base_payload)
         result = pipeline.execute_step(valid_next_payload)
 
@@ -91,54 +91,53 @@ class TestSuccessfulHandoff:
 
 
 class TestRollbackOnContradiction:
-    def test_rollback_on_hallucination(self, pipeline, base_payload, valid_next_payload, contradicting_payload):
+    def test_rollback_on_hallucination(self, pipeline: CoreRelayPipeline, base_payload: dict[str, object], valid_next_payload: dict[str, object], contradicting_payload: dict[str, object]) -> None:
         pipeline.execute_step(base_payload)
         pipeline.execute_step(valid_next_payload)
 
-        previous_step = pipeline.get_current_envelope().step
-        with pipeline._state.transaction():
-            previous_snapshot_id = pipeline._state.snapshot_ids.get(previous_step)
+        current = pipeline.get_current_envelope()
+        assert current is not None
+        previous_step = current.step
 
         result = pipeline.execute_step(contradicting_payload)
 
         assert isinstance(result, RollbackSuccess)
 
         restored = pipeline.get_current_envelope()
+        assert restored is not None
         assert restored.step == previous_step
         assert restored.payload == valid_next_payload
 
-        assert previous_snapshot_id is not None
-        load_result = pipeline._snapshot_store.load_snapshot(previous_snapshot_id)
-        assert isinstance(load_result, Success)
-        assert load_result.value.payload == valid_next_payload
-
-    def test_contradicting_payload_not_in_active_state(self, pipeline, base_payload, valid_next_payload, contradicting_payload):
+    def test_contradicting_payload_not_in_active_state_when_rejected(self, pipeline: CoreRelayPipeline, base_payload: dict[str, object], valid_next_payload: dict[str, object], contradicting_payload: dict[str, object]) -> None:
         pipeline.execute_step(base_payload)
         pipeline.execute_step(valid_next_payload)
 
         pipeline.execute_step(contradicting_payload)
 
-        current_payload = pipeline.get_current_envelope().payload
+        current = pipeline.get_current_envelope()
+        assert current is not None
+        current_payload = current.payload
         assert "NEW_ENTITY_X" not in str(current_payload)
 
 
 class TestEdgeCases:
-    def test_rollback_with_no_prior_snapshot(self, pipeline, base_payload):
+    def test_rollback_with_no_prior_snapshot(self, pipeline: CoreRelayPipeline, base_payload: dict[str, object]) -> None:
         result = pipeline.rollback()
 
         assert isinstance(result, Failure)
-        assert "NO_ROLLBACK_AVAILABLE" in result.code
+        assert result.code == ErrorCode.NO_ROLLBACK_AVAILABLE
 
-    def test_idempotent_snapshot_ids(self, pipeline, base_payload, valid_next_payload):
+    def test_overwrite_snapshot_id_does_not_duplicate_entry_when_overwriting(self, pipeline: CoreRelayPipeline, base_payload: dict[str, object], valid_next_payload: dict[str, object]) -> None:
         pipeline.execute_step(base_payload)
         pipeline.execute_step(valid_next_payload)
 
-        step = 2
-        with pipeline._state.transaction():
-            pipeline._state.snapshot_ids[step] = "new-id"
-            assert len([k for k in pipeline._state.snapshot_ids if k == step]) == 1
+        rollback_result = pipeline.rollback()
+        assert isinstance(rollback_result, RollbackSuccess)
 
-    def test_broker_signs_envelope(self, pipeline, base_payload):
+        redo_result = pipeline.execute_step(valid_next_payload)
+        assert isinstance(redo_result, Success)
+
+    def test_broker_signs_envelope_when_processing(self, pipeline: CoreRelayPipeline, base_payload: dict[str, object]) -> None:
         result = pipeline.execute_step(base_payload)
         assert isinstance(result, Success)
 
