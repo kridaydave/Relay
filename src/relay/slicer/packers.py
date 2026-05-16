@@ -4,6 +4,7 @@ Owns: RecencySlicePacker, StructuralSlicePacker, RelevanceSlicePacker.
 Does NOT: own EmbeddingProvider protocol or count tokens precisely.
 """
 
+import json
 from typing import Any
 from math import sqrt
 
@@ -120,7 +121,10 @@ class RelevanceSlicePacker:
 
         query_embedding = self.provider.embed(manifest.task_description)
         section_embeddings = {
-            key: self.provider.embed(text) for key, text in payload.items()
+            key: self.provider.embed(
+                json.dumps(text) if not isinstance(text, str) else text
+            )
+            for key, text in payload.items()
         }
 
         similarities = []
