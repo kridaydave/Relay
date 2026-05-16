@@ -22,7 +22,9 @@
       "Bash(ConvertTo-Json)",
       "Bash(python -m pytest tests/unit/test_pipeline_state.py::TestLockAssertions::test_transaction_raises_on_reentrant_call tests/unit/test_runners/test_registry.py::TestAdapterRegistryRegister::test_raises_on_sync_run_method tests/unit/test_snapshot.py tests/unit/test_envelope.py -x -q)",
       "Bash(python -m pytest -x -q)",
-      "Skill(caveman:caveman-commit)"
+      "Skill(caveman:caveman-commit)",
+      "Skill(superpowers:subagent-driven-development)",
+      "Bash(python -m mypy tests/ --config-file mypy.ini)"
     ]
   }
 }

@@ -38,7 +38,7 @@ _LAZY_ADAPTERS: dict[str, str] = {
 def __getattr__(name: str) -> object:
     if name in _LAZY_ADAPTERS:
         module = importlib.import_module(_LAZY_ADAPTERS[name])
-        adapter = getattr(module, name)
+        adapter: object = getattr(module, name)
         setattr(sys.modules[__name__], name, adapter)
         return adapter
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

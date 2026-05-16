@@ -3,7 +3,9 @@
 ## Quick start
 
 ```bash
-pip install -e .
+pip install -e .[dev]
+python -m pre_commit install                  # enable local quality gates
+python -m pre_commit run --all-files          # manually run all quality gates
 pytest tests/unit -v                          # unit tests
 python -m mypy --strict src/relay             # must pass with zero # type: ignore
 ```

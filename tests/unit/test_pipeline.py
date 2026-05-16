@@ -409,7 +409,7 @@ class TestConcurrentPipeline:
                         f"Previous envelopes: {len(previous_envelopes)}, Snapshots: {snapshot_ids}"
                     )
 
-    def test_thread_pool_executor_operations_work_concurrently(
+    def test_thread_pool_executor_operations_succeed_when_run_concurrently(
         self, temp_storage: str
     ) -> None:
         """Test pipeline operations under thread pool execution."""
@@ -505,7 +505,7 @@ class TestPipelineContextManager:
         with pipeline as p:
             assert p is pipeline
 
-    def test_context_manager_exit_does_not_raise(self, temp_storage: str) -> None:
+    def test_context_manager_exit_succeeds_and_does_not_raise(self, temp_storage: str) -> None:
         pipeline = CoreRelayPipeline(
             signing_secret="a" * 32, token_budget=8000, storage_path=temp_storage
         )
@@ -523,7 +523,7 @@ class TestPipelineClose:
         pipeline.close()
         counter.close.assert_called_once()
 
-    def test_close_without_token_counter_does_not_raise(self, temp_storage: str) -> None:
+    def test_close_without_token_counter_succeeds_and_does_not_raise(self, temp_storage: str) -> None:
         pipeline = CoreRelayPipeline(
             signing_secret="a" * 32, token_budget=8000, storage_path=temp_storage
         )
@@ -531,7 +531,7 @@ class TestPipelineClose:
 
 
 class TestPipelineInitialStepErrors:
-    def test_budget_failure_in_initial_step(self, temp_storage: str) -> None:
+    def test_budget_failure_in_initial_step_returns_error(self, temp_storage: str) -> None:
         with patch("relay.core_pipeline.HardCapEnforcer") as mock_enforcer_cls:
             counter = MagicMock()
             enforcer = MagicMock()
@@ -554,7 +554,7 @@ class TestPipelineInitialStepErrors:
             assert isinstance(result, Failure)
             assert result.code == ErrorCode.BUDGET_EXCEEDED
 
-    def test_create_initial_envelope_failure(self, pipeline: CoreRelayPipeline) -> None:
+    def test_create_initial_envelope_fails_on_failure(self, pipeline: CoreRelayPipeline) -> None:
         payload: JSONDict = {"data": "test"}
         with patch(
             "relay.context_broker.ContextBroker.create_initial_envelope",
@@ -566,7 +566,7 @@ class TestPipelineInitialStepErrors:
 
 
 class TestPipelineSubsequentStepErrors:
-    def test_create_next_envelope_failure(self, pipeline: CoreRelayPipeline) -> None:
+    def test_create_next_envelope_fails_on_failure(self, pipeline: CoreRelayPipeline) -> None:
         with patch("relay.context_broker.ContextBroker.create_next_envelope") as mock_next:
             payload1: JSONDict = {"data": "first"}
             result = pipeline.execute_step(payload1)
@@ -601,7 +601,7 @@ class TestPipelineBudgetEnforcement:
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.INVALID_TOKEN_COUNT
 
-    def test_manifest_boundary_violation(self, pipeline: CoreRelayPipeline) -> None:
+    def test_manifest_boundary_violation_returns_failure(self, pipeline: CoreRelayPipeline) -> None:
         manifest = AgentManifest(
             "a1", "task",
             reads=frozenset({"x"}),
@@ -616,7 +616,7 @@ class TestPipelineBudgetEnforcement:
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.MANIFEST_BOUNDARY_VIOLATION
 
-    def test_budget_failure_in_subsequent_step(self, temp_storage: str) -> None:
+    def test_budget_failure_in_subsequent_step_returns_error(self, temp_storage: str) -> None:
         with patch("relay.core_pipeline.HardCapEnforcer") as mock_enforcer_cls:
             counter = MagicMock()
             counter.count.return_value = 10
@@ -648,7 +648,7 @@ class TestPipelineBudgetEnforcement:
             assert isinstance(result, Failure)
             assert result.code == ErrorCode.BUDGET_EXCEEDED
 
-    def test_per_agent_max_tokens_exceeded(self, temp_storage: str) -> None:
+    def test_per_agent_max_tokens_exceeded_fails_validation(self, temp_storage: str) -> None:
         with patch("relay.core_pipeline.HardCapEnforcer") as mock_enforcer_cls:
             counter = MagicMock()
             counter.count.return_value = 9999
@@ -674,7 +674,7 @@ class TestPipelineBudgetEnforcement:
 
 
 class TestPipelineApplyManifest:
-    def test_apply_manifest_adds_hash_and_signature(self, temp_storage: str) -> None:
+    def test_apply_manifest_adds_hash_and_signature_when_successful(self, temp_storage: str) -> None:
         with patch("relay.context_broker.ContextBroker.create_initial_envelope") as mock_initial:
             payload: JSONDict = {"y": "data"}
             mock_initial.return_value = Success[ContextEnvelope](

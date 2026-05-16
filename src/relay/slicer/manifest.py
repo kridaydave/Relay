@@ -33,14 +33,15 @@ class AgentManifest:
         Uses sorted keys for frozenset fields to ensure deterministic
         output across Python sessions.
         """
+        manifest_dict: dict[str, object] = {
+            "agent_id": self.agent_id,
+            "task_description": self.task_description,
+            "reads": sorted(self.reads),
+            "writes": sorted(self.writes),
+            "max_tokens": self.max_tokens,
+        }
         canonical = json.dumps(
-            {
-                "agent_id": self.agent_id,
-                "task_description": self.task_description,
-                "reads": sorted(self.reads),
-                "writes": sorted(self.writes),
-                "max_tokens": self.max_tokens,
-            },
+            manifest_dict,
             sort_keys=True,
         )
         return hashlib.sha256(canonical.encode()).hexdigest()

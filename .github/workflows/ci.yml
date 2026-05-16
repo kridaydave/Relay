@@ -1,0 +1,39 @@
+name: Relay CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[dev]
+
+      - name: Check py.typed marker
+        run: |
+          if [ ! -f src/relay/py.typed ]; then
+            echo "Error: src/relay/py.typed is missing. Library consumers need this for type hints."
+            exit 1
+          fi
+
+      - name: Type check (mypy --strict)
+        run: mypy --strict src/
+
+      - name: Enforce test naming convention (Rule 7.1)
+        run: python scripts/check_test_names.py
+
+      - name: Run test suite (pytest)
+        run: pytest tests/ -v

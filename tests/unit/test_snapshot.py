@@ -51,7 +51,7 @@ class TestSnapshotStore:
         assert result.value.startswith("pipeline-123@1_")
         assert result.value.endswith(".json") is False
 
-    def test_snapshot_loads_saved_envelope_from_storage(self) -> None:
+    def test_snapshot_loads_saved_envelope_from_storage_when_requested(self) -> None:
         envelope = self._create_envelope(pipeline_id="pipeline-456", step=2)
         save_result = self.store.save_snapshot(envelope)
         assert isinstance(save_result, Success)
@@ -141,7 +141,7 @@ class TestSnapshotStore:
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.INVALID_PIPELINE_ID
 
-    def test_snapshot_index_sorts_numerically(self) -> None:
+    def test_snapshot_index_sorts_ids_numerically(self) -> None:
         pipeline_id = "pipeline-sort"
         env2 = self._create_envelope(pipeline_id=pipeline_id, step=2)
         env10 = self._create_envelope(pipeline_id=pipeline_id, step=10)
@@ -163,7 +163,7 @@ class TestSnapshotStore:
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.INVALID_SNAPSHOT_ID
 
-    def test_load_snapshot_rejects_path_traversal_attempt(self) -> None:
+    def test_load_snapshot_rejects_path_traversal_attempt_when_called(self) -> None:
         result = self.store.load_snapshot("../etc/passwd")
 
         assert isinstance(result, Failure)
@@ -175,7 +175,7 @@ class TestSnapshotStore:
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.PIPELINE_NOT_FOUND
 
-    def test_get_latest_snapshot_propagates_corrupted_index_failure(self) -> None:
+    def test_get_latest_snapshot_propagates_corrupted_index_failure_returns_error(self) -> None:
         """Corrupted index must not be silently converted to PIPELINE_NOT_FOUND."""
         from pathlib import Path
 
@@ -188,7 +188,7 @@ class TestSnapshotStore:
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.CORRUPTED_INDEX
 
-    def test_get_latest_snapshot_propagates_index_read_failure(self) -> None:
+    def test_get_latest_snapshot_propagates_index_read_failure_returns_error(self) -> None:
         """OS-level read errors must propagate, not become PIPELINE_NOT_FOUND."""
         from pathlib import Path
         from unittest.mock import patch
@@ -203,7 +203,7 @@ class TestSnapshotStore:
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.INDEX_READ_FAILED
 
-    def test_get_latest_snapshot_propagates_invalid_index_failure(self) -> None:
+    def test_get_latest_snapshot_propagates_invalid_index_failure_returns_error(self) -> None:
         """Index with wrong schema (not a dict) must propagate, not become PIPELINE_NOT_FOUND."""
         from pathlib import Path
 
@@ -531,7 +531,7 @@ class TestSnapshotStoreSaveOSError:
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.SNAPSHOT_SAVE_FAILED
 
-    def test_os_error_during_temp_cleanup_does_not_raise(self) -> None:
+    def test_os_error_during_temp_cleanup_succeeds_and_does_not_raise(self) -> None:
         env = self._make_env()
         with patch("os.replace", side_effect=OSError("replace failed")):
             with patch.object(Path, "unlink", side_effect=OSError("unlink failed")):
@@ -554,7 +554,7 @@ class TestExtractStepFromSnapshotId:
 
 
 class TestSnapshotIdPattern:
-    def test_valid_snapshot_id_matches(self) -> None:
+    def test_valid_snapshot_id_matches_pattern(self) -> None:
         assert SNAPSHOT_ID_PATTERN.match("pipeline-123@1_a1b2c3d4e5f6")
 
     def test_snapshot_id_with_path_traversal_does_not_match(self) -> None:
@@ -586,7 +586,7 @@ class TestPreV04SnapshotCompat:
         assert env.fork_count is None
         assert env.forks_succeeded is None
 
-    def test_envelope_to_dict_includes_fork_fields(self) -> None:
+    def test_envelope_to_dict_includes_fork_fields_when_serialized(self) -> None:
         """_envelope_to_dict serializes all four fork fields."""
         import tempfile
         store = SnapshotStore(storage_path=tempfile.mkdtemp())

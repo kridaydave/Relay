@@ -1,0 +1,23 @@
+repos:
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy
+        entry: python -m mypy --strict src/
+        language: system
+        types: [python]
+        pass_filenames: false
+
+      - id: pytest-unit
+        name: pytest-unit
+        entry: python -m pytest tests/unit/
+        language: system
+        types: [python]
+        pass_filenames: false
+
+      - id: check-test-names
+        name: check-test-names
+        entry: python scripts/check_test_names.py
+        language: system
+        types: [python]
+        pass_filenames: false

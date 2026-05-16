@@ -43,9 +43,9 @@ class AdapterRegistry:
         if not isinstance(adapter, AgentRunner):
             raise ValueError(
                 f"Object of type {type(adapter).__name__} does not satisfy AgentRunner protocol. "
-                "Implement: async def run(self, slice: ContextSlice, manifest: AgentManifest) -> AgentOutput"
+                "Implement: async def run(self, slice_: ContextSlice, manifest: AgentManifest) -> AgentOutput"
             )
-        run_method = getattr(type(adapter), "run", None)
+        run_method: object = getattr(type(adapter), "run", None)
         if run_method is not None and not inspect.iscoroutinefunction(run_method):
             raise ValueError(
                 f"Adapter '{name}' must implement async def run(...), got sync method"

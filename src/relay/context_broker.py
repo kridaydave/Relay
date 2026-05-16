@@ -7,10 +7,9 @@ Does NOT: implement signing (owned by relay.envelope), persist envelopes,
 """
 
 from dataclasses import dataclass
-from typing import Any
 
 from relay.envelope import ContextEnvelope, create_initial_envelope, create_next_envelope
-from relay.types import ErrorCode, Failure, Result, Success
+from relay.types import ErrorCode, Failure, JSONDict, Result, Success
 
 __all__ = ["ContextBroker", "create_context_broker"]
 
@@ -61,7 +60,7 @@ class ContextBroker:
     def create_initial_envelope(
         self,
         pipeline_id: str,
-        initial_payload: dict[str, Any],
+        initial_payload: JSONDict,
         manifest_hash: str,
     ) -> Result[ContextEnvelope]:
         """Create the first envelope for a pipeline."""
@@ -76,7 +75,7 @@ class ContextBroker:
     def create_next_envelope(
         self,
         previous_envelope: ContextEnvelope,
-        agent_output: dict[str, Any],
+        agent_output: JSONDict,
         manifest_hash: str,
     ) -> Result[ContextEnvelope]:
         """Create a subsequent envelope for the next step."""

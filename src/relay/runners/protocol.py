@@ -7,7 +7,9 @@ Does NOT: execute agents, manage LLM sessions, or own pipeline state.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
+
+from relay.types import JSONDict
 
 
 
@@ -30,7 +32,7 @@ class ContextSlice:
     pipeline_id: str
     step: int
     agent_id: str
-    sections: dict[str, Any]
+    sections: JSONDict
     token_count: int
     manifest_hash: str
 
@@ -48,8 +50,8 @@ class AgentOutput:
     """
 
     text: str
-    structured: dict[str, Any]
-    tool_calls: list[dict[str, Any]]
+    structured: JSONDict
+    tool_calls: list[JSONDict]
     token_count: int
     latency_ms: int
     adapter: str
@@ -82,7 +84,7 @@ class AgentRunner(Protocol):
 
     async def run(
         self,
-        slice: ContextSlice,
+        slice_: ContextSlice,
         manifest: AgentManifest,
     ) -> AgentOutput:
         """Execute one agent turn and return normalised output.

@@ -12,6 +12,13 @@ from relay.slicer.manifest import AgentManifest
 from relay.slicer.providers import EmbeddingProvider
 from relay.types import ErrorCode, Failure, JSONDict, Result, Success
 
+__all__ = [
+    "RecencySlicePacker",
+    "StructuralSlicePacker",
+    "RelevanceSlicePacker",
+    "estimate_tokens",
+]
+
 
 def _cosine_similarity(a: list[float], b: list[float]) -> float:
     """Compute cosine similarity between two vectors without numpy."""

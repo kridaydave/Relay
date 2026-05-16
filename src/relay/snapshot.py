@@ -11,12 +11,12 @@ import re
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 logger = logging.getLogger(__name__)
 
 from relay.envelope import PIPELINE_ID_PATTERN, ContextEnvelope, validate_pipeline_id
-from relay.types import ErrorCode, Failure, Result, Success
+from relay.types import ErrorCode, Failure, JSONDict, Result, Success
 
 SNAPSHOT_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{1,128}@\d+_[a-f0-9]{12}$")
 
@@ -126,8 +126,10 @@ class SnapshotStore:
         snapshot_path = self._storage_path / pipeline_id / f"{snapshot_id}.json"
         try:
             with open(snapshot_path, "r") as f:
-                data = json.load(f)
-            envelope_result = self._dict_to_envelope(data)
+                data: object = json.load(f)
+            if not isinstance(data, dict):
+                return Failure(reason="Invalid snapshot data format", code=ErrorCode.INVALID_SNAPSHOT)
+            envelope_result = self._dict_to_envelope(cast(JSONDict, data))
             if isinstance(envelope_result, Failure):
                 return envelope_result
             envelope = envelope_result.value
@@ -162,7 +164,8 @@ class SnapshotStore:
             return index_result
 
         index_data = index_result.value
-        snapshots = index_data.get("snapshots", [])
+        snapshots_raw: object = index_data.get("snapshots", [])
+        snapshots: list[str] = snapshots_raw if isinstance(snapshots_raw, list) else []
         if not snapshots:
             return Failure(
                 reason=f"No snapshots found for pipeline: {pipeline_id}",
@@ -180,33 +183,46 @@ class SnapshotStore:
                 return Success([])
             return Failure(reason=index_result.reason, code=index_result.code)
 
-        return Success(index_result.value.get("snapshots", []))
+        snapshots_data: object = index_result.value.get("snapshots", [])
+        if isinstance(snapshots_data, list):
+            snapshots_list: list[str] = []
+            for s in snapshots_data:
+                if isinstance(s, str):
+                    snapshots_list.append(s)
+            snapshots_result: list[str] = snapshots_list
+        else:
+            snapshots_result = []
+        return Success(snapshots_result)
 
     def _add_to_index(self, pipeline_id: str, snapshot_id: str) -> Result[None]:
         """Add a snapshot ID to the pipeline's index."""
         index_path = self._storage_path / pipeline_id / "index.json"
         try:
-            index_data: dict[str, Any]
+            snapshots_list: list[str] = []
+            index_data: JSONDict = {"snapshots": []}
             if index_path.exists():
                 with open(index_path, "r") as f:
-                    loaded = json.load(f)
-                    index_data = (
-                        loaded if isinstance(loaded, dict) else {"snapshots": []}
-                    )
-                    if not isinstance(index_data.get("snapshots"), list):
-                        index_data["snapshots"] = []
-            else:
-                index_data = {"snapshots": []}
+                    loaded: object = json.load(f)
+                if isinstance(loaded, dict):
+                    index_data = cast(JSONDict, loaded)
+                    existing: object = index_data.get("snapshots", [])
+                    if isinstance(existing, list):
+                        for s in existing:
+                            if isinstance(s, str):
+                                snapshots_list.append(s)
+                else:
+                    snapshots_list = []
 
-            if snapshot_id not in index_data["snapshots"]:
-                index_data["snapshots"].append(snapshot_id)
+            if snapshot_id not in snapshots_list:
+                snapshots_list.append(snapshot_id)
                 try:
-                    index_data["snapshots"].sort(key=_extract_step_from_snapshot_id)
+                    snapshots_list.sort(key=_extract_step_from_snapshot_id)
                 except InvalidSnapshotIdError as e:
                     return Failure(
                         reason=f"Corrupted index entry: {e}",
                         code=ErrorCode.CORRUPTED_INDEX,
                     )
+            index_data["snapshots"] = snapshots_list
 
             temp_index_path = index_path.parent / "index.tmp"
             try:
@@ -226,14 +242,18 @@ class SnapshotStore:
 
         return Success(None)
 
-    def _load_index(self, pipeline_id: str) -> Result[dict[str, Any]]:
+    def _load_index(self, pipeline_id: str) -> Result[JSONDict]:
         """Load the index for a pipeline."""
         index_path = self._storage_path / pipeline_id / "index.json"
         try:
             with open(index_path, "r") as f:
-                data = json.load(f)
+                data: object = json.load(f)
                 if isinstance(data, dict):
-                    return Success(data)
+                    data_dict: JSONDict = {}
+                    for k, v in data.items():
+                        if isinstance(k, str):
+                            data_dict[k] = v
+                    return Success(data_dict)
                 return Failure(
                     reason="Invalid index format - expected dict",
                     code=ErrorCode.INVALID_INDEX,
@@ -254,7 +274,7 @@ class SnapshotStore:
                 code=ErrorCode.INDEX_READ_FAILED,
             )
 
-    def _envelope_to_dict(self, envelope: ContextEnvelope) -> dict[str, Any]:
+    def _envelope_to_dict(self, envelope: ContextEnvelope) -> JSONDict:
         """Convert envelope to JSON-serializable dict.
 
         Uses timespec='seconds' so timestamps are consistent across Python 3.11/3.12.
@@ -275,7 +295,7 @@ class SnapshotStore:
             "forks_succeeded": envelope.forks_succeeded,
         }
 
-    def _require_str(self, data: dict[str, Any], key: str) -> "Result[str]":
+    def _require_str(self, data: JSONDict, key: str) -> "Result[str]":
         """Validate and return a string field from data dict."""
         value = data.get(key)
         if not isinstance(value, str):
@@ -284,7 +304,7 @@ class SnapshotStore:
             )
         return Success(value)
 
-    def _require_int(self, data: dict[str, Any], key: str) -> "Result[int]":
+    def _require_int(self, data: JSONDict, key: str) -> "Result[int]":
         """Validate and return an int field from data dict."""
         value = data.get(key)
         if not isinstance(value, int):
@@ -293,7 +313,7 @@ class SnapshotStore:
             )
         return Success(value)
 
-    def _require_dict(self, data: dict[str, Any], key: str) -> "Result[dict[str, Any]]":
+    def _require_dict(self, data: JSONDict, key: str) -> "Result[JSONDict]":
         """Validate and return a dict field from data dict."""
         value = data.get(key)
         if not isinstance(value, dict):
@@ -302,7 +322,7 @@ class SnapshotStore:
             )
         return Success(value)
 
-    def _dict_to_envelope(self, data: dict[str, Any]) -> Result[ContextEnvelope]:
+    def _dict_to_envelope(self, data: JSONDict) -> Result[ContextEnvelope]:
         """Convert dict back to ContextEnvelope."""
         rv_result = self._require_str(data, "relay_version")
         if isinstance(rv_result, Failure):
@@ -349,7 +369,7 @@ class SnapshotStore:
         payload_result = self._require_dict(data, "payload")
         if isinstance(payload_result, Failure):
             return payload_result
-        payload: dict[str, Any] = payload_result.value
+        payload: JSONDict = payload_result.value
 
         hash_result = self._require_str(data, "manifest_hash")
         if isinstance(hash_result, Failure):
@@ -361,8 +381,10 @@ class SnapshotStore:
             return sig_result
         signature: str = sig_result.value
 
-        fork_id = data.get("fork_id")
-        join_strategy = data.get("join_strategy")
+        fork_id_raw: object = data.get("fork_id")
+        fork_id: str | None = fork_id_raw if isinstance(fork_id_raw, str) else None
+        join_strategy_raw: object = data.get("join_strategy")
+        join_strategy: str | None = join_strategy_raw if isinstance(join_strategy_raw, str) else None
 
         fork_count: int | None = None
         if "fork_count" in data and data.get("fork_count") is not None:

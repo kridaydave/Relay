@@ -27,20 +27,20 @@ def create_mock_envelope(
     )
 
 
-@pytest.fixture  # type: ignore[misc]
+@pytest.fixture
 def state() -> PipelineState:
     return PipelineState(pipeline_id="test-pipeline-id")
 
 
 class TestInitialization:
-    def test_pipeline_id_is_set(self, state: PipelineState) -> None:
+    def test_pipeline_id_is_correctly_set_on_init(self, state: PipelineState) -> None:
         assert state.pipeline_id == "test-pipeline-id"
 
-    def test_initial_current_is_none(self, state: PipelineState) -> None:
+    def test_initial_current_envelope_returns_none(self, state: PipelineState) -> None:
         with state.transaction() as _:
             assert state.current() is None
 
-    def test_initial_has_no_history(self, state: PipelineState) -> None:
+    def test_initial_state_has_no_history(self, state: PipelineState) -> None:
         with state.transaction() as _:
             assert state.has_history() is False
 
@@ -67,7 +67,7 @@ class TestArchiveAndSet:
             assert len(history) == 1
             assert history[0] == env1
 
-    def test_first_envelope_has_no_archive(self, state: PipelineState) -> None:
+    def test_first_envelope_has_no_archive_after_set(self, state: PipelineState) -> None:
         env1 = create_mock_envelope(1)
         with state.transaction() as _:
             state.archive_and_set(env1)
@@ -76,7 +76,7 @@ class TestArchiveAndSet:
 
 
 class TestSnapshotIds:
-    def test_snapshot_ids_is_empty_initially(self, state: PipelineState) -> None:
+    def test_snapshot_ids_dict_is_empty_initially(self, state: PipelineState) -> None:
         with state.transaction():
             assert state.snapshot_ids == {}
 
@@ -123,11 +123,11 @@ class TestConsumeLast:
 
 
 class TestThreadSafety:
-    def test_lock_is_acquirable(self, state: PipelineState) -> None:
+    def test_transaction_lock_is_acquirable_when_called(self, state: PipelineState) -> None:
         with state.transaction() as _:
             pass
 
-    def test_lock_prevents_concurrent_modification(self, state: PipelineState) -> None:
+    def test_lock_prevents_concurrent_modification_when_held(self, state: PipelineState) -> None:
         env1 = create_mock_envelope(1)
         env2 = create_mock_envelope(2)
         errors: list[Exception] = []

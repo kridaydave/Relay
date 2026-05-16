@@ -16,7 +16,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from typing import Any
 
-from relay.types import ErrorCode, Failure, Result, Success, __version__ as RELAY_VERSION
+from relay.types import ErrorCode, Failure, JSONDict, Result, Success, __version__ as RELAY_VERSION
 
 __all__ = [
     "RELAY_VERSION",
@@ -65,7 +65,7 @@ class ContextEnvelope:
     timestamp: datetime
     token_budget_used: int
     token_budget_total: int
-    payload: dict[str, Any]
+    payload: JSONDict
     manifest_hash: str
     signature: str
 
@@ -165,7 +165,7 @@ def verify_signature(envelope: ContextEnvelope, secret: str) -> bool:
 
 def create_initial_envelope(
     pipeline_id: str,
-    initial_payload: dict[str, Any],
+    initial_payload: JSONDict,
     secret: str,
     manifest_hash: str,
     token_budget_total: int = 8000,
@@ -207,7 +207,7 @@ def create_initial_envelope(
 def create_next_envelope(
     previous_envelope: ContextEnvelope,
     secret: str,
-    agent_output: dict[str, Any],
+    agent_output: JSONDict,
     manifest_hash: str,
     now: datetime | None = None,
 ) -> Result[ContextEnvelope]:
@@ -245,12 +245,12 @@ def create_next_envelope(
     return Success(signed)
 
 
-def serialize_slice(data: dict[str, Any]) -> str:
+def serialize_slice(data: JSONDict) -> str:
     """Serialize a payload dict to JSON for budget projection or slice passing."""
     return json.dumps(data, sort_keys=True, separators=(",", ":"))
 
 
-def estimate_tokens(payload: dict[str, Any]) -> int:
+def estimate_tokens(payload: JSONDict) -> int:
     """Approximates token count from payload JSON string length.
 
     This heuristic estimates BPE tokens by dividing character count by 3.

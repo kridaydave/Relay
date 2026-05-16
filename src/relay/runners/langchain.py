@@ -15,10 +15,17 @@ import asyncio
 import json
 import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Protocol, cast
 
 from relay.runners.protocol import AgentOutput, ContextSlice
 from relay.slicer.manifest import AgentManifest
+from relay.types import JSONDict
+
+
+class _Runnable(Protocol):
+    """Minimal Protocol for LangChain Runnables."""
+    async def ainvoke(self, input: JSONDict) -> object: ...
+    def invoke(self, input: JSONDict) -> object: ...
 
 
 @dataclass
@@ -34,41 +41,45 @@ class LangChainAdapter:
         AttributeError at call time if langchain-core is not installed.
     """
 
-    runnable: Any
+    runnable: object
     adapter_name: str = "langchain"
 
-    def _build_input(self, slice: ContextSlice) -> dict[str, Any]:
+    def _build_input(self, slice_: ContextSlice) -> JSONDict:
         return {
-            "input": json.dumps(slice.sections, indent=2),
-            "agent_id": slice.agent_id,
-            "step": slice.step,
+            "input": json.dumps(slice_.sections, indent=2),
+            "agent_id": slice_.agent_id,
+            "step": slice_.step,
         }
 
-    def _normalise_response(self, response: Any) -> tuple[str, dict[str, Any]]:
+    def _normalise_response(self, response: object) -> tuple[str, JSONDict]:
         """Normalise LangChain response to (text, structured)."""
         if isinstance(response, str):
-            return response, {}
+            return response, JSONDict()
         if isinstance(response, dict):
-            text = response.get("output", json.dumps(response))
-            structured = {k: v for k, v in response.items() if k != "output"}
+            response_dict = cast(JSONDict, response)
+            text = response_dict.get("output", json.dumps(response))
+            structured: JSONDict = {k: v for k, v in response_dict.items() if k != "output"}
             return str(text), structured
-        return str(getattr(response, "content", str(response))), {}
+        content: object = getattr(response, "content", str(response))
+        return str(content), JSONDict()
 
-    async def run(self, slice: ContextSlice, manifest: AgentManifest) -> AgentOutput:
+    async def run(self, slice_: ContextSlice, manifest: AgentManifest) -> AgentOutput:
         """Invoke the Runnable and return normalised output."""
-        lc_input = self._build_input(slice)
+        lc_input = self._build_input(slice_)
+        runnable = cast(_Runnable, self.runnable)
         start = time.monotonic()
+        response: object
         if hasattr(self.runnable, "ainvoke"):
-            response = await self.runnable.ainvoke(lc_input)
+            response = await runnable.ainvoke(lc_input)
         else:
-            response = await asyncio.to_thread(self.runnable.invoke, lc_input)
+            response = await asyncio.to_thread(runnable.invoke, lc_input)
         latency_ms = int((time.monotonic() - start) * 1000)
         text, structured = self._normalise_response(response)
         return AgentOutput(
             text=text,
             structured=structured,
             tool_calls=[],
-            token_count=slice.token_count + len(text) // 4,
+            token_count=slice_.token_count + len(text) // 3,
             latency_ms=latency_ms,
             adapter=self.adapter_name,
         )

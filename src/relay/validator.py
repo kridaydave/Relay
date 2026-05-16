@@ -5,10 +5,10 @@ Does NOT: sign envelopes, persist data, execute agents.
 """
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from relay.envelope import ContextEnvelope
-from relay.types import ErrorCode, Failure, Result, Success
+from relay.types import ErrorCode, Failure, JSONDict, Result, Success
 
 if TYPE_CHECKING:
     from relay.slicer.manifest import AgentManifest
@@ -36,7 +36,7 @@ class ValidationResult:
     """Result of validating a handoff between envelopes."""
 
     has_contradiction: bool
-    diff: dict[str, Any]
+    diff: JSONDict
     contradiction_details: str | None
     confidence_score: float = 1.0
 
@@ -118,7 +118,7 @@ class HandoffValidator:
         )
 
     def validate_handoff_payload(
-        self, previous_envelope: ContextEnvelope, new_payload: dict[str, Any]
+        self, previous_envelope: ContextEnvelope, new_payload: JSONDict
     ) -> Result[ValidationResult]:
         """Validate a raw payload dict against the previous envelope.
 
@@ -134,8 +134,8 @@ class HandoffValidator:
 
     def _validate_payloads(
         self,
-        previous_payload: dict[str, Any],
-        new_payload: dict[str, Any],
+        previous_payload: JSONDict,
+        new_payload: JSONDict,
     ) -> Result[ValidationResult]:
         """Core validation logic operating on raw payloads.
 
@@ -196,7 +196,7 @@ class HandoffValidator:
         return validation_result.has_contradiction
 
     def _detect_hallucination(
-        self, previous_payload: dict[str, Any], current_payload: dict[str, Any]
+        self, previous_payload: JSONDict, current_payload: JSONDict
     ) -> str | None:
         """Detect hallucination by checking entity fabrication ratio.
 
@@ -238,7 +238,7 @@ class HandoffValidator:
         {"entity", "entities", "subject", "object", "name", "id", "identifier"}
     )
 
-    def _extract_entities(self, payload: dict[str, Any]) -> frozenset[str]:
+    def _extract_entities(self, payload: JSONDict) -> frozenset[str]:
         """Approximates entity mentions from payload using iterative traversal.
 
         This heuristic extracts strings from values whose parent key is an
@@ -256,7 +256,7 @@ class HandoffValidator:
         """
         entities: set[str] = set()
 
-        stack: list[tuple[Any, int, bool]] = [(payload, 0, False)]
+        stack: list[tuple[object, int, bool]] = [(payload, 0, False)]
         while stack:
             obj, depth, is_entity_context = stack.pop()
             if depth > MAX_EXTRACTION_DEPTH:
@@ -265,7 +265,8 @@ class HandoffValidator:
                 )
 
             if isinstance(obj, dict):
-                for key, value in obj.items():
+                obj_dict = cast(JSONDict, obj)
+                for key, value in obj_dict.items():
                     in_entity_context = key in self.ENTITY_KEYS
                     if in_entity_context and isinstance(value, str):
                         if (
@@ -277,7 +278,8 @@ class HandoffValidator:
                             continue
                     stack.append((value, depth + 1, in_entity_context))
             elif isinstance(obj, list):
-                for item in obj:
+                obj_list = cast(list[object], obj)
+                for item in obj_list:
                     if is_entity_context and isinstance(item, str):
                         if (
                             len(item) > 2
@@ -291,30 +293,36 @@ class HandoffValidator:
         return frozenset(entities)
 
     def _compute_diff(
-        self, previous_payload: dict[str, Any], current_payload: dict[str, Any]
-    ) -> dict[str, Any]:
+        self, previous_payload: JSONDict, current_payload: JSONDict
+    ) -> JSONDict:
         """Compute structural diff of payload keys."""
-        diff: dict[str, Any] = {"added": [], "removed": [], "modified": []}
+        added: list[str] = []
+        removed: list[str] = []
+        modified: list[str] = []
 
         prev_keys = set(previous_payload.keys())
         curr_keys = set(current_payload.keys())
 
-        diff["added"] = sorted(curr_keys - prev_keys)
-        diff["removed"] = sorted(prev_keys - curr_keys)
+        added = sorted(curr_keys - prev_keys)
+        removed = sorted(prev_keys - curr_keys)
 
         common_keys = prev_keys & curr_keys
         for key in common_keys:
             if previous_payload[key] != current_payload[key]:
-                diff["modified"].append(key)
+                modified.append(key)
 
-        diff["modified"] = sorted(diff["modified"])
+        modified = sorted(modified)
 
-        return diff
+        return dict[str, object]({"added": added, "removed": removed, "modified": modified})
 
-    def _check_critical_keys_missing(self, diff: dict[str, Any]) -> str | None:
+    def _check_critical_keys_missing(self, diff: JSONDict) -> str | None:
         """Flag if critical keys disappear."""
-        removed = diff.get("removed", [])
-        missing_critical = [k for k in removed if k in self.CRITICAL_KEYS]
+        removed_raw = diff.get("removed", [])
+        if isinstance(removed_raw, list):
+            removed: list[object] = removed_raw
+        else:
+            removed = []
+        missing_critical = [k for k in removed if isinstance(k, str) and k in self.CRITICAL_KEYS]
 
         if missing_critical:
             return f"Critical keys removed: {sorted(missing_critical)}"

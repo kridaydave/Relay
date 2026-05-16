@@ -1,5 +1,7 @@
 """Tests for CrewAIAdapter."""
 
+import sys
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -9,31 +11,39 @@ from .conftest import make_test_manifest, make_test_slice
 
 
 class TestCrewAIAdapter:
-    def test_raises_value_error_when_agent_has_memory_enabled(self):
+    def test_raises_value_error_when_agent_has_memory_enabled(self) -> None:
         mock_agent = MagicMock()
         mock_agent.memory = True
         with pytest.raises(ValueError, match="memory=True"):
             CrewAIAdapter(agent=mock_agent)
 
-    def test_accepts_agent_without_memory(self):
+    def test_crewai_adapter_accepts_agent_when_memory_is_disabled(self) -> None:
         mock_agent = MagicMock()
         mock_agent.memory = False
         adapter = CrewAIAdapter(agent=mock_agent)
         assert adapter is not None
 
-    def test_accepts_agent_with_no_memory_attribute(self):
+    def test_accepts_agent_with_no_memory_attribute(self) -> None:
         mock_agent = MagicMock(spec=[])
         adapter = CrewAIAdapter(agent=mock_agent)
         assert adapter is not None
 
     @pytest.mark.asyncio
-    async def test_raises_import_error_without_crewai(self, monkeypatch):
+    async def test_raises_import_error_without_crewai(self, monkeypatch: pytest.MonkeyPatch) -> None:
         import builtins
         real_import = builtins.__import__
-        def mock_import(name, *args, **kwargs):
+
+        def mock_import(
+            name: str,
+            globals: dict[str, object] | None = None,
+            locals: dict[str, object] | None = None,
+            fromlist: tuple[str, ...] = (),
+            level: int = 0,
+        ) -> object:
             if name == "crewai":
                 raise ImportError("No module named 'crewai'")
-            return real_import(name, *args, **kwargs)
+            return real_import(name, globals, locals, fromlist, level)
+
         monkeypatch.setattr(builtins, "__import__", mock_import)
         mock_agent = MagicMock()
         mock_agent.memory = False
@@ -41,21 +51,27 @@ class TestCrewAIAdapter:
             await CrewAIAdapter(agent=mock_agent).run(make_test_slice(), make_test_manifest())
 
     @pytest.mark.asyncio
-    async def test_single_turn_returns_normalised_output(self, monkeypatch):
+    async def test_single_turn_returns_normalised_output(self, monkeypatch: pytest.MonkeyPatch) -> None:
         mock_task = MagicMock()
         mock_task.execute_sync.return_value = "crewai output"
-        monkeypatch.setitem(__import__("sys").modules, "crewai", MagicMock(Task=lambda **kw: mock_task))
+        mock_crewai = MagicMock()
+        # Use a type ignore at the expression level to handle MagicMock dynamic attributes
+        mock_crewai.Task = MagicMock(return_value=mock_task)
+        monkeypatch.setitem(sys.modules, "crewai", mock_crewai)
         mock_agent = MagicMock()
         mock_agent.memory = False
-        output = await CrewAIAdapter(agent=mock_agent).run(make_test_slice(), make_test_manifest())
+        adapter = CrewAIAdapter(agent=mock_agent)
+        output = await adapter.run(make_test_slice(), make_test_manifest())
         assert output.text == "crewai output"
         assert output.adapter == "crewai"
 
     @pytest.mark.asyncio
-    async def test_build_task_description_includes_step(self, monkeypatch):
+    async def test_build_task_description_includes_step(self, monkeypatch: pytest.MonkeyPatch) -> None:
         mock_task = MagicMock()
         mock_task.execute_sync.return_value = "output"
-        monkeypatch.setitem(__import__("sys").modules, "crewai", MagicMock(Task=lambda **kw: mock_task))
+        mock_crewai = MagicMock()
+        mock_crewai.Task = MagicMock(return_value=mock_task)
+        monkeypatch.setitem(sys.modules, "crewai", mock_crewai)
         mock_agent = MagicMock()
         mock_agent.memory = False
         adapter = CrewAIAdapter(agent=mock_agent)

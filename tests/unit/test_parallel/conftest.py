@@ -2,15 +2,18 @@
 
 import asyncio
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
-from relay.parallel.types import ForkResult, ForkSpec, JoinStrategy
+from relay.parallel.types import ForkResult, ForkSpec
 from relay.runners.protocol import AgentOutput, ContextSlice
 from relay.runners.registry import AdapterRegistry
 from relay.slicer.manifest import AgentManifest
 from relay.validator import HandoffValidator, ValidationResult
+
+if TYPE_CHECKING:
+    from relay.types import Failure
 
 
 def make_fork_spec(
@@ -64,7 +67,7 @@ def make_failing_fork_result(
 class FixedForkRunner:
     """AgentRunner that returns a fixed response. Used for fork runner tests."""
     output_text: str = "fork result"
-    structured: dict | None = None
+    structured: dict[str, object] | None = None
     fail: bool = False
     delay: float = 0.0
 
@@ -74,15 +77,15 @@ class FixedForkRunner:
         if self.fail:
             raise RuntimeError("FixedForkRunner configured to fail")
         return AgentOutput(
-            text="" if self.structured else self.output_text,
+            text="" if self.structured is not None else self.output_text,
             structured=self.structured or {},
             tool_calls=[],
             token_count=10, latency_ms=5, adapter="fixed",
         )
 
 
-@pytest.fixture
-def make_pipeline_components():
+@pytest.fixture()
+def make_pipeline_components() -> tuple[AdapterRegistry, HandoffValidator]:
     """Fixture that returns (registry, validator) for fork runner tests."""
     registry = AdapterRegistry()
     validator = HandoffValidator()
@@ -93,7 +96,7 @@ def make_context_slice(
     pipeline_id: str = "test-pipe",
     step: int = 1,
     agent_id: str = "test-agent",
-    sections: dict | None = None,
+    sections: dict[str, object] | None = None,
     manifest_hash: str = "",
 ) -> ContextSlice:
     return ContextSlice(

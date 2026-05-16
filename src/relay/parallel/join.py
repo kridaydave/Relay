@@ -6,19 +6,19 @@ Does NOT: execute adapters, commit to pipeline state, or manage locks.
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, Any, Coroutine
+from typing import TYPE_CHECKING, Coroutine
 
 logger = logging.getLogger(__name__)
 
 from relay.envelope import ContextEnvelope
 from relay.parallel.types import ForkResult, ForkSpec, JoinStrategy, agent_output_to_payload
-from relay.types import ErrorCode, Failure, Result, Success
+from relay.types import ErrorCode, Failure, JSONDict, Result, Success
 
 if TYPE_CHECKING:
     from relay.runners.protocol import AgentOutput
 
 
-def _apply_union(fork_results: list[ForkResult]) -> Result[dict[str, Any]]:
+def _apply_union(fork_results: list[ForkResult]) -> Result[JSONDict]:
     """Merge all passing forks. Conflict on any shared key with differing values.
 
     Under UNION, a single failed fork fails the entire parallel step.
@@ -36,7 +36,7 @@ def _apply_union(fork_results: list[ForkResult]) -> Result[dict[str, Any]]:
             code=ErrorCode.ALL_FORKS_FAILED,
         )
 
-    merged: dict[str, Any] = {}
+    merged: JSONDict = {}
     conflicts: list[str] = []
 
     for result in fork_results:
@@ -64,7 +64,7 @@ def _apply_union(fork_results: list[ForkResult]) -> Result[dict[str, Any]]:
     return Success(merged)
 
 
-def _apply_vote(fork_results: list[ForkResult]) -> Result[dict[str, Any]]:
+def _apply_vote(fork_results: list[ForkResult]) -> Result[JSONDict]:
     """Accept the passing fork with the highest confidence_score.
 
     Failed forks are discarded; only passing forks compete.
@@ -96,8 +96,8 @@ def _apply_vote(fork_results: list[ForkResult]) -> Result[dict[str, Any]]:
 
 
 async def _apply_first_wins(
-    fork_index_coros: list[tuple[int, ForkSpec, "Coroutine[Any, Any, ForkResult]"]],
-) -> Result[dict[str, Any]]:
+    fork_index_coros: list[tuple[int, ForkSpec, "Coroutine[None, None, ForkResult]"]],
+) -> Result[JSONDict]:
     """Accept the first passing fork; cancel the rest.
 
     Cancellation is best-effort — tasks already in flight may complete naturally.
@@ -108,7 +108,7 @@ async def _apply_first_wins(
         asyncio.create_task(coro, name=f"fork-{idx}")
         for idx, _, coro in fork_index_coros
     ]
-    winner_payload: dict[str, Any] | None = None
+    winner_payload: JSONDict | None = None
     pending = set(tasks)
 
     while pending and winner_payload is None:
@@ -141,8 +141,8 @@ async def _apply_first_wins(
 async def apply_join_strategy(
     strategy: JoinStrategy,
     fork_results: list[ForkResult],
-    first_wins_coros: list[tuple[int, ForkSpec, "Coroutine[Any, Any, ForkResult]"]] | None = None,
-) -> Result[dict[str, Any]]:
+    first_wins_coros: list[tuple[int, ForkSpec, "Coroutine[None, None, ForkResult]"]] | None = None,
+) -> Result[JSONDict]:
     """Route to the correct strategy implementation.
 
     Returns: Success(merged_payload) or Failure with MERGE_CONFLICT / ALL_FORKS_FAILED.

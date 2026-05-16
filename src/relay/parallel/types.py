@@ -9,7 +9,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 from relay.runners.protocol import AgentOutput
-from relay.types import Failure, Result
+from relay.types import Failure, JSONDict, Result
 
 if TYPE_CHECKING:
     from relay.slicer.manifest import AgentManifest
@@ -59,13 +59,13 @@ class ForkResult:
     failure: "Failure | None"
 
 
-def agent_output_to_payload(output: AgentOutput) -> dict[str, Any]:
+def agent_output_to_payload(output: AgentOutput) -> JSONDict:
     """Shape AgentOutput into a payload dict for validation and merging.
 
     ``output.text`` always takes precedence when ``output.structured``
     also contains a ``"text"`` key, preventing silent data loss.
     """
-    raw = dict(output.structured)
+    raw: JSONDict = dict(output.structured)
     raw["text"] = output.text
     if output.tool_calls:
         raw["tool_calls"] = output.tool_calls

@@ -1,7 +1,7 @@
 """Unit tests for relay.context_broker."""
 
 from datetime import datetime, timezone
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -11,7 +11,7 @@ from relay.types import ErrorCode, Failure, Success
 
 
 class TestCreateInitialEnvelope:
-    def test_short_secret_returns_failure(self):
+    def test_short_secret_returns_failure(self) -> None:
         """ContextBroker factory must return Failure for secrets shorter than 32 characters."""
         result = create_context_broker(signing_secret="short", token_budget_total=8000)
         assert isinstance(result, Failure)
@@ -19,8 +19,8 @@ class TestCreateInitialEnvelope:
         assert "32 characters" in result.reason
 
     @patch("relay.context_broker.create_initial_envelope")
-    def test_broker_creates_initial_envelope_with_valid_inputs(self, mock_create):
-        mock_create.return_value = Success(
+    def test_broker_creates_initial_envelope_with_valid_inputs(self, mock_create: MagicMock) -> None:
+        mock_create.return_value = Success[ContextEnvelope](
             ContextEnvelope(
                 relay_version=RELAY_VERSION,
                 pipeline_id="pipeline-123",
@@ -48,7 +48,7 @@ class TestCreateInitialEnvelope:
         assert result.value.step == 1
         mock_create.assert_called_once()
 
-    def test_broker_fails_on_empty_pipeline_id(self):
+    def test_broker_fails_on_empty_pipeline_id(self) -> None:
         broker = ContextBroker(signing_secret="a" * 32, token_budget_total=8000)
         result = broker.create_initial_envelope(
             pipeline_id="",
@@ -60,7 +60,7 @@ class TestCreateInitialEnvelope:
         assert "Invalid pipeline_id" in result.reason
         assert result.code == ErrorCode.INVALID_PIPELINE_ID
 
-    def test_broker_fails_on_empty_payload(self):
+    def test_broker_fails_on_empty_payload(self) -> None:
         broker = ContextBroker(signing_secret="a" * 32, token_budget_total=8000)
         result = broker.create_initial_envelope(
             pipeline_id="pipeline-123",
@@ -75,8 +75,8 @@ class TestCreateInitialEnvelope:
 
 class TestCreateNextEnvelope:
     @patch("relay.context_broker.create_next_envelope")
-    def test_broker_creates_next_envelope_with_valid_inputs(self, mock_create):
-        mock_create.return_value = Success(
+    def test_broker_creates_next_envelope_with_valid_inputs(self, mock_create: MagicMock) -> None:
+        mock_create.return_value = Success[ContextEnvelope](
             ContextEnvelope(
                 relay_version=RELAY_VERSION,
                 pipeline_id="pipeline-123",
@@ -114,8 +114,8 @@ class TestCreateNextEnvelope:
         mock_create.assert_called_once()
 
     @patch("relay.context_broker.create_next_envelope")
-    def test_broker_next_envelope_increments_step(self, mock_create):
-        mock_create.return_value = Success(
+    def test_broker_next_envelope_increments_step_when_created_from_previous(self, mock_create: MagicMock) -> None:
+        mock_create.return_value = Success[ContextEnvelope](
             ContextEnvelope(
                 relay_version=RELAY_VERSION,
                 pipeline_id="pipeline-123",
@@ -148,11 +148,12 @@ class TestCreateNextEnvelope:
             manifest_hash="",
         )
 
+        assert isinstance(result, Success)
         assert result.value.step == 2
 
     @patch("relay.context_broker.create_next_envelope")
-    def test_broker_next_envelope_updates_token_budget(self, mock_create):
-        mock_create.return_value = Success(
+    def test_broker_next_envelope_updates_token_budget(self, mock_create: MagicMock) -> None:
+        mock_create.return_value = Success[ContextEnvelope](
             ContextEnvelope(
                 relay_version=RELAY_VERSION,
                 pipeline_id="pipeline-123",
@@ -185,6 +186,7 @@ class TestCreateNextEnvelope:
             manifest_hash="",
         )
 
+        assert isinstance(result, Success)
         assert result.value.token_budget_used > 100
 
 

@@ -1,7 +1,7 @@
 """Tests for parallel/join.py — UNION, VOTE, FIRST_WINS strategies."""
 
 import asyncio
-from typing import Any, Coroutine
+from typing import Any, Coroutine, List, Tuple
 
 import pytest
 
@@ -25,9 +25,8 @@ from .conftest import (
 
 class TestUnionStrategy:
     @pytest.mark.asyncio
-    async def test_union_merges_non_overlapping_payloads(self):
+    async def test_union_merges_non_overlapping_payloads(self) -> None:
         """Forks writing different keys → merged dict contains all keys."""
-        from relay.validator import ValidationResult
         output_a = AgentOutput(text="", structured={"section_a": "value-a"}, tool_calls=[], token_count=10, latency_ms=5, adapter="a")
         output_b = AgentOutput(text="", structured={"section_b": "value-b"}, tool_calls=[], token_count=10, latency_ms=5, adapter="b")
         val = ValidationResult(has_contradiction=False, diff={}, contradiction_details=None, confidence_score=1.0)
@@ -40,7 +39,7 @@ class TestUnionStrategy:
         assert result.value.get("section_b") == "value-b"
 
     @pytest.mark.asyncio
-    async def test_union_fails_on_conflicting_key_values(self):
+    async def test_union_fails_on_conflicting_key_values(self) -> None:
         """Two forks writing different values for same key → MERGE_CONFLICT."""
         fork0 = make_passing_fork_result(0, output_text="value-a")
         fork1 = make_passing_fork_result(1, output_text="value-b")
@@ -50,7 +49,7 @@ class TestUnionStrategy:
         assert result.code == ErrorCode.MERGE_CONFLICT
 
     @pytest.mark.asyncio
-    async def test_union_fails_if_any_fork_failed(self):
+    async def test_union_fails_if_any_fork_failed(self) -> None:
         """One failing fork among passing ones → ALL_FORKS_FAILED."""
         results = [make_passing_fork_result(0), make_failing_fork_result(1)]
         result = _apply_union(results)
@@ -58,7 +57,7 @@ class TestUnionStrategy:
         assert result.code == ErrorCode.ALL_FORKS_FAILED
 
     @pytest.mark.asyncio
-    async def test_union_accepts_identical_values_for_same_key(self):
+    async def test_union_accepts_identical_values_for_same_key(self) -> None:
         """Two forks agreeing on same key+value → not a conflict."""
         fork0 = make_passing_fork_result(0, output_text="same")
         fork1 = make_passing_fork_result(1, output_text="same")
@@ -66,7 +65,7 @@ class TestUnionStrategy:
         assert isinstance(result, Success)
 
     @pytest.mark.asyncio
-    async def test_union_invariant_agent_output_none(self):
+    async def test_union_invariant_agent_output_none(self) -> None:
         """ForkResult with success=True but agent_output=None → UNKNOWN_ERROR."""
         from relay.parallel.types import ForkResult
         from relay.types import ErrorCode
@@ -84,7 +83,7 @@ class TestUnionStrategy:
 
 class TestVoteStrategy:
     @pytest.mark.asyncio
-    async def test_vote_picks_highest_confidence_passing_fork(self):
+    async def test_vote_picks_highest_confidence_passing_fork(self) -> None:
         """Fork with confidence 0.9 beats fork with confidence 0.5."""
         results = [
             make_passing_fork_result(0, output_text="low confidence", confidence=0.5),
@@ -95,7 +94,7 @@ class TestVoteStrategy:
         assert result.value.get("text") == "high confidence"
 
     @pytest.mark.asyncio
-    async def test_vote_discards_failed_forks(self):
+    async def test_vote_discards_failed_forks(self) -> None:
         """Failed fork is ignored; passing fork wins."""
         results = [
             make_failing_fork_result(0),
@@ -106,7 +105,7 @@ class TestVoteStrategy:
         assert result.value.get("text") == "result"
 
     @pytest.mark.asyncio
-    async def test_vote_fails_when_all_forks_failed(self):
+    async def test_vote_fails_when_all_forks_failed(self) -> None:
         """All failed → ALL_FORKS_FAILED."""
         results = [make_failing_fork_result(0), make_failing_fork_result(1)]
         result = _apply_vote(results)
@@ -114,7 +113,7 @@ class TestVoteStrategy:
         assert result.code == ErrorCode.ALL_FORKS_FAILED
 
     @pytest.mark.asyncio
-    async def test_vote_invariant_agent_output_none(self):
+    async def test_vote_invariant_agent_output_none(self) -> None:
         """ForkResult with success=True but agent_output=None → UNKNOWN_ERROR."""
         from relay.parallel.types import ForkResult
         from relay.types import ErrorCode
@@ -132,48 +131,52 @@ class TestVoteStrategy:
 
 class TestFirstWinsStrategy:
     @pytest.mark.asyncio
-    async def test_first_wins_accepts_first_passing_fork(self):
+    async def test_first_wins_accepts_first_passing_fork(self) -> None:
         """First completing fork that passes validation wins."""
 
-        async def fast_fork():
+        async def fast_fork() -> ForkResult:
             return make_passing_fork_result(0, output_text="fast")
 
-        async def slow_fork():
+        async def slow_fork() -> ForkResult:
             await asyncio.sleep(0.5)
             return make_passing_fork_result(1, output_text="slow")
 
         spec = make_fork_spec()
-        coros = [(0, spec, fast_fork()), (1, spec, slow_fork())]
+        coros: list[tuple[int, ForkSpec, Coroutine[None, None, ForkResult]]] = [
+            (0, spec, fast_fork()), (1, spec, slow_fork()),
+        ]
         result = await _apply_first_wins(coros)
         assert isinstance(result, Success)
         assert result.value.get("text") == "fast"
 
     @pytest.mark.asyncio
-    async def test_first_wins_skips_failing_forks(self):
+    async def test_first_wins_skips_failing_forks(self) -> None:
         """Failing fork is discarded; next passing fork wins."""
 
-        async def fail_fork():
+        async def fail_fork() -> ForkResult:
             return make_failing_fork_result(0)
 
-        async def pass_fork():
+        async def pass_fork() -> ForkResult:
             return make_passing_fork_result(1, output_text="winner")
 
         spec = make_fork_spec()
-        coros = [(0, spec, fail_fork()), (1, spec, pass_fork())]
+        coros: list[tuple[int, ForkSpec, Coroutine[None, None, ForkResult]]] = [
+            (0, spec, fail_fork()), (1, spec, pass_fork()),
+        ]
         result = await _apply_first_wins(coros)
         assert isinstance(result, Success)
         assert result.value.get("text") == "winner"
 
     @pytest.mark.asyncio
-    async def test_first_wins_cancels_remaining_tasks(self):
+    async def test_first_wins_cancels_remaining_tasks(self) -> None:
         """Tasks that haven't completed are cancelled when a winner is found."""
 
         cancelled: list[int] = []
 
-        async def winning_fork():
+        async def winning_fork() -> ForkResult:
             return make_passing_fork_result(0, output_text="winner")
 
-        async def slow_fork(coro_id: int):
+        async def slow_fork(coro_id: int) -> ForkResult:
             try:
                 await asyncio.sleep(10)
                 return make_passing_fork_result(coro_id)
@@ -182,24 +185,28 @@ class TestFirstWinsStrategy:
                 raise
 
         spec = make_fork_spec()
-        coros = [(0, spec, winning_fork()), (1, spec, slow_fork(1))]
+        coros: list[tuple[int, ForkSpec, Coroutine[None, None, ForkResult]]] = [
+            (0, spec, winning_fork()), (1, spec, slow_fork(1)),
+        ]
         result = await _apply_first_wins(coros)
         assert isinstance(result, Success)
         assert result.value.get("text") == "winner"
         assert len(cancelled) > 0
 
     @pytest.mark.asyncio
-    async def test_first_wins_fails_when_all_forks_fail(self):
+    async def test_first_wins_fails_when_all_forks_fail(self) -> None:
         """All forks fail → ALL_FORKS_FAILED."""
 
-        async def fail_fork_0():
+        async def fail_fork_0() -> ForkResult:
             return make_failing_fork_result(0)
 
-        async def fail_fork_1():
+        async def fail_fork_1() -> ForkResult:
             return make_failing_fork_result(1)
 
         spec = make_fork_spec()
-        coros = [(0, spec, fail_fork_0()), (1, spec, fail_fork_1())]
+        coros: list[tuple[int, ForkSpec, Coroutine[None, None, ForkResult]]] = [
+            (0, spec, fail_fork_0()), (1, spec, fail_fork_1()),
+        ]
         result = await _apply_first_wins(coros)
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.ALL_FORKS_FAILED
@@ -207,7 +214,7 @@ class TestFirstWinsStrategy:
 
 class TestApplyJoinStrategy:
     @pytest.mark.asyncio
-    async def test_apply_join_strategy_fails_on_invalid_strategy(self):
+    async def test_apply_join_strategy_fails_on_invalid_strategy(self) -> None:
         """Invalid strategy returns INVALID_JOIN_STRATEGY Failure."""
         from typing import cast
         invalid_strategy = cast(JoinStrategy, "INVALID_STRATEGY")

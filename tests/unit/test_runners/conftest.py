@@ -2,12 +2,14 @@
 
 import asyncio
 from dataclasses import dataclass
+
 from typing import Any
 
 import pytest
 
 from relay.runners.protocol import AgentOutput, AgentRunner, ContextSlice
 from relay.slicer.manifest import AgentManifest
+from relay.types import JSONDict
 
 
 @dataclass
@@ -31,7 +33,7 @@ class FixedAgentRunner:
 
 
 def make_test_slice(
-    sections: dict[str, Any] | None = None,
+    sections: JSONDict | None = None,
     token_count: int = 100,
     step: int = 1,
 ) -> ContextSlice:

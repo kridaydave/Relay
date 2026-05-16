@@ -26,16 +26,17 @@ def create_mock_envelope(step: int, pipeline_id: str = "test-pipeline") -> Conte
     )
 
 
-@pytest.fixture # type: ignore[misc]
+@pytest.fixture
+
 def rollback_handler() -> RollbackHandler:
     return RollbackHandler()
 
 
 class TestRestoreToPrevious:
-    def test_restores_envelope_from_snapshot(self, rollback_handler: RollbackHandler) -> None:
+    def test_restore_succeeds_when_envelope_is_in_snapshot(self, rollback_handler: RollbackHandler) -> None:
         mock_store = MagicMock()
         env1 = create_mock_envelope(1)
-        mock_store.load_snapshot.return_value = Success[ContextEnvelope](env1)  # type: ignore[misc]
+        mock_store.load_snapshot.return_value = Success[ContextEnvelope](env1)
 
         snapshot_ids: dict[int, str] = {1: "snapshot-1"}
         from relay.snapshot import SnapshotStore
@@ -60,7 +61,7 @@ class TestRestoreToPrevious:
 
     def test_fails_when_snapshot_load_fails(self, rollback_handler: RollbackHandler) -> None:
         mock_store = MagicMock()
-        mock_store.load_snapshot.return_value = Failure(reason="Disk error", code=ErrorCode.UNKNOWN_ERROR)  # type: ignore[misc]
+        mock_store.load_snapshot.return_value = Failure(reason="Disk error", code=ErrorCode.UNKNOWN_ERROR)
         env1 = create_mock_envelope(1)
 
         snapshot_ids: dict[int, str] = {1: "snapshot-1"}
@@ -71,10 +72,10 @@ class TestRestoreToPrevious:
         assert result.code == ErrorCode.UNKNOWN_ERROR
         cast(MagicMock, mock_store.load_snapshot).assert_called_once_with("snapshot-1")
 
-    def test_preserves_reason_in_result(self, rollback_handler: RollbackHandler) -> None:
+    def test_rollback_result_contains_reason_when_restored(self, rollback_handler: RollbackHandler) -> None:
         mock_store = MagicMock()
         env1 = create_mock_envelope(1)
-        mock_store.load_snapshot.return_value = Success[ContextEnvelope](env1)  # type: ignore[misc]
+        mock_store.load_snapshot.return_value = Success[ContextEnvelope](env1)
 
         snapshot_ids: dict[int, str] = {1: "snapshot-1"}
         from relay.snapshot import SnapshotStore

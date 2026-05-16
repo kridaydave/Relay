@@ -8,6 +8,9 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Callable, Generic, TypeVar
 
+JSONDict = dict[str, object]
+"""A JSON-serializable dictionary with string keys and object values."""
+
 __version__ = "0.4.1"
 
 T = TypeVar("T")

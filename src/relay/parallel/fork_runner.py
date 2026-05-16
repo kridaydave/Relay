@@ -8,12 +8,12 @@ N concurrent _run_single_fork calls with no contention.
 """
 
 from dataclasses import replace
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from relay.envelope import ContextEnvelope
 from relay.parallel.types import ForkResult, ForkSpec, agent_output_to_payload
 from relay.runners.protocol import AgentOutput, ContextSlice
-from relay.types import ErrorCode, Failure, Success
+from relay.types import ErrorCode, Failure, JSONDict, Success
 from relay.validator import HandoffValidator, validate_manifest_boundaries
 
 if TYPE_CHECKING:
@@ -76,7 +76,7 @@ async def run_single_fork(
     fork_payload = agent_output_to_payload(agent_output)
 
     scope_keys = spec.manifest.reads | spec.manifest.writes
-    filtered_payload = {
+    filtered_payload: JSONDict = {
         k: v for k, v in pre_fork_envelope.payload.items() if k in scope_keys
     }
     scoped_envelope = replace(pre_fork_envelope, payload=filtered_payload)
