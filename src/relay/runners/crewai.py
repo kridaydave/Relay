@@ -16,10 +16,27 @@ import asyncio
 import json
 import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Protocol, cast
 
 from relay.runners.protocol import AgentOutput, ContextSlice
 from relay.slicer.manifest import AgentManifest
+from relay.types import JSONDict
+
+
+class _CrewAIAgent(Protocol):
+    memory: bool
+
+
+class _CrewAITask(Protocol):
+    def execute_sync(self) -> object: ...
+
+
+def _make_crewai_agent(obj: object) -> _CrewAIAgent:
+    return cast(_CrewAIAgent, obj)
+
+
+def _make_crewai_task(obj: object) -> _CrewAITask:
+    return cast(_CrewAITask, obj)
 
 
 @dataclass
@@ -35,34 +52,35 @@ class CrewAIAdapter:
         ImportError: If crewai is not installed (raised at call time).
     """
 
-    agent: Any
+    agent: object
     adapter_name: str = "crewai"
 
     def __post_init__(self) -> None:
-        if getattr(self.agent, "memory", False):
+        if hasattr(self.agent, "memory") and _make_crewai_agent(self.agent).memory:
             raise ValueError(
                 "CrewAI agent has memory=True. Relay owns memory via SnapshotStore. "
                 "Construct the agent with memory=False to prevent untracked state divergence."
             )
 
-    def _build_task_description(self, slice: ContextSlice) -> str:
-        return f"Step {slice.step} context:\n{json.dumps(slice.sections, indent=2)}"
+    def _build_task_description(self, slice_: ContextSlice) -> str:
+        return f"Step {slice_.step} context:\n{json.dumps(slice_.sections, indent=2)}"
 
-    async def run(self, slice: ContextSlice, manifest: AgentManifest) -> AgentOutput:
+    async def run(self, slice_: ContextSlice, manifest: AgentManifest) -> AgentOutput:
         try:
-            from crewai import Task
+            from crewai import Task  # type: ignore[import-not-found]
         except ImportError:
             raise ImportError(
                 "crewai is required for CrewAIAdapter. "
                 "Install with: pip install relay-middleware[crewai]"
             )
-        task = Task(description=self._build_task_description(slice), agent=self.agent)
+        task_obj: object = Task(description=self._build_task_description(slice_), agent=self.agent)
+        task = _make_crewai_task(task_obj)
         start = time.monotonic()
-        response = await asyncio.to_thread(task.execute_sync)
+        response_raw: object = await asyncio.to_thread(task.execute_sync)
         latency_ms = int((time.monotonic() - start) * 1000)
-        text = str(response) if not isinstance(response, str) else response
+        text = str(response_raw) if not isinstance(response_raw, str) else response_raw
         return AgentOutput(
             text=text, structured={}, tool_calls=[],
-            token_count=slice.token_count + len(text) // 4,
+            token_count=slice_.token_count + len(text) // 3,
             latency_ms=latency_ms, adapter=self.adapter_name,
         )
