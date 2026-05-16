@@ -5,13 +5,12 @@ Does NOT: own EmbeddingProvider protocol or count tokens precisely.
 """
 
 import json
-from typing import Any
 from math import sqrt
 
 from relay.envelope import estimate_tokens
 from relay.slicer.manifest import AgentManifest
 from relay.slicer.providers import EmbeddingProvider
-from relay.types import ErrorCode, Failure, Result, Success
+from relay.types import ErrorCode, Failure, JSONDict, Result, Success
 
 
 def _cosine_similarity(a: list[float], b: list[float]) -> float:
@@ -40,8 +39,8 @@ class RecencySlicePacker:
     """
 
     def pack(
-        self, payload: dict[str, Any], manifest: AgentManifest
-    ) -> Result[dict[str, Any]]:
+        self, payload: JSONDict, manifest: AgentManifest
+    ) -> Result[JSONDict]:
         """Slice the payload to retain only the most recent sections by recency.
 
         Approximates token count using character count divided by 3.
@@ -49,20 +48,19 @@ class RecencySlicePacker:
         Returns:
             Success with selected subset of payload sections.
         """
-        sorted_keys = sorted(
-            payload.keys(),
-            key=lambda k: (
-                int(k.split("_")[-1]) if "_" in k and k.split("_")[-1].isdigit() else 0
-            ),
-            reverse=True,
-        )
+        def _recency_sort_key(k: str) -> tuple[int, int, str]:
+            if "_" in k and k.split("_")[-1].isdigit():
+                return (0, int(k.split("_")[-1]), k)
+            return (1, 0, k)
 
-        result: dict[str, Any] = {}
+        sorted_keys = sorted(payload.keys(), key=_recency_sort_key, reverse=True)
+
+        result: JSONDict = {}
         used_tokens = 0
 
         for key in sorted_keys:
-            section_text = payload[key]
-            section_tokens = estimate_tokens({key: section_text})
+            section_text: object = payload[key]
+            section_tokens = estimate_tokens(dict[str, object]({key: section_text}))
 
             if manifest.max_tokens is not None and used_tokens + section_tokens > manifest.max_tokens:
                 break
@@ -80,8 +78,8 @@ class StructuralSlicePacker:
     """
 
     def pack(
-        self, payload: dict[str, Any], manifest: AgentManifest
-    ) -> Result[dict[str, Any]]:
+        self, payload: JSONDict, manifest: AgentManifest
+    ) -> Result[JSONDict]:
         """Pack context based on manifest reads.
 
         Returns:
@@ -93,7 +91,7 @@ class StructuralSlicePacker:
                 reason=f"Manifest declares read for sections {missing} but they do not exist in payload",
                 code=ErrorCode.MISSING_SECTIONS,
             )
-        return Success({key: payload[key] for key in sorted(manifest.reads)})
+        return Success(dict[str, object]({key: payload[key] for key in sorted(manifest.reads)}))
 
 
 class RelevanceSlicePacker:
@@ -104,11 +102,16 @@ class RelevanceSlicePacker:
     """
 
     def __init__(self, provider: EmbeddingProvider):
+        if not isinstance(provider, EmbeddingProvider):
+            raise TypeError(
+                f"Expected an EmbeddingProvider, got {type(provider).__name__}. "
+                "The provider must satisfy the EmbeddingProvider protocol."
+            )
         self.provider = provider
 
     def pack(
-        self, payload: dict[str, Any], manifest: AgentManifest
-    ) -> Result[dict[str, Any]]:
+        self, payload: JSONDict, manifest: AgentManifest
+    ) -> Result[JSONDict]:
         """Pack context based on relevance scores.
 
         Approximates token count using character count divided by 3.
@@ -117,25 +120,27 @@ class RelevanceSlicePacker:
             Success with selected subset of payload sections.
         """
         if not payload:
-            return Success({})
+            return Success(JSONDict())
 
         query_embedding = self.provider.embed(manifest.task_description)
-        section_embeddings = {
+        section_embeddings: dict[str, list[float]] = {
             key: self.provider.embed(
                 json.dumps(text) if not isinstance(text, str) else text
             )
             for key, text in payload.items()
         }
 
-        similarities = []
+        similarities: list[tuple[str, float, int]] = []
         for key, embedding in section_embeddings.items():
             sim = _cosine_similarity(query_embedding, embedding)
-            section_tokens = estimate_tokens({key: payload[key]})
+            section_tokens = estimate_tokens(dict[str, object]({key: payload[key]}))
             similarities.append((key, sim, section_tokens))
 
-        similarities.sort(key=lambda x: x[1], reverse=True)
+        def _sort_key(x: tuple[str, float, int]) -> float:
+            return x[1]
+        similarities.sort(key=_sort_key, reverse=True)
 
-        result: dict[str, Any] = {}
+        result: JSONDict = {}
         used_tokens = 0
 
         for key, _, section_tokens in similarities:
