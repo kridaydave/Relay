@@ -380,8 +380,8 @@ class SnapshotStore:
                 return fs_result
             forks_succeeded = fs_result.value
 
-        return Success(
-            ContextEnvelope(
+        try:
+            envelope = ContextEnvelope(
                 relay_version=relay_version,
                 pipeline_id=pipeline_id,
                 step=step,
@@ -396,4 +396,6 @@ class SnapshotStore:
                 fork_count=fork_count,
                 forks_succeeded=forks_succeeded,
             )
-        )
+        except ValueError as e:
+            return Failure(reason=str(e), code=ErrorCode.INVALID_SNAPSHOT)
+        return Success(envelope)
