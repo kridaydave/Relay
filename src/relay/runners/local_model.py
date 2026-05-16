@@ -37,9 +37,21 @@ class LocalModelAdapter:
     adapter_name: str = "local_model"
     timeout_seconds: float = 60.0
 
-    def __post_init__(self) -> None:
-        base_url = self.base_url.rstrip("/")
-        object.__setattr__(self, "base_url", base_url)
+    @classmethod
+    def create(
+        cls,
+        base_url: str,
+        model: str,
+        adapter_name: str = "local_model",
+        timeout_seconds: float = 60.0,
+    ) -> "LocalModelAdapter":
+        """Factory method — strips trailing slash from base_url before construction."""
+        return cls(
+            base_url=base_url.rstrip("/"),
+            model=model,
+            adapter_name=adapter_name,
+            timeout_seconds=timeout_seconds,
+        )
 
     def _build_payload(self, slice: ContextSlice) -> dict[str, Any]:
         return {

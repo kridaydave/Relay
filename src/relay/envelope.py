@@ -37,10 +37,6 @@ _MAX_STEP = 10**6  # 1 million steps should be plenty
 
 def validate_pipeline_id(pipeline_id: str) -> Result[str]:
     """Validate pipeline_id format."""
-    if not pipeline_id:
-        return Failure(
-            reason="pipeline_id cannot be empty", code=ErrorCode.INVALID_PIPELINE_ID
-        )
     if not PIPELINE_ID_PATTERN.match(pipeline_id):
         return Failure(
             reason="Invalid pipeline_id: must match pattern ^[a-zA-Z0-9_-]{1,128}$",

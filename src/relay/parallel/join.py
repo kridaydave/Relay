@@ -5,7 +5,10 @@ Does NOT: execute adapters, commit to pipeline state, or manage locks.
 """
 
 import asyncio
+import logging
 from typing import TYPE_CHECKING, Any, Coroutine
+
+logger = logging.getLogger(__name__)
 
 from relay.envelope import ContextEnvelope
 from relay.parallel.types import ForkResult, ForkSpec, JoinStrategy, agent_output_to_payload
@@ -113,7 +116,8 @@ async def _apply_first_wins(
         for task in done:
             try:
                 result: ForkResult = task.result()
-            except Exception:
+            except Exception as exc:
+                logger.warning("Fork task %s raised unexpected exception: %s: %s", task.get_name(), type(exc).__name__, exc)
                 continue
             if result.success and result.agent_output is not None:
                 winner_payload = agent_output_to_payload(result.agent_output)

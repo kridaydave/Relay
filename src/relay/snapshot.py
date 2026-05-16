@@ -5,12 +5,15 @@ Does NOT: execute agents or manage pipeline state.
 """
 
 import json
+import logging
 import os
 import re
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from relay.envelope import PIPELINE_ID_PATTERN, ContextEnvelope, validate_pipeline_id
 from relay.types import ErrorCode, Failure, Result, Success
@@ -94,7 +97,7 @@ class SnapshotStore:
                 try:
                     temp_path.unlink(missing_ok=True)
                 except OSError:
-                    pass
+                    logger.warning("Failed to clean up temp file: %s", temp_path)
             return Failure(reason=str(e), code=ErrorCode.SNAPSHOT_SAVE_FAILED)
 
         index_result = self._add_to_index(pipeline_id, snapshot_id)
@@ -102,7 +105,7 @@ class SnapshotStore:
             try:
                 snapshot_path.unlink(missing_ok=True)
             except OSError:
-                pass
+                logger.warning("Failed to clean up snapshot file: %s", snapshot_path)
             return index_result
 
         return Success(snapshot_id)
@@ -195,11 +198,6 @@ class SnapshotStore:
             else:
                 index_data = {"snapshots": []}
 
-            if not isinstance(snapshot_id, str):
-                return Failure(
-                    reason=f"Invalid snapshot_id type: {type(snapshot_id).__name__}",
-                    code=ErrorCode.CORRUPTED_INDEX,
-                )
             if snapshot_id not in index_data["snapshots"]:
                 index_data["snapshots"].append(snapshot_id)
                 try:
@@ -219,7 +217,7 @@ class SnapshotStore:
                 try:
                     temp_index_path.unlink(missing_ok=True)
                 except OSError:
-                    pass
+                    logger.warning("Failed to clean up temp index: %s", temp_index_path)
         except (OSError, TypeError) as e:
             return Failure(
                 reason=f"Failed to update index: {e}",
@@ -280,7 +278,7 @@ class SnapshotStore:
     def _require_str(self, data: dict[str, Any], key: str) -> "Result[str]":
         """Validate and return a string field from data dict."""
         value = data.get(key)
-        if value is None or not isinstance(value, str):
+        if not isinstance(value, str):
             return Failure(
                 reason=f"Missing or invalid {key}", code=ErrorCode.INVALID_SNAPSHOT
             )
@@ -289,7 +287,7 @@ class SnapshotStore:
     def _require_int(self, data: dict[str, Any], key: str) -> "Result[int]":
         """Validate and return an int field from data dict."""
         value = data.get(key)
-        if value is None or not isinstance(value, int):
+        if not isinstance(value, int):
             return Failure(
                 reason=f"Missing or invalid {key}", code=ErrorCode.INVALID_SNAPSHOT
             )
@@ -298,7 +296,7 @@ class SnapshotStore:
     def _require_dict(self, data: dict[str, Any], key: str) -> "Result[dict[str, Any]]":
         """Validate and return a dict field from data dict."""
         value = data.get(key)
-        if value is None or not isinstance(value, dict):
+        if not isinstance(value, dict):
             return Failure(
                 reason=f"Missing or invalid {key}", code=ErrorCode.INVALID_SNAPSHOT
             )

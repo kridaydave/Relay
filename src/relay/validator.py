@@ -274,6 +274,7 @@ class HandoffValidator:
                             and value.lower() not in self.STOP_WORDS
                         ):
                             entities.add(value.lower())
+                            continue
                     stack.append((value, depth + 1, in_entity_context))
             elif isinstance(obj, list):
                 for item in obj:
@@ -284,6 +285,7 @@ class HandoffValidator:
                             and item.lower() not in self.STOP_WORDS
                         ):
                             entities.add(item.lower())
+                            continue
                     stack.append((item, depth + 1, is_entity_context))
 
         return frozenset(entities)
