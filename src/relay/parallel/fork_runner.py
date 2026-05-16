@@ -7,6 +7,7 @@ Each call is a pure coroutine — the same pre_fork_envelope can be passed to
 N concurrent _run_single_fork calls with no contention.
 """
 
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 from relay.envelope import ContextEnvelope
@@ -73,8 +74,14 @@ async def _run_single_fork(
         )
 
     fork_payload = _agent_output_to_payload(agent_output)
+
+    scope_keys = spec.manifest.reads | spec.manifest.writes
+    filtered_payload = {
+        k: v for k, v in pre_fork_envelope.payload.items() if k in scope_keys
+    }
+    scoped_envelope = replace(pre_fork_envelope, payload=filtered_payload)
     validation_result = validator.validate_handoff_payload(
-        previous_envelope=pre_fork_envelope,
+        previous_envelope=scoped_envelope,
         new_payload=fork_payload,
     )
     if isinstance(validation_result, Failure):
