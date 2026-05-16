@@ -37,6 +37,11 @@ class LocalModelAdapter:
     adapter_name: str = "local_model"
     timeout_seconds: float = 60.0
 
+    def __post_init__(self) -> None:
+        stripped = self.base_url.rstrip("/")
+        if stripped != self.base_url:
+            object.__setattr__(self, "base_url", stripped)
+
     @classmethod
     def create(
         cls,

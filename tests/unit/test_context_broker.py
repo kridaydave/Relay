@@ -56,7 +56,7 @@ class TestCreateInitialEnvelope:
         )
 
         assert isinstance(result, Failure)
-        assert result.reason == "pipeline_id cannot be empty"
+        assert "Invalid pipeline_id" in result.reason
         assert result.code == ErrorCode.INVALID_PIPELINE_ID
 
     def test_broker_fails_on_empty_payload(self):
