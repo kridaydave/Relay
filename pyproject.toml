@@ -28,7 +28,7 @@ dependencies = []
 "Bug Tracker" = "https://github.com/kridaydave/relay/issues"
 
 [project.optional-dependencies]
-dev = ["pytest", "mypy"]
+dev = ["pytest", "pytest-asyncio", "anyio", "mypy"]
 tiktoken = ["tiktoken"]
 langchain = ["langchain-core>=0.1"]
 crewai    = ["crewai>=0.30"]
@@ -51,6 +51,7 @@ python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = "-v --tb=short"
+asyncio_mode = "auto"
 
 [tool.coverage.run]
 source = ["."]
