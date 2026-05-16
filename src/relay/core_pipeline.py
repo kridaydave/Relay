@@ -507,36 +507,62 @@ class CoreRelayPipeline:
         if isinstance(merged_result, Failure):
             return merged_result
 
-        # Budget check is intentionally omitted here — per-fork budget checks
-        # (via _check_budget at line 475) already enforce per-agent limits, and
-        # the merged payload cannot be reliably estimated before fork execution.
-        # The next sequential step's budget check catches pipeline-level overruns.
-        # manifest=None: the combined manifest hash is applied below instead of here.
-        # Individual fork manifests are encoded into combined_hash (line 518), which
-        # is sufficient for integrity verification. Per-fork agent IDs are not tracked
-        # individually in the envelope body; external logging is needed for that granularity.
-        commit_result = self.execute_step_with_manifest(merged_result.value, manifest=None)
-        if not isinstance(commit_result, Success):
-            return commit_result
-
         combined_hash = _combine_manifest_hashes([s.manifest for s in fork_specs])
-        envelope_with_hash = commit_result.value.with_manifest_hash(combined_hash)
-        signed_envelope = envelope_with_hash.with_signature(
-            compute_signature(envelope_with_hash, self._context_broker.signing_secret)
-        )
 
-        envelope_with_meta = signed_envelope.with_fork_metadata(
-            fork_id=parallel_id,
-            join_strategy=join_strategy.value,
-            fork_count=len(fork_specs),
-            forks_succeeded=forks_succeeded,
-        )
-        signed = envelope_with_meta.with_signature(
-            compute_signature(envelope_with_meta, self._context_broker.signing_secret)
-        )
-        with self._state.transaction():
-            self._state.set_current(signed)
-        return Success(signed)
+        # Commit merged payload with fork metadata in a single transaction.
+        # This avoids the race condition where another thread calling
+        # get_current_envelope() gets a stale envelope without fork metadata
+        # between the step commit and the metadata update.
+        with self._state.transaction() as current_envelope:
+            if current_envelope is None:
+                return Failure(
+                    reason="execute_parallel_step requires at least one prior sequential step",
+                    code=ErrorCode.INVALID_STATE,
+                )
+
+            result = self._context_broker.create_next_envelope(
+                previous_envelope=current_envelope,
+                agent_output=merged_result.value,
+                manifest_hash=combined_hash,
+            )
+            if isinstance(result, Failure):
+                return result
+            new_envelope = result.value
+
+            envelope_with_meta = new_envelope.with_fork_metadata(
+                fork_id=parallel_id,
+                join_strategy=join_strategy.value,
+                fork_count=len(fork_specs),
+                forks_succeeded=forks_succeeded,
+            )
+            signed = envelope_with_meta.with_signature(
+                compute_signature(envelope_with_meta, self._context_broker.signing_secret)
+            )
+
+            validation_result = self._handoff_validator.validate_handoff(
+                previous_envelope=current_envelope, current_envelope=signed
+            )
+            if isinstance(validation_result, Failure):
+                return validation_result
+
+            if self._handoff_validator.should_rollback(validation_result.value):
+                save_result = self._snapshot_store.save_snapshot(current_envelope)
+                if isinstance(save_result, Failure):
+                    return save_result
+                self._state.register_snapshot(current_envelope.step, save_result.value)
+                self._state.push_current_to_history()
+                return RollbackSuccess(
+                    value=current_envelope,
+                    reason=validation_result.value.contradiction_details or "Contradiction detected",
+                )
+
+            save_result = self._snapshot_store.save_snapshot(signed)
+            if isinstance(save_result, Failure):
+                return save_result
+            self._state.register_snapshot(signed.step, save_result.value)
+            self._state.archive_and_set(signed)
+
+            return Success(signed)
 
     def _build_context_slice(
         self,
