@@ -10,19 +10,19 @@ from relay.slicer import (
     StructuralSlicePacker,
 )
 from relay.slicer.packers import _cosine_similarity
-from relay.types import Failure, Success, ErrorCode
+from relay.types import Failure, Success, ErrorCode, JSONDict
 from tests.conftest import FixedEmbeddingProvider
 
 
 class TestAgentManifest:
-    def test_compute_hash_deterministic(self) -> None:
+    def test_compute_hash_is_deterministic_for_reconstructed_manifest(self) -> None:
         """Hash must be deterministic across calls and object reconstruction."""
         m1 = AgentManifest("a1", "test task", frozenset({"x", "y"}), frozenset({"z"}), 1000)
         m2 = AgentManifest("a1", "test task", frozenset({"y", "x"}), frozenset({"z"}), 1000)
         assert m1.compute_hash() == m2.compute_hash()
         assert m1.compute_hash() == m1.compute_hash()
 
-    def test_manifest_is_hashable(self) -> None:
+    def test_manifest_is_hashable_for_set_operations(self) -> None:
         """Frozen dataclass with frozenset fields must be hashable."""
         m = AgentManifest("a1", "test task", frozenset({"x"}), frozenset({"y"}), 1000)
         d = {m: "value"}
@@ -39,7 +39,7 @@ class TestRecencySlicePacker:
     def test_empty_payload_returns_empty(self) -> None:
         """Empty payload returns Success with empty dict."""
         packer = RecencySlicePacker()
-        payload: dict[str, object] = {}
+        payload: JSONDict = {}
         manifest = AgentManifest("a1", "test task", frozenset(), frozenset(), 100)
         result = packer.pack(payload, manifest)
         assert isinstance(result, Success)
@@ -48,16 +48,16 @@ class TestRecencySlicePacker:
     def test_single_section_exceeds_max_tokens_returns_empty(self) -> None:
         """Single section exceeding max_tokens returns empty slice, not truncated."""
         packer = RecencySlicePacker()
-        payload: dict[str, object] = {"section_1": "x" * 10000}
+        payload: JSONDict = {"section_1": "x" * 10000}
         manifest = AgentManifest("a1", "test task", frozenset(), frozenset(), 100)
         result = packer.pack(payload, manifest)
         assert isinstance(result, Success)
         assert result.value == {}
 
-    def test_selects_sections_until_max_tokens(self) -> None:
+    def test_selects_sections_for_payload_until_max_tokens_limit(self) -> None:
         """Selects sections in recency order until max_tokens consumed."""
         packer = RecencySlicePacker()
-        payload: dict[str, object] = {
+        payload: JSONDict = {
             "section_1": "a",
             "section_2": "b",
             "section_3": "c",
@@ -67,10 +67,10 @@ class TestRecencySlicePacker:
         assert isinstance(result, Success)
         assert "section_1" in result.value
 
-    def test_selects_most_recent_under_budget_pressure(self) -> None:
+    def test_selects_most_recent_under_budget_pressure_when_needed(self) -> None:
         """RecencySlicePacker should select highest-numbered sections when budget exceeded."""
         packer = RecencySlicePacker()
-        payload: dict[str, object] = {
+        payload: JSONDict = {
             "section_1": "x" * 100,   # ~33 tokens
             "section_2": "x" * 100,   # ~33 tokens
             "section_3": "x" * 100,   # ~33 tokens
@@ -84,11 +84,11 @@ class TestRecencySlicePacker:
         assert "section_5" in result.value
         assert "section_1" not in result.value
 
-    def test_recency_packer_sorting_is_deterministic_without_suffixes(self) -> None:
+    def test_recency_packer_sorting_is_deterministic_for_sections_without_suffixes(self) -> None:
         """Sections without suffixes should sort by key name as tie-breaker."""
         packer = RecencySlicePacker()
         # Sections without suffixes should sort by key name as tie-breaker
-        payload = {"b": "val_b", "a": "val_a", "c": "val_c"}
+        payload: JSONDict = {"b": "val_b", "a": "val_a", "c": "val_c"}
         manifest = AgentManifest("test", "task", frozenset(), frozenset(), 1000)
 
         result = packer.pack(payload, manifest)
@@ -100,7 +100,7 @@ class TestRecencySlicePacker:
         """Sections with same numeric suffixes should sort by key name as tie-breaker."""
         packer = RecencySlicePacker()
         # Same suffix '_1', should sort by key name
-        payload = {"b_1": "val_b", "a_1": "val_a", "c_1": "val_c"}
+        payload: JSONDict = {"b_1": "val_b", "a_1": "val_a", "c_1": "val_c"}
         manifest = AgentManifest("test", "task", frozenset(), frozenset(), 1000)
 
         result = packer.pack(payload, manifest)
@@ -110,10 +110,10 @@ class TestRecencySlicePacker:
 
 
 class TestStructuralSlicePacker:
-    def test_write_to_permitted_section_passes(self) -> None:
+    def test_write_to_permitted_section_validates_successfully(self) -> None:
         """Selecting permitted sections passes without error."""
         packer = StructuralSlicePacker()
-        payload: dict[str, object] = {"section_a": "content", "section_b": "content2"}
+        payload: JSONDict = {"section_a": "content", "section_b": "content2"}
         manifest = AgentManifest("a1", "test task", frozenset(["section_a", "section_b"]), frozenset(), 1000)
         result = packer.pack(payload, manifest)
         assert isinstance(result, Success)
@@ -122,7 +122,7 @@ class TestStructuralSlicePacker:
     def test_missing_section_returns_failure(self) -> None:
         """Missing declared read section must return Failure."""
         packer = StructuralSlicePacker()
-        payload: dict[str, object] = {"section_a": "content"}
+        payload: JSONDict = {"section_a": "content"}
         manifest = AgentManifest("a1", "test task", frozenset(["section_a", "section_b"]), frozenset(), 1000)
         result = packer.pack(payload, manifest)
         assert isinstance(result, Failure)
@@ -131,17 +131,17 @@ class TestStructuralSlicePacker:
 
 
 class TestRelevanceSlicePacker:
-    def test_requires_embedding_provider(self) -> None:
+    def test_semantic_slicer_fails_without_embedding_provider(self) -> None:
         """Must have embedding provider injected."""
         provider = FixedEmbeddingProvider([1.0, 0.0])
         packer = RelevanceSlicePacker(provider)
         assert isinstance(packer, RelevanceSlicePacker)
 
-    def test_ranks_by_similarity(self) -> None:
+    def test_semantic_slicer_ranks_sections_on_similarity(self) -> None:
         """Ranks sections by cosine similarity to agent_id."""
         provider = FixedEmbeddingProvider([1.0, 0.0])
         packer = RelevanceSlicePacker(provider)
-        payload: dict[str, object] = {"section_1": "content1", "section_2": "content2"}
+        payload: JSONDict = {"section_1": "content1", "section_2": "content2"}
         manifest = AgentManifest("a1", "test task", frozenset(), frozenset(), 1000)
         result = packer.pack(payload, manifest)
         assert isinstance(result, Success)
@@ -152,16 +152,16 @@ class TestRelevanceSlicePacker:
         provider = FixedEmbeddingProvider([1.0, 0.0])
         packer = RelevanceSlicePacker(provider)
         manifest = AgentManifest("a1", "test task", frozenset(), frozenset(), 1000)
-        result = packer.pack({}, manifest)
+        payload: JSONDict = {}
+        result = packer.pack(payload, manifest)
         assert isinstance(result, Success)
         assert result.value == {}
 
-    def test_selects_within_max_tokens_boundary(self) -> None:
-        """RelevanceSlicePacker stops when first-ranked section exceeds remaining budget."""
+    def test_semantic_slicer_selects_sections_for_token_boundary(self) -> None:
         """RelevanceSlicePacker stops when first-ranked section exceeds remaining budget."""
         provider = FixedEmbeddingProvider([1.0, 0.0])
         packer = RelevanceSlicePacker(provider)
-        payload: dict[str, object] = {"big_section": "x" * 9000, "small_section": "a"}
+        payload: JSONDict = {"big_section": "x" * 9000, "small_section": "a"}
         manifest = AgentManifest("a1", "test task", frozenset(), frozenset(), 100)
         result = packer.pack(payload, manifest)
         assert isinstance(result, Success)
@@ -192,17 +192,17 @@ class TestCosineSimilarity:
 
 
 class TestRecencySlicePackerEdgeCases:
-    def test_keys_without_numeric_suffix_default_to_zero(self) -> None:
+    def test_keys_without_numeric_suffix_sets_zero_index(self) -> None:
         packer = RecencySlicePacker()
-        payload: dict[str, object] = {"abc": "content", "section_1": "data"}
+        payload: JSONDict = {"abc": "content", "section_1": "data"}
         manifest = AgentManifest("a1", "task", frozenset(), frozenset(), 1000)
         result = packer.pack(payload, manifest)
         assert isinstance(result, Success)
         assert "section_1" in result.value
 
-    def test_all_sections_over_budget(self) -> None:
+    def test_all_sections_over_budget_returns_empty_slice(self) -> None:
         packer = RecencySlicePacker()
-        payload: dict[str, object] = {"section_1": "x" * 5000, "section_2": "y" * 5000}
+        payload: JSONDict = {"section_1": "x" * 5000, "section_2": "y" * 5000}
         manifest = AgentManifest("a1", "task", frozenset(), frozenset(), 10)
         result = packer.pack(payload, manifest)
         assert isinstance(result, Success)
@@ -212,7 +212,7 @@ class TestRecencySlicePackerEdgeCases:
 class TestStructuralSlicePackerEdgeCases:
     def test_empty_reads_returns_empty_dict(self) -> None:
         packer = StructuralSlicePacker()
-        payload: dict[str, object] = {"section_a": "content"}
+        payload: JSONDict = {"section_a": "content"}
         manifest = AgentManifest("a1", "task", frozenset(), frozenset(), 1000)
         result = packer.pack(payload, manifest)
         assert isinstance(result, Success)
