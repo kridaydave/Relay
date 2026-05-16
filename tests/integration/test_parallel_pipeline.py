@@ -19,6 +19,7 @@ from relay.slicer.manifest import AgentManifest
 from relay.types import ErrorCode, Failure, Success
 
 from tests.unit.test_parallel.conftest import FixedForkRunner
+from tests.conftest import FixedCounter
 
 
 class TestParallelPipeline:
@@ -174,6 +175,29 @@ class TestParallelPipeline:
         assert isinstance(text, str)
         assert text == "s3"
 
+    def test_parallel_step_fails_when_all_forks_fail(self, tmp_path: Path) -> None:
+        """Parallel step where all forks raise exceptions -> ALL_FORKS_FAILED."""
+        registry = AdapterRegistry()
+        registry.register("bad-agent-1", FixedForkRunner(fail=True))
+        registry.register("bad-agent-2", FixedForkRunner(fail=True))
+
+        pipeline = CoreRelayPipeline(
+            signing_secret="a" * 32, token_budget=8000,
+            storage_path=str(tmp_path), registry=registry,
+        )
+        pipeline.execute_step({"input": "data"})
+
+        result = asyncio.run(pipeline.execute_parallel_step(
+            fork_specs=[
+                ForkSpec("bad-agent-1", AgentManifest("bad-agent-1", "t", frozenset({"input"}), frozenset({"text"}), 4000)),
+                ForkSpec("bad-agent-2", AgentManifest("bad-agent-2", "t", frozenset({"input"}), frozenset({"text"}), 4000)),
+            ],
+            join_strategy=JoinStrategy.UNION,
+        ))
+
+        assert isinstance(result, Failure)
+        assert result.code == ErrorCode.ALL_FORKS_FAILED
+
     def test_parallel_step_with_no_registry_returns_failure(self, tmp_path: Path) -> None:
         """Parallel step without registry -> NO_REGISTRY Failure, state unchanged."""
         pipeline = CoreRelayPipeline(signing_secret="a" * 32, token_budget=8000, storage_path=str(tmp_path))
@@ -191,3 +215,89 @@ class TestParallelPipeline:
         result = asyncio.run(pipeline.execute_parallel_step(fork_specs=[], join_strategy=JoinStrategy.UNION))
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.INVALID_STATE
+
+    def test_parallel_step_fails_when_called_as_initial_step(self, tmp_path: Path) -> None:
+        """Parallel step cannot be the first step in a pipeline."""
+        registry = AdapterRegistry()
+        registry.register("agent-a", FixedForkRunner(output_text="result-a"))
+        pipeline = CoreRelayPipeline(
+            signing_secret="a" * 32, token_budget=8000,
+            storage_path=str(tmp_path), registry=registry,
+        )
+
+        manifest = AgentManifest("agent-a", "task", frozenset(), frozenset({"text"}), 4000)
+        result = asyncio.run(pipeline.execute_parallel_step(
+            fork_specs=[ForkSpec("agent-a", manifest)],
+            join_strategy=JoinStrategy.UNION,
+        ))
+
+        assert isinstance(result, Failure)
+        assert result.code == ErrorCode.INVALID_STATE
+        assert "requires at least one prior sequential step" in result.reason
+
+    def test_parallel_step_with_invalid_join_strategy_returns_failure(self, tmp_path: Path) -> None:
+        """Passing a non-existent JoinStrategy enum value returns INVALID_JOIN_STRATEGY."""
+        registry = AdapterRegistry()
+        registry.register("agent-a", FixedForkRunner(output_text="result-a"))
+        pipeline = CoreRelayPipeline(
+            signing_secret="a" * 32, token_budget=8000,
+            storage_path=str(tmp_path), registry=registry,
+        )
+        pipeline.execute_step({"input": "initial"})
+
+        manifest = AgentManifest("agent-a", "task", frozenset(), frozenset({"text"}), 4000)
+        # Type ignore because we are intentionally passing an invalid value to test runtime safety
+        result = asyncio.run(pipeline.execute_parallel_step(
+            fork_specs=[ForkSpec("agent-a", manifest)],
+            join_strategy="INVALID"  # type: ignore
+        ))
+
+        assert isinstance(result, Failure)
+        assert result.code == ErrorCode.INVALID_JOIN_STRATEGY
+
+    def test_parallel_step_fails_when_single_fork_fails_in_union(self, tmp_path: Path) -> None:
+        """UNION strategy fails if any single fork fails."""
+        registry = AdapterRegistry()
+        registry.register("good-agent", FixedForkRunner(output_text="ok"))
+        registry.register("bad-agent", FixedForkRunner(fail=True))
+
+        pipeline = CoreRelayPipeline(
+            signing_secret="a" * 32, token_budget=8000,
+            storage_path=str(tmp_path), registry=registry,
+        )
+        pipeline.execute_step({"input": "data"})
+
+        result = asyncio.run(pipeline.execute_parallel_step(
+            fork_specs=[
+                ForkSpec("good-agent", AgentManifest("good-agent", "t", frozenset(), frozenset({"text"}), 4000)),
+                ForkSpec("bad-agent", AgentManifest("bad-agent", "t", frozenset(), frozenset({"text"}), 4000)),
+            ],
+            join_strategy=JoinStrategy.UNION,
+        ))
+
+        assert isinstance(result, Failure)
+        assert result.code == ErrorCode.ALL_FORKS_FAILED
+        assert "UNION: 1 fork(s) failed" in result.reason
+
+    def test_parallel_step_fails_when_budget_exceeded(self, tmp_path: Path) -> None:
+        """Parallel step fails if any fork's manifest budget is exceeded."""
+        registry = AdapterRegistry()
+        registry.register("agent-a", FixedForkRunner(output_text="ok"))
+
+        pipeline = CoreRelayPipeline(
+            signing_secret="a" * 32, token_budget=8000,
+            storage_path=str(tmp_path), registry=registry,
+            token_counter=FixedCounter(value=100),
+        )
+        pipeline.execute_step({"input": "data"})
+
+        # Manifest with very small max_tokens
+        manifest = AgentManifest("agent-a", "task", frozenset(), frozenset({"text"}), max_tokens=1)
+        
+        result = asyncio.run(pipeline.execute_parallel_step(
+            fork_specs=[ForkSpec("agent-a", manifest)],
+            join_strategy=JoinStrategy.UNION,
+        ))
+
+        assert isinstance(result, Failure)
+        assert result.code == ErrorCode.TOKEN_BUDGET_EXCEEDED

@@ -11,8 +11,13 @@ from dataclasses import dataclass, field
 
 from relay.budget import HardCapEnforcer, TokenCounter
 from relay.context_broker import ContextBroker, create_context_broker
-from relay.envelope import compute_signature, ContextEnvelope, estimate_tokens, serialize_slice
-from relay.parallel import apply_join_strategy, ForkResult, ForkSpec, JoinStrategy
+from relay.envelope import (
+    ContextEnvelope,
+    compute_signature,
+    estimate_tokens,
+    serialize_slice,
+)
+from relay.parallel import ForkResult, ForkSpec, JoinStrategy, apply_join_strategy
 from relay.parallel.fork_runner import run_single_fork
 from relay.parallel.types import agent_output_to_payload
 from relay.pipeline_rollback import RollbackHandler
@@ -24,7 +29,6 @@ from relay.snapshot import SnapshotStore
 from relay.types import ErrorCode, Failure, JSONDict, Result, RollbackSuccess, Success
 from relay.validator import (
     HandoffValidator,
-    ValidationResult,
     validate_manifest_boundaries,
 )
 
@@ -32,6 +36,7 @@ from relay.validator import (
 def _combine_manifest_hashes(manifests: list[AgentManifest]) -> str:
     def _key(m: AgentManifest) -> str:
         return m.agent_id
+
     sorted_manifests = sorted(manifests, key=_key)
     hashes = [m.compute_hash() for m in sorted_manifests]
     combined = "|".join(hashes)
@@ -71,7 +76,7 @@ class CoreRelayPipeline:
         token_counter: TokenCounter | None = None,
         slice_packer: SlicePacker | None = None,
         registry: AdapterRegistry | None = None,
-    ) -> Result[CoreRelayPipeline]:
+    ) -> Result["CoreRelayPipeline"]:
         """Create a pipeline with Result-based error handling.
 
         Use this factory instead of direct construction to handle
@@ -82,14 +87,16 @@ class CoreRelayPipeline:
         )
         if isinstance(broker_result, Failure):
             return broker_result
-        return Success(cls(
-            signing_secret=signing_secret,
-            token_budget=token_budget,
-            storage_path=storage_path,
-            token_counter=token_counter,
-            slice_packer=slice_packer,
-            registry=registry,
-        ))
+        return Success(
+            cls(
+                signing_secret=signing_secret,
+                token_budget=token_budget,
+                storage_path=storage_path,
+                token_counter=token_counter,
+                slice_packer=slice_packer,
+                registry=registry,
+            )
+        )
 
     def __post_init__(self) -> None:
         self._pipeline_id = uuid.uuid4().hex
@@ -107,6 +114,24 @@ class CoreRelayPipeline:
             self._enforcer = HardCapEnforcer(self.token_counter)
         else:
             self._enforcer = None
+
+    @property
+    def history(self) -> list[ContextEnvelope]:
+        """Return a copy of the pipeline's envelope history."""
+        with self._state.transaction():
+            return self._state.get_previous_envelopes()
+
+    @property
+    def snapshot_index(self) -> dict[int, str]:
+        """Return a copy of the snapshot index mapping step numbers to IDs."""
+        with self._state.transaction():
+            return self._state.snapshot_ids
+
+    @property
+    def current_envelope(self) -> ContextEnvelope | None:
+        """Return the current envelope, or None if the pipeline is new."""
+        with self._state.transaction():
+            return self._state.current()
 
     def close(self) -> None:
         """Release pipeline resources.
@@ -157,7 +182,9 @@ class CoreRelayPipeline:
             return budget_result
 
         result = self._context_broker.create_initial_envelope(
-            pipeline_id=self._pipeline_id, initial_payload=agent_output, manifest_hash=manifest.compute_hash() if manifest else ""
+            pipeline_id=self._pipeline_id,
+            initial_payload=agent_output,
+            manifest_hash=manifest.compute_hash() if manifest else "",
         )
         if isinstance(result, Failure):
             return result
@@ -191,7 +218,9 @@ class CoreRelayPipeline:
             return budget_result
 
         result = self._context_broker.create_next_envelope(
-            previous_envelope=current_envelope, agent_output=agent_output, manifest_hash=manifest.compute_hash() if manifest else ""
+            previous_envelope=current_envelope,
+            agent_output=agent_output,
+            manifest_hash=manifest.compute_hash() if manifest else "",
         )
         if isinstance(result, Failure):
             return result
@@ -225,13 +254,21 @@ class CoreRelayPipeline:
                     return slice_result
                 projected = slice_result.value
             else:
-                projected = serialize_slice(agent_output) if agent_output is not None else serialize_slice(dict[str, object]({s: "<slice>" for s in manifest.writes}))
+                projected = (
+                    serialize_slice(agent_output)
+                    if agent_output is not None
+                    else serialize_slice(
+                        dict[str, object]({s: "<slice>" for s in manifest.writes})
+                    )
+                )
             budget_used = (
                 current_envelope.token_budget_used
                 if current_envelope is not None
                 else 0
             )
-            enforcer_result = self._enforcer.check(budget_used, self.token_budget, projected)
+            enforcer_result = self._enforcer.check(
+                budget_used, self.token_budget, projected
+            )
             if isinstance(enforcer_result, Failure):
                 return enforcer_result
 
@@ -555,7 +592,9 @@ class CoreRelayPipeline:
                 forks_succeeded=forks_succeeded,
             )
             signed = envelope_with_meta.with_signature(
-                compute_signature(envelope_with_meta, self._context_broker.signing_secret)
+                compute_signature(
+                    envelope_with_meta, self._context_broker.signing_secret
+                )
             )
 
             validation_result = self._handoff_validator.validate_handoff(
@@ -572,7 +611,8 @@ class CoreRelayPipeline:
                 self._state.push_current_to_history()
                 return RollbackSuccess(
                     value=current_envelope,
-                    reason=validation_result.value.contradiction_details or "Contradiction detected",
+                    reason=validation_result.value.contradiction_details
+                    or "Contradiction detected",
                 )
 
             save_result = self._snapshot_store.save_snapshot(signed)

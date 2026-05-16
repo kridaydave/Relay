@@ -395,11 +395,9 @@ class TestConcurrentPipeline:
             assert len(results) > 0, "At least one rollback attempt should have completed"
             assert all(isinstance(r, (Failure, Success, RollbackSuccess)) for r in results)
 
-            # Accessing private members for invariant checking is sometimes necessary in unit tests.
-            pipeline_internal = cast(Any, pipeline)
-            final_envelope = pipeline_internal._state._current_envelope
-            previous_envelopes = pipeline_internal._state._previous_envelopes
-            snapshot_ids = pipeline_internal._state._snapshot_ids
+            final_envelope = pipeline.current_envelope
+            previous_envelopes = pipeline.history
+            snapshot_ids = pipeline.snapshot_index
 
             if final_envelope is not None:
                 current_step = final_envelope.step
@@ -697,9 +695,64 @@ class TestPipelineApplyManifest:
 
 class TestPipelineRollbackEdgeCases:
     def test_rollback_fails_when_no_history(self, pipeline: CoreRelayPipeline) -> None:
+        """Rolling back an initial pipeline fails with NO_ROLLBACK_AVAILABLE."""
         result = pipeline.rollback()
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.NO_ROLLBACK_AVAILABLE
+
+    def test_do_rollback_fails_on_invariant_violation_when_state_is_corrupt(self, pipeline: CoreRelayPipeline) -> None:
+        """If has_history() is True but peek_last() is None, _do_rollback fails with INVALID_STATE."""
+        # Manually corrupt the state by having history but no last envelope
+        # We need to mock peek_last to return None while has_history returns True
+        with patch.object(pipeline._state, "has_history", return_value=True), \
+             patch.object(pipeline._state, "peek_last", return_value=None):
+            # We must also mock transaction to not actually do anything
+            from contextlib import contextmanager
+            @contextmanager
+            def mock_transaction() -> Generator[ContextEnvelope | None, None, None]:
+                yield None
+            
+            with patch.object(pipeline._state, "transaction", side_effect=mock_transaction):
+                result = pipeline.rollback()
+                assert isinstance(result, Failure)
+                assert result.code == ErrorCode.INVALID_STATE
+
+
+class TestPipelineFinalizeStepErrors:
+    def test_finalize_step_fails_when_snapshot_save_fails(self, pipeline: CoreRelayPipeline) -> None:
+        """If SnapshotStore fails to save, _finalize_step returns the failure."""
+        env1 = create_mock_envelope(1, pipeline._pipeline_id, {"x": 1})
+        env2 = create_mock_envelope(2, pipeline._pipeline_id, {"x": 2})
+        
+        with patch.object(pipeline._snapshot_store, "save_snapshot", return_value=Failure(reason="disk full", code=ErrorCode.SNAPSHOT_SAVE_FAILED)):
+            # Use transaction to hold the lock
+            with pipeline._state.transaction():
+                result = pipeline._finalize_step(env1, env2)
+                assert isinstance(result, Failure)
+                assert result.code == ErrorCode.SNAPSHOT_SAVE_FAILED
+
+
+class TestPipelineBudgetEnforcementErrors:
+    def test_check_budget_fails_when_slice_packer_fails(self, pipeline: CoreRelayPipeline) -> None:
+        """If SlicePacker fails during budget check, the failure propagates."""
+        from relay.slicer import SlicePacker
+        from relay.budget import HardCapEnforcer, TokenCounter
+
+        class FailingPacker(SlicePacker):
+            def pack(self, payload: JSONDict, manifest: AgentManifest) -> Result[JSONDict]:
+                return Failure(reason="packer fail", code=ErrorCode.INVALID_STATE)
+
+        counter = MagicMock(spec=TokenCounter)
+        pipeline._enforcer = HardCapEnforcer(counter)
+        pipeline.slice_packer = FailingPacker()
+
+        manifest = AgentManifest("a1", "t", frozenset({"x"}), frozenset({"y"}), 100)
+        env = create_mock_envelope(1, pipeline._pipeline_id, {"x": 1})
+
+        with pipeline._state.transaction():
+            result = pipeline._check_budget(manifest, env)
+            assert isinstance(result, Failure)
+            assert result.reason == "packer fail"
 
 
 class TestPipelineBuildContextSlice:

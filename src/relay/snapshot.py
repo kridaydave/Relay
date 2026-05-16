@@ -212,33 +212,43 @@ class SnapshotStore:
                                 snapshots_list.append(s)
                 else:
                     snapshots_list = []
-
-            if snapshot_id not in snapshots_list:
-                snapshots_list.append(snapshot_id)
-                try:
-                    snapshots_list.sort(key=_extract_step_from_snapshot_id)
-                except InvalidSnapshotIdError as e:
-                    return Failure(
-                        reason=f"Corrupted index entry: {e}",
-                        code=ErrorCode.CORRUPTED_INDEX,
-                    )
-            index_data["snapshots"] = snapshots_list
-
-            temp_index_path = index_path.parent / "index.tmp"
-            try:
-                with open(temp_index_path, "w") as f:
-                    json.dump(index_data, f, indent=2)
-                os.replace(temp_index_path, index_path)
-            finally:
-                try:
-                    temp_index_path.unlink(missing_ok=True)
-                except OSError:
-                    logger.warning("Failed to clean up temp index: %s", temp_index_path)
+        except json.JSONDecodeError as e:
+            return Failure(
+                reason=f"Corrupted index JSON: {e}",
+                code=ErrorCode.CORRUPTED_INDEX,
+            )
         except (OSError, TypeError) as e:
             return Failure(
                 reason=f"Failed to update index: {e}",
                 code=ErrorCode.INDEX_UPDATE_FAILED,
             )
+
+        if snapshot_id not in snapshots_list:
+            snapshots_list.append(snapshot_id)
+            try:
+                snapshots_list.sort(key=_extract_step_from_snapshot_id)
+            except InvalidSnapshotIdError as e:
+                return Failure(
+                    reason=f"Corrupted index entry: {e}",
+                    code=ErrorCode.CORRUPTED_INDEX,
+                )
+        index_data["snapshots"] = snapshots_list
+
+        temp_index_path = index_path.parent / "index.tmp"
+        try:
+            with open(temp_index_path, "w") as f:
+                json.dump(index_data, f, indent=2)
+            os.replace(temp_index_path, index_path)
+        except (OSError, TypeError) as e:
+            return Failure(
+                reason=f"Failed to update index: {e}",
+                code=ErrorCode.INDEX_UPDATE_FAILED,
+            )
+        finally:
+            try:
+                temp_index_path.unlink(missing_ok=True)
+            except OSError:
+                logger.warning("Failed to clean up temp index: %s", temp_index_path)
 
         return Success(None)
 

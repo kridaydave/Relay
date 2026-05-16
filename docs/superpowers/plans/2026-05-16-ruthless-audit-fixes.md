@@ -16,19 +16,19 @@
 - Modify: `mypy.ini`
 - Create: `src/relay/py.typed`
 
-- [ ] **Step 1: Create py.typed marker**
+- [x] **Step 1: Create py.typed marker**
 Create an empty file `src/relay/py.typed` to signal that the package is typed.
 Run: `echo. > src/relay/py.typed`
 
-- [ ] **Step 2: Harden mypy.ini**
+- [x] **Step 2: Harden mypy.ini**
 Ensure `disallow_any_expr = True` is set (it seems it might be already, but confirm and lock it in). Add `warn_unused_ignores = True` if missing.
 Remove unused sections: `[mypy-crewai.*]`, `[mypy-autogen.*]`, `[mypy-httpx.*]` (as they are reported as unused and dependencies are not present or ignored differently).
 
-- [ ] **Step 3: Run mypy on src to verify clean state**
+- [x] **Step 3: Run mypy on src to verify clean state**
 Run: `python -m mypy src/relay --strict`
 Expected: Success (0 errors)
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 ```bash
 git add src/relay/py.typed mypy.ini
 git commit -m "chore: harden mypy config and add py.typed marker"
@@ -45,7 +45,7 @@ git commit -m "chore: harden mypy config and add py.typed marker"
 - Modify: `src/relay/slicer/providers.py`
 - Modify: `src/relay/core_pipeline.py`
 
-- [ ] **Step 1: Fix RecencySlicePacker non-deterministic sort**
+- [x] **Step 1: Fix RecencySlicePacker non-deterministic sort**
 Modify `src/relay/slicer/packers.py` to handle `_`-containing keys without trailing digits deterministically by using the full key as a tie-breaker.
 
 ```python
@@ -55,17 +55,17 @@ def _recency_sort_key(k: str) -> tuple[int, int, str]:
     return (1, 0, k)
 ```
 
-- [ ] **Step 2: Remove object.__setattr__ hack in LocalModelAdapter**
+- [x] **Step 2: Remove object.__setattr__ hack in LocalModelAdapter**
 Make `LocalModelAdapter` non-frozen and handle `base_url` stripping in `__post_init__` directly.
 
-- [ ] **Step 3: Remove dead imports**
+- [x] **Step 3: Remove dead imports**
 Clean up `Any` and `cast` from `raw_sdk.py`, `providers.py`, and `core_pipeline.py`.
 
-- [ ] **Step 4: Verify Source with mypy**
+- [x] **Step 4: Verify Source with mypy**
 Run: `python -m mypy src/relay --strict`
 Expected: Success
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 ```bash
 git add src/relay/slicer/packers.py src/relay/runners/local_model.py src/relay/runners/raw_sdk.py src/relay/slicer/providers.py src/relay/core_pipeline.py
 git commit -m "fix(source): resolve deterministic sort bug and clean up dead imports"
@@ -78,21 +78,21 @@ git commit -m "fix(source): resolve deterministic sort bug and clean up dead imp
 **Files:**
 - Modify: All files in `tests/`
 
-- [ ] **Step 1: Add return type annotations to all test methods**
+- [x] **Step 1: Add return type annotations to all test methods**
 Iterate through all test files and add `-> None` to methods missing them. This is the bulk of the 748 errors.
 
-- [ ] **Step 2: Remove stale type: ignore comments**
+- [x] **Step 2: Remove stale type: ignore comments**
 Remove `# type: ignore[override]` from `tests/unit/test_runners/test_registry.py:44`.
 Remove `# type: ignore[misc]` from `tests/unit/test_runners/test_local_model.py:24`.
 
-- [ ] **Step 3: Fix missing Any imports in tests**
+- [x] **Step 3: Fix missing Any imports in tests**
 Add `from typing import Any` where `dict[str, Any]` is used but `Any` is not imported.
 
-- [ ] **Step 4: Verify Tests with mypy**
+- [x] **Step 4: Verify Tests with mypy**
 Run: `python -m mypy tests --strict`
 Expected: Significant reduction in errors (aim for 0).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 ```bash
 git add tests/
 git commit -m "test: resolve 700+ mypy errors in test suite"
@@ -106,11 +106,11 @@ git commit -m "test: resolve 700+ mypy errors in test suite"
 - Modify: `tests/` (multiple files)
 - Create: `tests/unit/test_failure_paths.py` (or add to existing files)
 
-- [ ] **Step 1: Rename tests to sentence format**
+- [x] **Step 1: Rename tests to sentence format**
 Rename `test_success_contains_value` -> `test_success_contains_value_when_constructed_with_value`.
 Target ~200+ tests violating Rule 7.1.
 
-- [ ] **Step 2: Implement 9 missing Failure-path tests**
+- [x] **Step 2: Implement 9 missing Failure-path tests**
 Add tests for:
 - `validate_pipeline_id` (INVALID_PIPELINE_ID)
 - `list_snapshots` (CORRUPTED_INDEX, INVALID_INDEX)
@@ -120,14 +120,14 @@ Add tests for:
 - `_check_budget` (packer Failure)
 - `execute_parallel_step` (INVALID_STATE/budget fail/ALL_FORKS_FAILED)
 
-- [ ] **Step 3: Refactor private state access in tests**
+- [x] **Step 3: Refactor private state access in tests**
 Refactor `tests/unit/test_pipeline.py` and others to avoid accessing `_state`, `_snapshot_store`, etc. directly.
 
-- [ ] **Step 4: Run all tests**
+- [x] **Step 4: Run all tests**
 Run: `pytest tests/ -v`
 Expected: All PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 ```bash
 git add tests/
 git commit -m "test: rename tests to sentence format and add missing failure path coverage"
@@ -139,23 +139,21 @@ git commit -m "test: rename tests to sentence format and add missing failure pat
 
 **Files:**
 - Create: `CHANGELOG.md`
-- Modify: `docs/version-0.4/v0.4-plan.md`
+- Delete: `docs/version-0.3/` and `docs/version-0.4/`
 - Modify: `AGENTS.md`
 
-- [ ] **Step 1: Create CHANGELOG.md**
+- [x] **Step 1: Create CHANGELOG.md**
 Add entries for v0.3 and v0.4.
 
-- [ ] **Step 2: Update v0.4 plan**
-Fix error code contradictions. Remove `pipeline_snapshot.py` references. Update private name conventions.
+- [x] **Step 2: Delete stale v0.3 and v0.4 plans**
+Delete the `docs/version-0.3/` and `docs/version-0.4/` directories to remove stale, rotting documentation.
 
-- [ ] **Step 3: Update AGENTS.md**
+- [x] **Step 3: Update AGENTS.md**
 List all test doubles. Correct `pipeline_*.py` references.
 
-- [ ] **Step 4: Check off deliverables in v0.4 plan**
-Mark completed items as checked.
-
-- [ ] **Step 5: Commit**
+- [x] **Step 4: Commit**
 ```bash
-git add CHANGELOG.md docs/version-0.4/v0.4-plan.md AGENTS.md
-git commit -m "docs: resolve documentation debt from v0.4 audit"
+git add CHANGELOG.md AGENTS.md
+git rm -rf docs/version-0.3 docs/version-0.4
+git commit -m "docs: resolve documentation debt and delete stale plans"
 ```

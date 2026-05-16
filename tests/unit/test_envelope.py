@@ -15,6 +15,7 @@ from relay.envelope import (
     estimate_tokens,
     serialize_slice,
     verify_signature,
+    validate_pipeline_id,
 )
 from relay.types import ErrorCode, Failure, JSONDict, Success
 
@@ -25,13 +26,42 @@ def secret() -> str:
 
 
 @pytest.fixture
-def initial_payload() -> JSONDict:
-    return {"data": "test", "count": 42}
+def initial_payload() -> "JSONDict":
+    return {"data": "initial"}
 
 
 @pytest.fixture
-def next_payload() -> JSONDict:
-    return {"data": "updated", "count": 43}
+def next_payload() -> "JSONDict":
+    return {"result": "output"}
+
+
+class TestValidatePipelineId:
+    def test_validate_pipeline_id_returns_success_when_id_is_valid(self) -> None:
+        result = validate_pipeline_id("valid-id_123")
+        assert isinstance(result, Success)
+        assert result.value == "valid-id_123"
+
+    def test_validate_pipeline_id_returns_failure_when_id_contains_unsafe_chars(self) -> None:
+        # Test path traversal characters
+        result = validate_pipeline_id("../etc/passwd")
+        assert isinstance(result, Failure)
+        assert result.code == ErrorCode.INVALID_PIPELINE_ID
+
+        # Test other invalid characters
+        result = validate_pipeline_id("pipeline!@#")
+        assert isinstance(result, Failure)
+        assert result.code == ErrorCode.INVALID_PIPELINE_ID
+
+    def test_validate_pipeline_id_returns_failure_when_id_is_too_long(self) -> None:
+        long_id = "a" * 129
+        result = validate_pipeline_id(long_id)
+        assert isinstance(result, Failure)
+        assert result.code == ErrorCode.INVALID_PIPELINE_ID
+
+    def test_validate_pipeline_id_returns_failure_when_id_is_empty(self) -> None:
+        result = validate_pipeline_id("")
+        assert isinstance(result, Failure)
+        assert result.code == ErrorCode.INVALID_PIPELINE_ID
 
 
 class TestCreateInitialEnvelope:

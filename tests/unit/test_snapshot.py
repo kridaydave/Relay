@@ -216,6 +216,16 @@ class TestSnapshotStore:
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.INVALID_INDEX
 
+    def test_list_snapshots_fails_on_invalid_index_format(self) -> None:
+        """Index with wrong schema (not a dict) returns INVALID_INDEX."""
+        pipeline_dir = Path(self.temp_dir) / "invalid-index"
+        pipeline_dir.mkdir(parents=True)
+        (pipeline_dir / "index.json").write_text('["not", "a", "dict"]')
+
+        result = self.store.list_snapshots("invalid-index")
+        assert isinstance(result, Failure)
+        assert result.code == ErrorCode.INVALID_INDEX
+
     def test_list_snapshots_returns_empty_for_unknown_pipeline(self) -> None:
         result = self.store.list_snapshots("does-not-exist")
 
@@ -357,6 +367,16 @@ class TestSnapshotStoreListErrors:
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.INDEX_READ_FAILED
 
+    def test_list_snapshots_fails_on_corrupted_index(self) -> None:
+        """Corrupted index JSON returns CORRUPTED_INDEX."""
+        pipeline_dir = Path(self.temp_dir) / "corrupted-index"
+        pipeline_dir.mkdir(parents=True)
+        (pipeline_dir / "index.json").write_text("not valid json {{{")
+
+        result = self.store.list_snapshots("corrupted-index")
+        assert isinstance(result, Failure)
+        assert result.code == ErrorCode.CORRUPTED_INDEX
+
 
 class TestSnapshotStoreLoadIndexErrors:
     def setup_method(self) -> None:
@@ -386,6 +406,41 @@ class TestSnapshotStoreLoadIndexErrors:
 
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.INDEX_READ_FAILED
+
+
+class TestSnapshotStoreAddIndexErrors:
+    def setup_method(self) -> None:
+        self.temp_dir = tempfile.mkdtemp()
+        self.store = SnapshotStore(storage_path=self.temp_dir)
+
+    def teardown_method(self) -> None:
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def test_add_to_index_fails_on_corrupted_json(self) -> None:
+        """If index JSON is corrupted, _add_to_index should return CORRUPTED_INDEX."""
+        pipeline_id = "pipe-corrupt"
+        pipeline_dir = Path(self.temp_dir) / pipeline_id
+        pipeline_dir.mkdir(parents=True)
+        (pipeline_dir / "index.json").write_text("{{{broken")
+
+        result = self.store._add_to_index(pipeline_id, "some-id")
+
+        assert isinstance(result, Failure)
+        assert result.code == ErrorCode.CORRUPTED_INDEX
+
+    def test_add_to_index_fails_on_write_os_error(self) -> None:
+        """If index write fails, it returns INDEX_UPDATE_FAILED."""
+        pipeline_id = "pipe-os"
+        pipeline_dir = Path(self.temp_dir) / pipeline_id
+        pipeline_dir.mkdir(parents=True)
+
+        valid_snapshot_id = f"{pipeline_id}@1_abcdef123456"
+
+        with patch("builtins.open", side_effect=OSError("disk full")):
+            result = self.store._add_to_index(pipeline_id, valid_snapshot_id)
+
+        assert isinstance(result, Failure)
+        assert result.code == ErrorCode.INDEX_UPDATE_FAILED
 
 
 class TestSnapshotDictToEnvelope:
