@@ -6,6 +6,8 @@ Does NOT: implement signing (owned by relay.envelope), persist envelopes,
           validate agent output, or manage pipeline state.
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 
 from relay.envelope import ContextEnvelope, create_initial_envelope, create_next_envelope
