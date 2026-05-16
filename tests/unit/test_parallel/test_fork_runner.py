@@ -10,6 +10,8 @@ from relay.parallel.types import ForkSpec
 from relay.runners.protocol import AgentOutput
 from relay.types import ErrorCode
 
+from relay.runners.protocol import AgentRunner
+
 from .conftest import (
     FixedForkRunner,
     make_context_slice,
@@ -208,3 +210,12 @@ class TestRunSingleFork:
         )
         indices = {r.fork_index for r in results}
         assert indices == {0, 1}
+
+
+class TestFixedForkRunnerProtocol:
+    def test_fixed_fork_runner_satisfies_agent_runner_protocol(self):
+        """FixedForkRunner must satisfy the AgentRunner protocol per Rule 7.6."""
+        runner = FixedForkRunner()
+        assert isinstance(runner, AgentRunner), (
+            "FixedForkRunner no longer satisfies AgentRunner protocol"
+        )

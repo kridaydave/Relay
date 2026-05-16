@@ -541,6 +541,24 @@ class TestPipelineSubsequentStepErrors:
 
 
 class TestPipelineBudgetEnforcement:
+    def test_check_budget_returns_invalid_token_count(self, temp_storage):
+        """_check_budget must pass through INVALID_TOKEN_COUNT from the enforcer."""
+        from tests.conftest import FixedCounter
+
+        counter = FixedCounter(-5)
+        pipeline = CoreRelayPipeline(
+            signing_secret="a" * 32, token_budget=8000,
+            storage_path=temp_storage, token_counter=counter,
+        )
+        manifest = AgentManifest(
+            "a1", "task", frozenset({"x"}), frozenset({"y"}), max_tokens=100,
+        )
+        result = pipeline.execute_step_with_manifest(
+            {"y": "data"}, manifest=manifest,
+        )
+        assert isinstance(result, Failure)
+        assert result.code == ErrorCode.INVALID_TOKEN_COUNT
+
     def test_manifest_boundary_violation(self, pipeline):
         manifest = AgentManifest(
             "a1", "task",

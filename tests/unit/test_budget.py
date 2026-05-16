@@ -94,6 +94,36 @@ class TestHeuristicCounter:
         counter = HeuristicCounter()
         counter.close()
 
+    def test_heuristic_counter_benchmark(self):
+        """HeuristicCounter (len//3) approximates BPE within a documented tolerance.
+
+        This is a ground-truth benchmark per Rule 6.2 — heuristic accuracy is
+        documented as approximate. If tiktoken is not installed, the test is skipped.
+        The 0.2–4.0 bound covers worst-case inputs: repeated characters where
+        BPE is highly efficient and repetitive numeric patterns where each number
+        is a separate token.
+        """
+        try:
+            import tiktoken
+        except ImportError:
+            pytest.skip("tiktoken not installed — skipping BPE benchmark")
+        enc = tiktoken.get_encoding("cl100k_base")
+        samples = [
+            "hello world",
+            "The quick brown fox jumps over the lazy dog",
+            "a" * 300,
+            "Paris is the capital of France and a major European city.",
+            "1 2 3 4 5 6 7 8 9 10 " * 10,
+        ]
+        for text in samples:
+            bpe_count = len(enc.encode(text))
+            heuristic_count = HeuristicCounter().count(text)
+            ratio = heuristic_count / bpe_count if bpe_count > 0 else 1.0
+            assert 0.2 <= ratio <= 4.0, (
+                f"HeuristicCounter({heuristic_count}) for {text!r} is "
+                f"outside [0.2, 4.0] of BPE({bpe_count}) — ratio={ratio:.2f}"
+            )
+
 
 class TestTiktokenCounterFallback:
     def test_tiktoken_counter_is_heuristic_when_tiktoken_unavailable(self):

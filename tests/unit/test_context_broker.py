@@ -15,6 +15,7 @@ class TestCreateInitialEnvelope:
         """ContextBroker factory must return Failure for secrets shorter than 32 characters."""
         result = create_context_broker(signing_secret="short", token_budget_total=8000)
         assert isinstance(result, Failure)
+        assert result.code == ErrorCode.INVALID_SECRET
         assert "32 characters" in result.reason
 
     @patch("relay.context_broker.create_initial_envelope")

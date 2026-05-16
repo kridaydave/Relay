@@ -473,6 +473,33 @@ class TestSnapshotDictToEnvelope:
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.INVALID_SNAPSHOT
 
+    def test_corrupted_fork_count_type_returns_failure(self):
+        """Fork metadata with wrong types must be caught by _dict_to_envelope."""
+        sid = self._write_snapshot("p-fork", 1, {
+            "relay_version": RELAY_VERSION, "pipeline_id": "p-fork",
+            "step": 1, "timestamp": "2024-01-01T00:00:00+00:00",
+            "token_budget_used": 100, "token_budget_total": 8000,
+            "payload": {"k": "v"}, "manifest_hash": "", "signature": "s",
+            "fork_id": "uuid-1", "join_strategy": "UNION",
+            "fork_count": "not-an-int", "forks_succeeded": 2,
+        })
+        result = self.store.load_snapshot(sid)
+        assert isinstance(result, Failure)
+        assert result.code == ErrorCode.INVALID_SNAPSHOT
+
+    def test_corrupted_forks_succeeded_type_returns_failure(self):
+        sid = self._write_snapshot("p-fs", 1, {
+            "relay_version": RELAY_VERSION, "pipeline_id": "p-fs",
+            "step": 1, "timestamp": "2024-01-01T00:00:00+00:00",
+            "token_budget_used": 100, "token_budget_total": 8000,
+            "payload": {"k": "v"}, "manifest_hash": "", "signature": "s",
+            "fork_id": "uuid-2", "join_strategy": "VOTE",
+            "fork_count": 3, "forks_succeeded": "wrong",
+        })
+        result = self.store.load_snapshot(sid)
+        assert isinstance(result, Failure)
+        assert result.code == ErrorCode.INVALID_SNAPSHOT
+
 
 class TestSnapshotStoreSaveOSError:
     def setup_method(self):

@@ -124,6 +124,11 @@ class TestUnwrapOr:
         result: Result[str] = Failure(reason="error", code="ERR")
         assert unwrap_or(result, "default") == "default"
 
+    def test_unwrap_or_returns_default_on_rollback_success(self):
+        """Verify unwrap_or returns default on RollbackSuccess per documented contract."""
+        result: Result[str] = RollbackSuccess(value="restored", reason="rollback")
+        assert unwrap_or(result, "default") == "default"
+
 
 class TestMapResult:
     """Tests for the map_result function."""

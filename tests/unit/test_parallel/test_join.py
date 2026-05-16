@@ -65,6 +65,22 @@ class TestUnionStrategy:
         result = _apply_union([fork0, fork1])
         assert isinstance(result, Success)
 
+    @pytest.mark.asyncio
+    async def test_union_invariant_agent_output_none(self):
+        """ForkResult with success=True but agent_output=None → UNKNOWN_ERROR."""
+        from relay.parallel.types import ForkResult
+        from relay.types import ErrorCode
+        from relay.validator import ValidationResult
+        val = ValidationResult(has_contradiction=False, diff={}, contradiction_details=None, confidence_score=1.0)
+        bad = ForkResult(
+            fork_index=0, adapter_name="bad", success=True,
+            agent_output=None, validation=val, failure=None,
+        )
+        good = make_passing_fork_result(1, output_text="data")
+        result = _apply_union([good, bad])
+        assert isinstance(result, Failure)
+        assert result.code == ErrorCode.UNKNOWN_ERROR
+
 
 class TestVoteStrategy:
     @pytest.mark.asyncio
@@ -96,6 +112,22 @@ class TestVoteStrategy:
         result = _apply_vote(results)
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.ALL_FORKS_FAILED
+
+    @pytest.mark.asyncio
+    async def test_vote_invariant_agent_output_none(self):
+        """ForkResult with success=True but agent_output=None → UNKNOWN_ERROR."""
+        from relay.parallel.types import ForkResult
+        from relay.types import ErrorCode
+        from relay.validator import ValidationResult
+        val = ValidationResult(has_contradiction=False, diff={}, contradiction_details=None, confidence_score=1.0)
+        bad = ForkResult(
+            fork_index=0, adapter_name="bad", success=True,
+            agent_output=None, validation=val, failure=None,
+        )
+        passing = [bad, make_passing_fork_result(1, output_text="data", confidence=0.5)]
+        result = _apply_vote(passing)
+        assert isinstance(result, Failure)
+        assert result.code == ErrorCode.UNKNOWN_ERROR
 
 
 class TestFirstWinsStrategy:
