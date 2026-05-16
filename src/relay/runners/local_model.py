@@ -12,10 +12,11 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import dataclass
-from typing import Any
+from typing import cast
 
 from relay.runners.protocol import AgentOutput, ContextSlice
 from relay.slicer.manifest import AgentManifest
+from relay.types import JSONDict
 
 
 @dataclass(frozen=True)
@@ -38,9 +39,7 @@ class LocalModelAdapter:
     timeout_seconds: float = 60.0
 
     def __post_init__(self) -> None:
-        stripped = self.base_url.rstrip("/")
-        if stripped != self.base_url:
-            object.__setattr__(self, "base_url", stripped)
+        object.__setattr__(self, "base_url", self.base_url.rstrip("/"))
 
     @classmethod
     def create(
@@ -58,14 +57,14 @@ class LocalModelAdapter:
             timeout_seconds=timeout_seconds,
         )
 
-    def _build_payload(self, slice: ContextSlice) -> dict[str, Any]:
+    def _build_payload(self, slice_: ContextSlice) -> JSONDict:
         return {
             "model": self.model,
-            "messages": [{"role": "user", "content": json.dumps(slice.sections, indent=2)}],
+            "messages": [{"role": "user", "content": json.dumps(slice_.sections, indent=2)}],
             "stream": False,
         }
 
-    async def run(self, slice: ContextSlice, manifest: AgentManifest) -> AgentOutput:
+    async def run(self, slice_: ContextSlice, manifest: AgentManifest) -> AgentOutput:
         try:
             import httpx
         except ImportError:
@@ -73,21 +72,42 @@ class LocalModelAdapter:
                 "httpx is required for LocalModelAdapter. "
                 "Install with: pip install relay-middleware[local]"
             )
-        payload = self._build_payload(slice)
+        payload = self._build_payload(slice_)
         url = f"{self.base_url}/v1/chat/completions"
         start = time.monotonic()
         async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
             response = await client.post(url, json=payload)
             response.raise_for_status()
-            data = response.json()
+            data_raw: object = response.json()
         latency_ms = int((time.monotonic() - start) * 1000)
-        choices = data.get("choices", [])
-        text = choices[0].get("message", {}).get("content", "") if choices else ""
-        usage = data.get("usage", {})
-        total_tokens = usage.get("total_tokens")
-        token_count = total_tokens if total_tokens is not None else (slice.token_count + len(text) // 4)
+        if not isinstance(data_raw, dict):
+            data_raw = {}
+        data = cast(JSONDict, data_raw)
+        choices_raw: object = data.get("choices", [])
+        if isinstance(choices_raw, list) and choices_raw:
+            first_choice = choices_raw[0]
+            if isinstance(first_choice, dict):
+                message_raw: object = first_choice.get("message", {})
+                if isinstance(message_raw, dict):
+                    text = str(cast(JSONDict, message_raw).get("content", ""))
+                else:
+                    text = ""
+            else:
+                text = ""
+        else:
+            text = ""
+        usage_raw: object = data.get("usage", {})
+        if isinstance(usage_raw, dict):
+            usage = cast(JSONDict, usage_raw)
+            total_tokens_raw: object = usage.get("total_tokens")
+        else:
+            total_tokens_raw = None
+        if isinstance(total_tokens_raw, int):
+            token_count = total_tokens_raw
+        else:
+            token_count = slice_.token_count + len(text) // 3
         return AgentOutput(
-            text=text, structured={}, tool_calls=[],
+            text=text, structured=JSONDict(), tool_calls=[],
             token_count=token_count, latency_ms=latency_ms,
             adapter=self.adapter_name,
         )
