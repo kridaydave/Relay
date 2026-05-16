@@ -5,6 +5,7 @@ import shutil
 import tempfile
 import threading
 from datetime import datetime, timezone
+from typing import Any, Generator, cast, List, Union, Dict
 from unittest.mock import AsyncMock, MagicMock, patch
 from concurrent.futures import ThreadPoolExecutor
 
@@ -15,25 +16,25 @@ from relay.core_pipeline import CoreRelayPipeline
 from relay.parallel import agent_output_to_payload
 from relay.runners.protocol import AgentOutput, ContextSlice
 from relay.slicer import AgentManifest
-from relay.types import ErrorCode, Failure, Success, RollbackSuccess
+from relay.types import ErrorCode, Failure, Success, RollbackSuccess, JSONDict, Result
 
 
 @pytest.fixture
-def temp_storage():
+def temp_storage() -> Generator[str, None, None]:
     temp_dir = tempfile.mkdtemp()
     yield temp_dir
     shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 @pytest.fixture
-def pipeline(temp_storage):
+def pipeline(temp_storage: str) -> CoreRelayPipeline:
     return CoreRelayPipeline(
         signing_secret="a" * 32, token_budget=8000, storage_path=temp_storage
     )
 
 
 def create_mock_envelope(
-    step: int, pipeline_id: str, payload: dict, timestamp: datetime | None = None
+    step: int, pipeline_id: str, payload: JSONDict, timestamp: datetime | None = None
 ) -> ContextEnvelope:
     if timestamp is None:
         timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
@@ -51,7 +52,7 @@ def create_mock_envelope(
 
 
 class TestPipelineCreatesEnvelope:
-    def test_pipeline_creates_envelope_on_first_step(self, pipeline):
+    def test_pipeline_creates_envelope_on_first_step(self, pipeline: CoreRelayPipeline) -> None:
         result = pipeline.execute_step({"data": "test-payload"})
 
         assert isinstance(result, Success)
@@ -61,7 +62,7 @@ class TestPipelineCreatesEnvelope:
 
 
 class TestPipelineCreatesNextEnvelope:
-    def test_pipeline_creates_next_envelope_on_subsequent_step(self, pipeline):
+    def test_pipeline_creates_next_envelope_on_subsequent_step(self, pipeline: CoreRelayPipeline) -> None:
         pipeline.execute_step({"initial": "data"})
         result = pipeline.execute_step({"next": "data"})
 
@@ -71,7 +72,7 @@ class TestPipelineCreatesNextEnvelope:
 
 
 class TestPipelineValidationAndSnapshot:
-    def test_pipeline_validates_and_saves_snapshot_on_clean_handoff(self, pipeline):
+    def test_pipeline_validates_and_saves_snapshot_on_clean_handoff(self, pipeline: CoreRelayPipeline) -> None:
         pipeline.execute_step({"entities": ["entity1"], "data": "initial"})
         result = pipeline.execute_step(
             {"entities": ["entity1", "entity2"], "data": "next"}
@@ -82,7 +83,7 @@ class TestPipelineValidationAndSnapshot:
 
 
 class TestPipelineRollback:
-    def test_pipeline_triggers_rollback_on_contradiction(self, temp_storage):
+    def test_pipeline_triggers_rollback_on_contradiction(self, temp_storage: str) -> None:
         pipeline = CoreRelayPipeline(
             signing_secret="a" * 32, token_budget=8000, storage_path=temp_storage
         )
@@ -95,7 +96,7 @@ class TestPipelineRollback:
 
 
 class TestPipelineRollback2:
-    def test_pipeline_rollback_restores_previous_envelope(self, temp_storage):
+    def test_pipeline_rollback_restores_previous_envelope_when_called(self, temp_storage: str) -> None:
         pipeline = CoreRelayPipeline(
             signing_secret="a" * 32, token_budget=8000, storage_path=temp_storage
         )
@@ -110,11 +111,11 @@ class TestPipelineRollback2:
 
 
 class TestPipelineGetCurrentEnvelope:
-    def test_pipeline_get_current_envelope_returns_none_initially(self, pipeline):
+    def test_pipeline_get_current_envelope_returns_none_initially(self, pipeline: CoreRelayPipeline) -> None:
         result = pipeline.get_current_envelope()
         assert result is None
 
-    def test_pipeline_get_current_envelope_returns_current_after_step(self, pipeline):
+    def test_pipeline_get_current_envelope_returns_current_after_step(self, pipeline: CoreRelayPipeline) -> None:
         pipeline.execute_step({"data": "test"})
         result = pipeline.get_current_envelope()
 
@@ -126,325 +127,361 @@ class TestPipelineGetCurrentEnvelope:
 class TestConcurrentPipeline:
     """R18: Concurrent code must be tested concurrently."""
 
-    @patch("relay.context_broker.ContextBroker.create_initial_envelope")
-    @patch("relay.context_broker.ContextBroker.create_next_envelope")
-    def test_concurrent_step_execution_produces_consistent_results(
-        self, mock_next, mock_initial, temp_storage
-    ):
+    def test_concurrent_step_execution_produces_consistent_results_when_run_in_parallel(
+        self, temp_storage: str
+    ) -> None:
         """Test that concurrent step execution produces consistent results."""
-        mock_initial.return_value = Success(
-            create_mock_envelope(1, "test-pipeline-id", {"initial": "data"})
-        )
-        mock_next.side_effect = lambda previous_envelope, agent_output, manifest_hash: Success(
-            create_mock_envelope(
-                previous_envelope.step + 1,
-                previous_envelope.pipeline_id,
-                agent_output,
+        with patch("relay.context_broker.ContextBroker.create_initial_envelope") as mock_initial, \
+             patch("relay.context_broker.ContextBroker.create_next_envelope") as mock_next:
+            
+            initial_payload: JSONDict = {"initial": "data"}
+            mock_initial.return_value = Success[ContextEnvelope](
+                create_mock_envelope(1, "test-pipeline-id", initial_payload)
             )
-        )
+            def mock_create_next_envelope_side_effect(
+                previous_envelope: ContextEnvelope, agent_output: JSONDict, manifest_hash: str
+            ) -> Success[ContextEnvelope]:
+                return Success[ContextEnvelope](
+                    create_mock_envelope(
+                        previous_envelope.step + 1,
+                        previous_envelope.pipeline_id,
+                        agent_output,
+                    )
+                )
+            mock_next.side_effect = mock_create_next_envelope_side_effect
 
-        pipeline = CoreRelayPipeline(
-            signing_secret="a" * 32, token_budget=8000, storage_path=temp_storage
-        )
+            pipeline = CoreRelayPipeline(
+                signing_secret="a" * 32, token_budget=8000, storage_path=temp_storage
+            )
 
-        results = []
-        errors = []
-        lock = threading.Lock()
+            results: List[Result[ContextEnvelope]] = []
+            errors: List[Exception] = []
+            lock = threading.Lock()
 
-        def execute_step(step_num):
-            try:
-                result = pipeline.execute_step({"step": step_num, "data": f"data-{step_num}"})
-                with lock:
-                    results.append(result)
-            except Exception as e:
-                with lock:
-                    errors.append(e)
+            def execute_step(step_num: int) -> None:
+                try:
+                    payload: JSONDict = {"step": step_num, "data": f"data-{step_num}"}
+                    result = pipeline.execute_step(payload)
+                    with lock:
+                        results.append(result)
+                except Exception as e:
+                    with lock:
+                        errors.append(e)
 
-        threads = [threading.Thread(target=execute_step, args=(i,)) for i in range(3)]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
+            threads = [threading.Thread(target=execute_step, args=(i,)) for i in range(3)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
 
-        assert len(errors) == 0, f"Errors occurred: {errors}"
-        assert len(results) > 0
-        final_envelope = pipeline.get_current_envelope()
-        assert final_envelope is not None
-        assert final_envelope.step >= 1
+            assert len(errors) == 0, f"Errors occurred: {errors}"
+            assert len(results) > 0
+            final_envelope = pipeline.get_current_envelope()
+            assert final_envelope is not None
+            assert final_envelope.step >= 1
 
-        submitted_payloads = [{"step": i, "data": f"data-{i}"} for i in range(3)]
-        assert final_envelope.payload in submitted_payloads, (
-            f"Final payload {final_envelope.payload} is not one of the submitted payloads — "
-            "possible state corruption from concurrent writes"
-        )
+            submitted_payloads: List[JSONDict] = [{"step": i, "data": f"data-{i}"} for i in range(3)]
+            assert final_envelope.payload in submitted_payloads, (
+                f"Final payload {final_envelope.payload} is not one of the submitted payloads — "
+                "possible state corruption from concurrent writes"
+            )
 
-    @patch("relay.context_broker.ContextBroker.create_initial_envelope")
-    @patch("relay.context_broker.ContextBroker.create_next_envelope")
     def test_concurrent_step_execution_with_snapshot_tracking(
-        self, mock_next, mock_initial, temp_storage
-    ):
+        self, temp_storage: str
+    ) -> None:
         """Test that concurrent access to _snapshot_ids is thread-safe."""
-        def mock_create_next_envelope(previous_envelope, agent_output, manifest_hash):
-            return Success(
-                create_mock_envelope(
-                    previous_envelope.step + 1,
-                    previous_envelope.pipeline_id,
-                    agent_output,
+        with patch("relay.context_broker.ContextBroker.create_initial_envelope") as mock_initial, \
+             patch("relay.context_broker.ContextBroker.create_next_envelope") as mock_next:
+
+            def mock_create_next_envelope(
+                previous_envelope: ContextEnvelope, agent_output: JSONDict, manifest_hash: str
+            ) -> Success[ContextEnvelope]:
+                return Success[ContextEnvelope](
+                    create_mock_envelope(
+                        previous_envelope.step + 1,
+                        previous_envelope.pipeline_id,
+                        agent_output,
+                    )
                 )
+            mock_next.side_effect = mock_create_next_envelope
+
+            initial_payload: JSONDict = {"initial": "data"}
+            mock_initial.return_value = Success[ContextEnvelope](
+                create_mock_envelope(1, "test-pipeline-id", initial_payload)
             )
-        mock_next.side_effect = mock_create_next_envelope
 
-        mock_initial.return_value = Success(
-            create_mock_envelope(1, "test-pipeline-id", {"initial": "data"})
-        )
+            pipeline = CoreRelayPipeline(
+                signing_secret="a" * 32, token_budget=8000, storage_path=temp_storage
+            )
 
-        pipeline = CoreRelayPipeline(
-            signing_secret="a" * 32, token_budget=8000, storage_path=temp_storage
-        )
+            results: List[Result[ContextEnvelope]] = []
+            errors: List[Exception] = []
+            lock = threading.Lock()
 
-        results = []
-        errors = []
-        lock = threading.Lock()
+            def execute_and_advance(step_num: int) -> None:
+                try:
+                    payload: JSONDict = {"step": step_num}
+                    result = pipeline.execute_step(payload)
+                    with lock:
+                        results.append(result)
+                except Exception as e:
+                    with lock:
+                        errors.append(e)
 
-        def execute_and_advance(step_num):
-            try:
-                result = pipeline.execute_step({"step": step_num})
-                with lock:
-                    results.append(result)
-            except Exception as e:
-                with lock:
-                    errors.append(e)
+            threads = [
+                threading.Thread(target=execute_and_advance, args=(i,))
+                for i in range(3)
+            ]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
 
-        threads = [
-            threading.Thread(target=execute_and_advance, args=(i,))
-            for i in range(3)
-        ]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
+            assert len(errors) == 0, f"Errors occurred: {errors}"
+            assert len(results) > 0
 
-        assert len(errors) == 0, f"Errors occurred: {errors}"
-        assert len(results) > 0
+            final_envelope = pipeline.get_current_envelope()
+            assert final_envelope is not None
+            assert final_envelope.step >= 1
 
-        final_envelope = pipeline.get_current_envelope()
-        assert final_envelope is not None
-        assert final_envelope.step >= 1
+            submitted_payloads: List[JSONDict] = [{"step": i} for i in range(3)]
+            submitted_payloads.append(initial_payload)
+            assert final_envelope.payload in submitted_payloads, (
+                f"Final payload {final_envelope.payload} is not one of the submitted payloads — "
+                "possible state corruption from concurrent writes"
+            )
 
-        submitted_payloads = [{"step": i} for i in range(3)] + [{"initial": "data"}]
-        assert final_envelope.payload in submitted_payloads, (
-            f"Final payload {final_envelope.payload} is not one of the submitted payloads — "
-            "possible state corruption from concurrent writes"
-        )
-
-    @patch("relay.context_broker.ContextBroker.create_initial_envelope")
-    @patch("relay.context_broker.ContextBroker.create_next_envelope")
-    def test_concurrent_get_current_envelope(
-        self, mock_next, mock_initial, temp_storage
-    ):
+    def test_concurrent_get_current_envelope_when_called_by_multiple_threads(
+        self, temp_storage: str
+    ) -> None:
         """Test that concurrent reads of _current_envelope are safe."""
-        mock_initial.return_value = Success(
-            create_mock_envelope(1, "test-pipeline-id", {"initial": "data"})
-        )
-        mock_next.return_value = Success(
-            create_mock_envelope(2, "test-pipeline-id", {"next": "data"})
-        )
+        with patch("relay.context_broker.ContextBroker.create_initial_envelope") as mock_initial, \
+             patch("relay.context_broker.ContextBroker.create_next_envelope") as mock_next:
 
-        pipeline = CoreRelayPipeline(
-            signing_secret="a" * 32, token_budget=8000, storage_path=temp_storage
-        )
-
-        pipeline.execute_step({"initial": "data"})
-        pipeline.execute_step({"next": "data"})
-
-        results = []
-        errors = []
-        lock = threading.Lock()
-
-        def get_envelope():
-            try:
-                envelope = pipeline.get_current_envelope()
-                with lock:
-                    results.append(envelope)
-            except Exception as e:
-                with lock:
-                    errors.append(e)
-
-        threads = [threading.Thread(target=get_envelope) for _ in range(10)]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
-
-        assert len(errors) == 0, f"Errors occurred: {errors}"
-        assert all(r is not None for r in results), "All results should be non-None"
-
-    @patch("relay.context_broker.ContextBroker.create_initial_envelope")
-    @patch("relay.context_broker.ContextBroker.create_next_envelope")
-    def test_concurrent_reads_and_writes(
-        self, mock_next, mock_initial, temp_storage
-    ):
-        """Concurrent step writes interleaved with reads don't corrupt state."""
-        mock_initial.return_value = Success(
-            create_mock_envelope(1, "test-pipeline-id", {"initial": "data"})
-        )
-        mock_next.return_value = Success(
-            create_mock_envelope(2, "test-pipeline-id", {"next": "data"})
-        )
-
-        pipeline = CoreRelayPipeline(
-            signing_secret="a" * 32, token_budget=8000, storage_path=temp_storage
-        )
-        pipeline.execute_step({"initial": "data"})
-
-        results = []
-        errors = []
-        lock = threading.Lock()
-
-        def mixed_access(i: int):
-            try:
-                if i % 2 == 0:
-                    pipeline.execute_step({"step": i})
-                envelope = pipeline.get_current_envelope()
-                with lock:
-                    results.append(envelope)
-            except Exception as e:
-                with lock:
-                    errors.append(e)
-
-        threads = [threading.Thread(target=mixed_access, args=(i,)) for i in range(10)]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
-
-        assert len(errors) == 0, f"Errors occurred: {errors}"
-        assert all(r is not None for r in results), "All results should be non-None"
-
-    @patch("relay.context_broker.ContextBroker.create_initial_envelope")
-    @patch("relay.context_broker.ContextBroker.create_next_envelope")
-    @patch("relay.core_pipeline.SnapshotStore")
-    def test_concurrent_rollback_access(
-        self, mock_store_cls, mock_next, mock_initial, temp_storage
-    ):
-        """Test that concurrent rollback access is handled safely."""
-        mock_store = MagicMock()
-        mock_store.save_snapshot.return_value = Success("snapshot-id")
-        mock_store.load_snapshot.return_value = Success(
-            create_mock_envelope(1, "test-pipeline-id", {"data": "restored"})
-        )
-        mock_store_cls.return_value = mock_store
-
-        pipeline = CoreRelayPipeline(
-            signing_secret="a" * 32, token_budget=8000, storage_path=temp_storage
-        )
-
-        mock_initial.return_value = Success(
-            create_mock_envelope(1, pipeline._pipeline_id, {"data": "initial"})
-        )
-        mock_next.return_value = Success(
-            create_mock_envelope(2, pipeline._pipeline_id, {"data": "next"})
-        )
-
-        pipeline.execute_step({"data": "initial"})
-        pipeline.execute_step({"data": "next"})
-
-        results = []
-        errors = []
-        lock = threading.Lock()
-
-        def attempt_rollback():
-            try:
-                result = pipeline.rollback()
-                with lock:
-                    results.append(result)
-            except Exception as e:
-                with lock:
-                    errors.append(e)
-
-        threads = [threading.Thread(target=attempt_rollback) for _ in range(3)]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
-
-        assert len(results) > 0, "At least one rollback attempt should have completed"
-        assert all(isinstance(r, Failure) or isinstance(r, Success) or isinstance(r, RollbackSuccess) for r in results)
-
-        final_envelope = pipeline._state._current_envelope
-        previous_envelopes = pipeline._state._previous_envelopes
-        snapshot_ids = pipeline._state._snapshot_ids
-
-        if final_envelope is not None:
-            current_step = final_envelope.step
-            if current_step > 1:
-                assert len(previous_envelopes) > 0 or snapshot_ids.get(current_step) is not None, (
-                    f"R18 invariant violated: step {current_step} has no snapshot and no previous envelopes. "
-                    f"Previous envelopes: {len(previous_envelopes)}, Snapshots: {snapshot_ids}"
-                )
-
-    @patch("relay.context_broker.ContextBroker.create_initial_envelope")
-    @patch("relay.context_broker.ContextBroker.create_next_envelope")
-    def test_thread_pool_executor_operations(
-        self, mock_next, mock_initial, temp_storage
-    ):
-        """Test pipeline operations under thread pool execution."""
-        def mock_create_next_envelope(previous_envelope, agent_output, manifest_hash):
-            return Success(
-                create_mock_envelope(
-                    previous_envelope.step + 1,
-                    previous_envelope.pipeline_id,
-                    agent_output,
-                )
+            payload1: JSONDict = {"initial": "data"}
+            payload2: JSONDict = {"next": "data"}
+            mock_initial.return_value = Success[ContextEnvelope](
+                create_mock_envelope(1, "test-pipeline-id", payload1)
             )
-        mock_next.side_effect = mock_create_next_envelope
+            mock_next.return_value = Success[ContextEnvelope](
+                create_mock_envelope(2, "test-pipeline-id", payload2)
+            )
 
-        mock_initial.return_value = Success(
-            create_mock_envelope(1, "test-pipeline-id", {"data": "test"})
-        )
+            pipeline = CoreRelayPipeline(
+                signing_secret="a" * 32, token_budget=8000, storage_path=temp_storage
+            )
 
-        pipeline = CoreRelayPipeline(
-            signing_secret="a" * 32, token_budget=8000, storage_path=temp_storage
-        )
+            pipeline.execute_step(payload1)
+            pipeline.execute_step(payload2)
 
-        results = []
-        errors = []
+            results: List[ContextEnvelope | None] = []
+            errors: List[Exception] = []
+            lock = threading.Lock()
 
-        def execute_step(step_num):
-            try:
-                result = pipeline.execute_step({"step": step_num})
-                results.append(result)
-            except Exception as e:
-                errors.append(e)
+            def get_envelope() -> None:
+                try:
+                    envelope = pipeline.get_current_envelope()
+                    with lock:
+                        results.append(envelope)
+                except Exception as e:
+                    with lock:
+                        errors.append(e)
 
-        with ThreadPoolExecutor(max_workers=4) as executor:
-            futures = [executor.submit(execute_step, i) for i in range(5)]
-            for f in futures:
-                f.result()
+            threads = [threading.Thread(target=get_envelope) for _ in range(10)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
 
-        assert len(errors) == 0, f"Errors occurred: {errors}"
-        final_envelope = pipeline.get_current_envelope()
-        assert final_envelope is not None
+            assert len(errors) == 0, f"Errors occurred: {errors}"
+            assert all(r is not None for r in results), "All results should be non-None"
 
-        submitted_payloads = [{"step": i} for i in range(5)] + [{"data": "test"}]
-        assert final_envelope.payload in submitted_payloads, (
-            f"Final payload {final_envelope.payload} is not one of the submitted payloads — "
-            "possible state corruption from concurrent writes"
-        )
+    def test_concurrent_reads_and_writes_are_safe_when_interleaved(
+        self, temp_storage: str
+    ) -> None:
+        """Concurrent step writes interleaved with reads don't corrupt state."""
+        with patch("relay.context_broker.ContextBroker.create_initial_envelope") as mock_initial, \
+             patch("relay.context_broker.ContextBroker.create_next_envelope") as mock_next:
+
+            payload1: JSONDict = {"initial": "data"}
+            payload2: JSONDict = {"next": "data"}
+            mock_initial.return_value = Success[ContextEnvelope](
+                create_mock_envelope(1, "test-pipeline-id", payload1)
+            )
+            mock_next.return_value = Success[ContextEnvelope](
+                create_mock_envelope(2, "test-pipeline-id", payload2)
+            )
+
+            pipeline = CoreRelayPipeline(
+                signing_secret="a" * 32, token_budget=8000, storage_path=temp_storage
+            )
+            pipeline.execute_step(payload1)
+
+            results: List[ContextEnvelope | None] = []
+            errors: List[Exception] = []
+            lock = threading.Lock()
+
+            def mixed_access(i: int) -> None:
+                try:
+                    if i % 2 == 0:
+                        payload: JSONDict = {"step": i}
+                        pipeline.execute_step(payload)
+                    envelope = pipeline.get_current_envelope()
+                    with lock:
+                        results.append(envelope)
+                except Exception as e:
+                    with lock:
+                        errors.append(e)
+
+            threads = [threading.Thread(target=mixed_access, args=(i,)) for i in range(10)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+
+            assert len(errors) == 0, f"Errors occurred: {errors}"
+            assert all(r is not None for r in results), "All results should be non-None"
+
+    def test_concurrent_rollback_access_when_requested_simultaneously(
+        self, temp_storage: str
+    ) -> None:
+        """Test that concurrent rollback access is handled safely."""
+        with patch("relay.context_broker.ContextBroker.create_initial_envelope") as mock_initial, \
+             patch("relay.context_broker.ContextBroker.create_next_envelope") as mock_next, \
+             patch("relay.core_pipeline.SnapshotStore") as mock_store_cls:
+
+            mock_store = MagicMock()
+            mock_store.save_snapshot.return_value = Success[str]("snapshot-id")
+            mock_store.load_snapshot.return_value = Success[ContextEnvelope](
+                create_mock_envelope(1, "test-pipeline-id", {"data": "restored"})
+            )
+            mock_store_cls.return_value = mock_store
+
+            pipeline = CoreRelayPipeline(
+                signing_secret="a" * 32, token_budget=8000, storage_path=temp_storage
+            )
+
+            payload1: JSONDict = {"data": "initial"}
+            payload2: JSONDict = {"data": "next"}
+            mock_initial.return_value = Success[ContextEnvelope](
+                create_mock_envelope(1, pipeline._pipeline_id, payload1)
+            )
+            mock_next.return_value = Success[ContextEnvelope](
+                create_mock_envelope(2, pipeline._pipeline_id, payload2)
+            )
+
+            pipeline.execute_step(payload1)
+            pipeline.execute_step(payload2)
+
+            results: List[Result[ContextEnvelope]] = []
+            errors: List[Exception] = []
+            lock = threading.Lock()
+
+            def attempt_rollback() -> None:
+                try:
+                    result = pipeline.rollback()
+                    with lock:
+                        results.append(result)
+                except Exception as e:
+                    with lock:
+                        errors.append(e)
+
+            threads = [threading.Thread(target=attempt_rollback) for _ in range(3)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+
+            assert len(results) > 0, "At least one rollback attempt should have completed"
+            assert all(isinstance(r, (Failure, Success, RollbackSuccess)) for r in results)
+
+            # Accessing private members for invariant checking is sometimes necessary in unit tests.
+            pipeline_internal = cast(Any, pipeline)
+            final_envelope = pipeline_internal._state._current_envelope
+            previous_envelopes = pipeline_internal._state._previous_envelopes
+            snapshot_ids = pipeline_internal._state._snapshot_ids
+
+            if final_envelope is not None:
+                current_step = final_envelope.step
+                if current_step > 1:
+                    assert len(previous_envelopes) > 0 or snapshot_ids.get(current_step) is not None, (
+                        f"R18 invariant violated: step {current_step} has no snapshot and no previous envelopes. "
+                        f"Previous envelopes: {len(previous_envelopes)}, Snapshots: {snapshot_ids}"
+                    )
+
+    def test_thread_pool_executor_operations_work_concurrently(
+        self, temp_storage: str
+    ) -> None:
+        """Test pipeline operations under thread pool execution."""
+        with patch("relay.context_broker.ContextBroker.create_initial_envelope") as mock_initial, \
+             patch("relay.context_broker.ContextBroker.create_next_envelope") as mock_next:
+
+            def mock_create_next_envelope(
+                previous_envelope: ContextEnvelope, agent_output: JSONDict, manifest_hash: str
+            ) -> Success[ContextEnvelope]:
+                return Success[ContextEnvelope](
+                    create_mock_envelope(
+                        previous_envelope.step + 1,
+                        previous_envelope.pipeline_id,
+                        agent_output,
+                    )
+                )
+            mock_next.side_effect = mock_create_next_envelope
+
+            payload1: JSONDict = {"data": "test"}
+            mock_initial.return_value = Success[ContextEnvelope](
+                create_mock_envelope(1, "test-pipeline-id", payload1)
+            )
+
+            pipeline = CoreRelayPipeline(
+                signing_secret="a" * 32, token_budget=8000, storage_path=temp_storage
+            )
+
+            results: List[Result[ContextEnvelope]] = []
+            errors: List[Exception] = []
+            lock = threading.Lock()
+
+            def execute_step_task(step_num: int) -> None:
+                try:
+                    payload: JSONDict = {"step": step_num}
+                    result = pipeline.execute_step(payload)
+                    with lock:
+                        results.append(result)
+                except Exception as e:
+                    with lock:
+                        errors.append(e)
+
+            with ThreadPoolExecutor(max_workers=4) as executor:
+                futures = [executor.submit(execute_step_task, i) for i in range(5)]
+                for f in futures:
+                    f.result()
+
+            assert len(errors) == 0, f"Errors occurred: {errors}"
+            final_envelope = pipeline.get_current_envelope()
+            assert final_envelope is not None
+
+            # Fix incompatible types in assignment
+            submitted_payloads: List[JSONDict] = [{"step": i} for i in range(5)]
+            submitted_payloads.append(payload1)
+            assert final_envelope.payload in submitted_payloads, (
+                f"Final payload {final_envelope.payload} is not one of the submitted payloads — "
+                "possible state corruption from concurrent writes"
+            )
+
 
 
 class TestAgentOutputToPayload:
-    def test_includes_tool_calls_when_present(self):
+    def test_includes_tool_calls_when_present(self) -> None:
         output = AgentOutput(
-            text="hello", structured={"key": "val"}, tool_calls=["call1"],
+            text="hello", structured={"key": "val"}, tool_calls=[{"name": "call1"}],
             token_count=10, latency_ms=5, adapter="test",
         )
         result = agent_output_to_payload(output)
         assert result["text"] == "hello"
         assert result["key"] == "val"
-        assert result["tool_calls"] == ["call1"]
+        assert result["tool_calls"] == [{"name": "call1"}]
 
-    def test_no_tool_calls_when_empty(self):
+    def test_no_tool_calls_when_empty(self) -> None:
         output = AgentOutput(
             text="hello", structured={}, tool_calls=[],
             token_count=10, latency_ms=5, adapter="test",
@@ -455,20 +492,20 @@ class TestAgentOutputToPayload:
 
 
 class TestPipelineConstruction:
-    def test_fails_on_short_signing_secret(self):
+    def test_fails_on_short_signing_secret(self) -> None:
         with pytest.raises(ValueError, match="signing_secret"):
             CoreRelayPipeline(signing_secret="short")
 
 
 class TestPipelineContextManager:
-    def test_context_manager_enter_returns_pipeline(self, temp_storage):
+    def test_context_manager_enter_returns_pipeline(self, temp_storage: str) -> None:
         pipeline = CoreRelayPipeline(
             signing_secret="a" * 32, token_budget=8000, storage_path=temp_storage
         )
         with pipeline as p:
             assert p is pipeline
 
-    def test_context_manager_exit_does_not_raise(self, temp_storage):
+    def test_context_manager_exit_does_not_raise(self, temp_storage: str) -> None:
         pipeline = CoreRelayPipeline(
             signing_secret="a" * 32, token_budget=8000, storage_path=temp_storage
         )
@@ -477,7 +514,7 @@ class TestPipelineContextManager:
 
 
 class TestPipelineClose:
-    def test_close_with_token_counter(self, temp_storage):
+    def test_close_with_token_counter(self, temp_storage: str) -> None:
         counter = MagicMock()
         pipeline = CoreRelayPipeline(
             signing_secret="a" * 32, token_budget=8000,
@@ -486,7 +523,7 @@ class TestPipelineClose:
         pipeline.close()
         counter.close.assert_called_once()
 
-    def test_close_without_token_counter_does_not_raise(self, temp_storage):
+    def test_close_without_token_counter_does_not_raise(self, temp_storage: str) -> None:
         pipeline = CoreRelayPipeline(
             signing_secret="a" * 32, token_budget=8000, storage_path=temp_storage
         )
@@ -494,54 +531,58 @@ class TestPipelineClose:
 
 
 class TestPipelineInitialStepErrors:
-    @patch("relay.core_pipeline.HardCapEnforcer")
-    def test_budget_failure_in_initial_step(self, mock_enforcer_cls, temp_storage):
-        counter = MagicMock()
-        enforcer = MagicMock()
-        enforcer.check.return_value = Failure(
-            reason="Budget exceeded", code=ErrorCode.BUDGET_EXCEEDED,
-        )
-        mock_enforcer_cls.return_value = enforcer
+    def test_budget_failure_in_initial_step(self, temp_storage: str) -> None:
+        with patch("relay.core_pipeline.HardCapEnforcer") as mock_enforcer_cls:
+            counter = MagicMock()
+            enforcer = MagicMock()
+            enforcer.check.return_value = Failure(
+                reason="Budget exceeded", code=ErrorCode.BUDGET_EXCEEDED,
+            )
+            mock_enforcer_cls.return_value = enforcer
 
-        manifest = AgentManifest(
-            "a1", "task", frozenset({"x"}), frozenset({"y"}), max_tokens=100,
-        )
-        pipeline = CoreRelayPipeline(
-            signing_secret="a" * 32, token_budget=100,
-            storage_path=temp_storage, token_counter=counter,
-        )
-        result = pipeline.execute_step_with_manifest(
-            {"y": "data"}, manifest=manifest,
-        )
-        assert isinstance(result, Failure)
-        assert result.code == ErrorCode.BUDGET_EXCEEDED
+            manifest = AgentManifest(
+                "a1", "task", frozenset({"x"}), frozenset({"y"}), max_tokens=100,
+            )
+            pipeline = CoreRelayPipeline(
+                signing_secret="a" * 32, token_budget=100,
+                storage_path=temp_storage, token_counter=counter,
+            )
+            payload: JSONDict = {"y": "data"}
+            result = pipeline.execute_step_with_manifest(
+                payload, manifest=manifest,
+            )
+            assert isinstance(result, Failure)
+            assert result.code == ErrorCode.BUDGET_EXCEEDED
 
-    def test_create_initial_envelope_failure(self, pipeline):
+    def test_create_initial_envelope_failure(self, pipeline: CoreRelayPipeline) -> None:
+        payload: JSONDict = {"data": "test"}
         with patch(
             "relay.context_broker.ContextBroker.create_initial_envelope",
             return_value=Failure(reason="fail", code=ErrorCode.INVALID_PAYLOAD),
         ):
-            result = pipeline.execute_step({"data": "test"})
+            result = pipeline.execute_step(payload)
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.INVALID_PAYLOAD
 
 
 class TestPipelineSubsequentStepErrors:
-    @patch("relay.context_broker.ContextBroker.create_next_envelope")
-    def test_create_next_envelope_failure(self, mock_next, pipeline):
-        result = pipeline.execute_step({"data": "first"})
-        assert isinstance(result, Success)
+    def test_create_next_envelope_failure(self, pipeline: CoreRelayPipeline) -> None:
+        with patch("relay.context_broker.ContextBroker.create_next_envelope") as mock_next:
+            payload1: JSONDict = {"data": "first"}
+            result = pipeline.execute_step(payload1)
+            assert isinstance(result, Success)
 
-        mock_next.return_value = Failure(
-            reason="fail", code=ErrorCode.INVALID_PAYLOAD,
-        )
-        result = pipeline.execute_step({"data": "second"})
-        assert isinstance(result, Failure)
-        assert result.code == ErrorCode.INVALID_PAYLOAD
+            mock_next.return_value = Failure(
+                reason="fail", code=ErrorCode.INVALID_PAYLOAD,
+            )
+            payload2: JSONDict = {"data": "second"}
+            result = pipeline.execute_step(payload2)
+            assert isinstance(result, Failure)
+            assert result.code == ErrorCode.INVALID_PAYLOAD
 
 
 class TestPipelineBudgetEnforcement:
-    def test_check_budget_returns_invalid_token_count(self, temp_storage):
+    def test_check_budget_returns_invalid_token_count(self, temp_storage: str) -> None:
         """_check_budget must pass through INVALID_TOKEN_COUNT from the enforcer."""
         from tests.conftest import FixedCounter
 
@@ -553,110 +594,116 @@ class TestPipelineBudgetEnforcement:
         manifest = AgentManifest(
             "a1", "task", frozenset({"x"}), frozenset({"y"}), max_tokens=100,
         )
+        payload: JSONDict = {"y": "data"}
         result = pipeline.execute_step_with_manifest(
-            {"y": "data"}, manifest=manifest,
+            payload, manifest=manifest,
         )
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.INVALID_TOKEN_COUNT
 
-    def test_manifest_boundary_violation(self, pipeline):
+    def test_manifest_boundary_violation(self, pipeline: CoreRelayPipeline) -> None:
         manifest = AgentManifest(
             "a1", "task",
             reads=frozenset({"x"}),
             writes=frozenset({"permitted"}),
             max_tokens=100,
         )
+        payload: JSONDict = {"permitted": "ok", "forbidden": "bad"}
         result = pipeline.execute_step_with_manifest(
-            {"permitted": "ok", "forbidden": "bad"},
+            payload,
             manifest=manifest,
         )
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.MANIFEST_BOUNDARY_VIOLATION
 
-    @patch("relay.core_pipeline.HardCapEnforcer")
-    def test_budget_failure_in_subsequent_step(self, mock_enforcer_cls, temp_storage):
-        counter = MagicMock()
-        counter.count.return_value = 10
-        enforcer = MagicMock()
-        enforcer.check.side_effect = [
-            Success(None),
-            Failure(reason="Budget exceeded", code=ErrorCode.BUDGET_EXCEEDED),
-        ]
-        enforcer.counter = counter
-        mock_enforcer_cls.return_value = enforcer
+    def test_budget_failure_in_subsequent_step(self, temp_storage: str) -> None:
+        with patch("relay.core_pipeline.HardCapEnforcer") as mock_enforcer_cls:
+            counter = MagicMock()
+            counter.count.return_value = 10
+            enforcer = MagicMock()
+            enforcer.check.side_effect = [
+                Success[None](None),
+                Failure(reason="Budget exceeded", code=ErrorCode.BUDGET_EXCEEDED),
+            ]
+            enforcer.counter = counter
+            mock_enforcer_cls.return_value = enforcer
 
-        manifest = AgentManifest(
-            "a1", "task", frozenset({"x"}), frozenset({"y"}), max_tokens=100,
-        )
-        pipeline = CoreRelayPipeline(
-            signing_secret="a" * 32, token_budget=100,
-            storage_path=temp_storage, token_counter=counter,
-        )
-        result = pipeline.execute_step_with_manifest(
-            {"y": "data"}, manifest=manifest,
-        )
-        assert isinstance(result, Success)
+            manifest = AgentManifest(
+                "a1", "task", frozenset({"x"}), frozenset({"y"}), max_tokens=100,
+            )
+            pipeline = CoreRelayPipeline(
+                signing_secret="a" * 32, token_budget=100,
+                storage_path=temp_storage, token_counter=counter,
+            )
+            payload1: JSONDict = {"y": "data"}
+            result = pipeline.execute_step_with_manifest(
+                payload1, manifest=manifest,
+            )
+            assert isinstance(result, Success)
 
-        result = pipeline.execute_step_with_manifest(
-            {"y": "more"}, manifest=manifest,
-        )
-        assert isinstance(result, Failure)
-        assert result.code == ErrorCode.BUDGET_EXCEEDED
+            payload2: JSONDict = {"y": "more"}
+            result = pipeline.execute_step_with_manifest(
+                payload2, manifest=manifest,
+            )
+            assert isinstance(result, Failure)
+            assert result.code == ErrorCode.BUDGET_EXCEEDED
 
-    @patch("relay.core_pipeline.HardCapEnforcer")
-    def test_per_agent_max_tokens_exceeded(self, mock_enforcer_cls, temp_storage):
-        counter = MagicMock()
-        counter.count.return_value = 9999
-        enforcer = MagicMock()
-        enforcer.check.return_value = Success(None)
-        enforcer.counter = counter
-        mock_enforcer_cls.return_value = enforcer
+    def test_per_agent_max_tokens_exceeded(self, temp_storage: str) -> None:
+        with patch("relay.core_pipeline.HardCapEnforcer") as mock_enforcer_cls:
+            counter = MagicMock()
+            counter.count.return_value = 9999
+            enforcer = MagicMock()
+            enforcer.check.return_value = Success[None](None)
+            enforcer.counter = counter
+            mock_enforcer_cls.return_value = enforcer
 
-        manifest = AgentManifest(
-            "a1", "task", frozenset({"x"}), frozenset({"y"}), max_tokens=10,
-        )
-        pipeline = CoreRelayPipeline(
-            signing_secret="a" * 32, token_budget=100,
-            storage_path=temp_storage, token_counter=counter,
-        )
-        result = pipeline.execute_step_with_manifest(
-            {"y": "data"}, manifest=manifest,
-        )
-        assert isinstance(result, Failure)
-        assert result.code == ErrorCode.TOKEN_BUDGET_EXCEEDED
-        assert "manifest.max_tokens" in result.reason
+            manifest = AgentManifest(
+                "a1", "task", frozenset({"x"}), frozenset({"y"}), max_tokens=10,
+            )
+            pipeline = CoreRelayPipeline(
+                signing_secret="a" * 32, token_budget=100,
+                storage_path=temp_storage, token_counter=counter,
+            )
+            payload: JSONDict = {"y": "data"}
+            result = pipeline.execute_step_with_manifest(
+                payload, manifest=manifest,
+            )
+            assert isinstance(result, Failure)
+            assert result.code == ErrorCode.TOKEN_BUDGET_EXCEEDED
+            assert "manifest.max_tokens" in result.reason
 
 
 class TestPipelineApplyManifest:
-    @patch("relay.context_broker.ContextBroker.create_initial_envelope")
-    def test_apply_manifest_adds_hash_and_signature(self, mock_initial, temp_storage):
-        mock_initial.return_value = Success(
-            create_mock_envelope(1, "pipe-id", {"y": "data"}),
-        )
-        manifest = AgentManifest(
-            "a1", "task",
-            reads=frozenset({"x"}), writes=frozenset({"y"}), max_tokens=100,
-        )
-        pipeline = CoreRelayPipeline(
-            signing_secret="a" * 32, token_budget=8000, storage_path=temp_storage,
-        )
-        result = pipeline.execute_step_with_manifest(
-            {"y": "data"}, manifest=manifest,
-        )
-        assert isinstance(result, Success)
-        assert result.value.manifest_hash == manifest.compute_hash()
-        assert result.value.signature != ""
+    def test_apply_manifest_adds_hash_and_signature(self, temp_storage: str) -> None:
+        with patch("relay.context_broker.ContextBroker.create_initial_envelope") as mock_initial:
+            payload: JSONDict = {"y": "data"}
+            mock_initial.return_value = Success[ContextEnvelope](
+                create_mock_envelope(1, "pipe-id", payload),
+            )
+            manifest = AgentManifest(
+                "a1", "task",
+                reads=frozenset({"x"}), writes=frozenset({"y"}), max_tokens=100,
+            )
+            pipeline = CoreRelayPipeline(
+                signing_secret="a" * 32, token_budget=8000, storage_path=temp_storage,
+            )
+            result = pipeline.execute_step_with_manifest(
+                payload, manifest=manifest,
+            )
+            assert isinstance(result, Success)
+            assert result.value.manifest_hash == manifest.compute_hash()
+            assert result.value.signature != ""
 
 
 class TestPipelineRollbackEdgeCases:
-    def test_rollback_fails_when_no_history(self, pipeline):
+    def test_rollback_fails_when_no_history(self, pipeline: CoreRelayPipeline) -> None:
         result = pipeline.rollback()
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.NO_ROLLBACK_AVAILABLE
 
 
 class TestPipelineBuildContextSlice:
-    def test_build_context_slice_with_none_envelope(self, temp_storage):
+    def test_build_context_slice_with_none_envelope(self, temp_storage: str) -> None:
         pipeline = CoreRelayPipeline(
             signing_secret="a" * 32, token_budget=8000, storage_path=temp_storage,
         )
@@ -669,7 +716,7 @@ class TestPipelineBuildContextSlice:
         assert slice_.step == 0
         assert slice_.sections == {}
 
-    def test_build_context_slice_filters_by_manifest_reads(self, temp_storage):
+    def test_build_context_slice_filters_by_manifest_reads_when_envelope_provided(self, temp_storage: str) -> None:
         pipeline = CoreRelayPipeline(
             signing_secret="a" * 32, token_budget=8000, storage_path=temp_storage,
         )
@@ -686,7 +733,7 @@ class TestPipelineBuildContextSlice:
 
 
 class TestPipelineSlicePayload:
-    def test_slice_payload_returns_empty_when_no_packer(self, temp_storage):
+    def test_slice_payload_returns_empty_when_no_packer(self, temp_storage: str) -> None:
         pipeline = CoreRelayPipeline(
             signing_secret="a" * 32, token_budget=8000, storage_path=temp_storage,
         )
@@ -697,7 +744,7 @@ class TestPipelineSlicePayload:
         assert isinstance(result, Success)
         assert result.value == ""
 
-    def test_slice_payload_returns_empty_when_no_envelope(self, temp_storage):
+    def test_slice_payload_returns_empty_when_no_envelope(self, temp_storage: str) -> None:
         packer = MagicMock()
         pipeline = CoreRelayPipeline(
             signing_secret="a" * 32, token_budget=8000,
@@ -713,7 +760,7 @@ class TestPipelineSlicePayload:
 
 class TestPipelineExecuteStepWithRunner:
     @pytest.mark.asyncio
-    async def test_fails_when_no_registry(self, temp_storage):
+    async def test_fails_when_no_registry(self, temp_storage: str) -> None:
         pipeline = CoreRelayPipeline(
             signing_secret="a" * 32, token_budget=8000, storage_path=temp_storage,
         )
@@ -725,7 +772,7 @@ class TestPipelineExecuteStepWithRunner:
         assert result.code == ErrorCode.NO_REGISTRY
 
     @pytest.mark.asyncio
-    async def test_fails_when_adapter_not_found(self, temp_storage):
+    async def test_fails_when_adapter_not_found(self, temp_storage: str) -> None:
         from relay.runners import AdapterRegistry
         registry = AdapterRegistry()
         pipeline = CoreRelayPipeline(
@@ -740,7 +787,7 @@ class TestPipelineExecuteStepWithRunner:
         assert result.code == ErrorCode.ADAPTER_NOT_FOUND
 
     @pytest.mark.asyncio
-    async def test_fails_on_adapter_exception(self, temp_storage):
+    async def test_fails_on_adapter_exception(self, temp_storage: str) -> None:
         from relay.runners import AdapterRegistry
         from tests.unit.test_runners.conftest import FixedAgentRunner
 
@@ -761,7 +808,7 @@ class TestPipelineExecuteStepWithRunner:
         assert "FixedAgentRunner" in result.reason
 
     @pytest.mark.asyncio
-    async def test_successful_execution_with_runner(self, temp_storage):
+    async def test_successful_execution_with_runner(self, temp_storage: str) -> None:
         from relay.runners import AdapterRegistry
         from tests.unit.test_runners.conftest import FixedAgentRunner
 
@@ -780,4 +827,4 @@ class TestPipelineExecuteStepWithRunner:
         result = await pipeline.execute_step_with_runner("good-runner", manifest)
         assert isinstance(result, Success)
         assert result.value.step == 1
-        assert "runner response" in result.value.payload.get("text", "")
+        assert "runner response" in str(result.value.payload.get("text", ""))

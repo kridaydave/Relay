@@ -42,7 +42,7 @@ class TestSnapshotStore:
             signature="test-signature",
         )
 
-    def test_snapshot_saves_envelope_returns_snapshot_id(self) -> None:
+    def test_snapshot_saves_envelope_returns_snapshot_id_when_successful(self) -> None:
         envelope = self._create_envelope()
 
         result = self.store.save_snapshot(envelope)
@@ -51,7 +51,7 @@ class TestSnapshotStore:
         assert result.value.startswith("pipeline-123@1_")
         assert result.value.endswith(".json") is False
 
-    def test_snapshot_loads_saved_envelope(self) -> None:
+    def test_snapshot_loads_saved_envelope_from_storage(self) -> None:
         envelope = self._create_envelope(pipeline_id="pipeline-456", step=2)
         save_result = self.store.save_snapshot(envelope)
         assert isinstance(save_result, Success)
@@ -63,7 +63,7 @@ class TestSnapshotStore:
         assert result.value.step == 2
         assert result.value.pipeline_id == "pipeline-456"
 
-    def test_snapshot_get_latest_returns_most_recent(self) -> None:
+    def test_snapshot_get_latest_returns_most_recent_one(self) -> None:
         pipeline_id = "pipeline-789"
         envelope1 = self._create_envelope(pipeline_id=pipeline_id, step=1)
         envelope2 = self._create_envelope(pipeline_id=pipeline_id, step=2)
@@ -78,7 +78,7 @@ class TestSnapshotStore:
         assert isinstance(result, Success)
         assert result.value.step == 3
 
-    def test_snapshot_list_snapshots_returns_all_ids(self) -> None:
+    def test_snapshot_list_snapshots_returns_all_ids_for_pipeline(self) -> None:
         pipeline_id = "pipeline-abc"
         envelope1 = self._create_envelope(pipeline_id=pipeline_id, step=1)
         envelope2 = self._create_envelope(pipeline_id=pipeline_id, step=2)
