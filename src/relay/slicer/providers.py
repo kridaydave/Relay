@@ -4,10 +4,10 @@ Owns: EmbeddingProvider and SlicePacker contract definitions.
 Does NOT: implement embedding models, manage vector stores, or perform packing.
 """
 
-from typing import Any, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 from relay.slicer.manifest import AgentManifest
-from relay.types import Result
+from relay.types import JSONDict, Result
 
 
 @runtime_checkable
@@ -32,8 +32,8 @@ class SlicePacker(Protocol):
     """
 
     def pack(
-        self, payload: dict[str, Any], manifest: AgentManifest
-    ) -> Result[dict[str, Any]]:
+        self, payload: JSONDict, manifest: AgentManifest
+    ) -> Result[JSONDict]:
         """Pack context based on strategy.
 
         Args:

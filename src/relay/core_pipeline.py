@@ -8,7 +8,6 @@ import asyncio
 import hashlib
 import uuid
 from dataclasses import dataclass, field
-from typing import Any
 
 from relay.budget import HardCapEnforcer, TokenCounter
 from relay.context_broker import ContextBroker, create_context_broker
@@ -22,7 +21,7 @@ from relay.runners import AdapterRegistry
 from relay.runners.protocol import ContextSlice
 from relay.slicer import AgentManifest, SlicePacker
 from relay.snapshot import SnapshotStore
-from relay.types import ErrorCode, Failure, Result, RollbackSuccess, Success
+from relay.types import ErrorCode, Failure, JSONDict, Result, RollbackSuccess, Success
 from relay.validator import (
     HandoffValidator,
     ValidationResult,
@@ -31,13 +30,9 @@ from relay.validator import (
 
 
 def _combine_manifest_hashes(manifests: list[AgentManifest]) -> str:
-    """Compute deterministic combined hash from a list of AgentManifests.
-
-    Sorts manifests by agent_id, computes each individual SHA256 hash,
-    concatenates them with '|' separators, then SHA256s the result.
-    This is deterministic regardless of fork ordering.
-    """
-    sorted_manifests = sorted(manifests, key=lambda m: m.agent_id)
+    def _key(m: AgentManifest) -> str:
+        return m.agent_id
+    sorted_manifests = sorted(manifests, key=_key)
     hashes = [m.compute_hash() for m in sorted_manifests]
     combined = "|".join(hashes)
     return hashlib.sha256(combined.encode()).hexdigest()
@@ -66,6 +61,35 @@ class CoreRelayPipeline:
     _snapshot_store: SnapshotStore = field(init=False, repr=False)
     _rollback_handler: RollbackHandler = field(init=False, repr=False)
     _enforcer: HardCapEnforcer | None = field(init=False, repr=False)
+
+    @classmethod
+    def create(
+        cls,
+        signing_secret: str,
+        token_budget: int = 8000,
+        storage_path: str = "./relay_data/snapshots",
+        token_counter: TokenCounter | None = None,
+        slice_packer: SlicePacker | None = None,
+        registry: AdapterRegistry | None = None,
+    ) -> Result[CoreRelayPipeline]:
+        """Create a pipeline with Result-based error handling.
+
+        Use this factory instead of direct construction to handle
+        validation errors without exceptions.
+        """
+        broker_result = create_context_broker(
+            signing_secret=signing_secret, token_budget_total=token_budget
+        )
+        if isinstance(broker_result, Failure):
+            return broker_result
+        return Success(cls(
+            signing_secret=signing_secret,
+            token_budget=token_budget,
+            storage_path=storage_path,
+            token_counter=token_counter,
+            slice_packer=slice_packer,
+            registry=registry,
+        ))
 
     def __post_init__(self) -> None:
         self._pipeline_id = uuid.uuid4().hex
@@ -100,13 +124,13 @@ class CoreRelayPipeline:
         """Exit the pipeline context and release resources."""
         self.close()
 
-    def execute_step(self, agent_output: dict[str, Any]) -> Result[ContextEnvelope]:
+    def execute_step(self, agent_output: JSONDict) -> Result[ContextEnvelope]:
         """Execute a pipeline step with agent output."""
         return self.execute_step_with_manifest(agent_output, manifest=None)
 
     def execute_step_with_manifest(
         self,
-        agent_output: dict[str, Any],
+        agent_output: JSONDict,
         manifest: AgentManifest | None = None,
     ) -> Result[ContextEnvelope]:
         """Execute a pipeline step with optional manifest for budget/boundary validation."""
@@ -120,7 +144,7 @@ class CoreRelayPipeline:
 
     def _handle_initial_step(
         self,
-        agent_output: dict[str, Any],
+        agent_output: JSONDict,
         manifest: AgentManifest | None,
     ) -> Result[ContextEnvelope]:
         """Handle the first pipeline step.
@@ -154,7 +178,7 @@ class CoreRelayPipeline:
     def _handle_subsequent_step(
         self,
         current_envelope: ContextEnvelope,
-        agent_output: dict[str, Any],
+        agent_output: JSONDict,
         manifest: AgentManifest | None,
     ) -> Result[ContextEnvelope]:
         """Handle a subsequent pipeline step.
@@ -184,7 +208,7 @@ class CoreRelayPipeline:
         self,
         manifest: AgentManifest | None,
         current_envelope: ContextEnvelope | None,
-        agent_output: dict[str, Any] | None = None,
+        agent_output: JSONDict | None = None,
     ) -> Result[None]:
         """Check token budget if manifest and enforcer present.
 
@@ -201,7 +225,7 @@ class CoreRelayPipeline:
                     return slice_result
                 projected = slice_result.value
             else:
-                projected = serialize_slice(agent_output) if agent_output is not None else serialize_slice({s: "<slice>" for s in manifest.writes})
+                projected = serialize_slice(agent_output) if agent_output is not None else serialize_slice(dict[str, object]({s: "<slice>" for s in manifest.writes}))
             budget_used = (
                 current_envelope.token_budget_used
                 if current_envelope is not None
@@ -582,7 +606,7 @@ class CoreRelayPipeline:
                 manifest_hash=manifest.compute_hash(),
             )
         permitted = manifest.reads & set(current_envelope.payload.keys())
-        sections = {k: current_envelope.payload[k] for k in permitted}
+        sections: JSONDict = {k: current_envelope.payload[k] for k in permitted}
         token_count = estimate_tokens(sections) if sections else 0
         return ContextSlice(
             pipeline_id=current_envelope.pipeline_id,

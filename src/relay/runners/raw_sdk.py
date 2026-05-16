@@ -11,10 +11,11 @@ import inspect
 import json
 import time
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, cast
+from typing import Awaitable, Callable, cast
 
 from relay.runners.protocol import AgentOutput, AgentRunner, ContextSlice
 from relay.slicer.manifest import AgentManifest
+from relay.types import JSONDict
 
 
 MessageList = list[dict[str, str]]
@@ -34,24 +35,26 @@ class RawSDKAdapter:
     fn: SyncCallable | AsyncCallable
     adapter_name: str = "raw_sdk"
 
-    def _build_messages(self, slice: ContextSlice) -> MessageList:
+    def _build_messages(self, slice_: ContextSlice) -> MessageList:
         """Convert ContextSlice.sections to OpenAI-compatible message list."""
-        return [{"role": "user", "content": json.dumps(slice.sections, indent=2)}]
+        return [{"role": "user", "content": json.dumps(slice_.sections, indent=2)}]
 
-    async def run(self, slice: ContextSlice, manifest: AgentManifest) -> AgentOutput:
+    async def run(self, slice_: ContextSlice, manifest: AgentManifest) -> AgentOutput:
         """Execute the callable and return normalised output."""
-        messages = self._build_messages(slice)
+        messages = self._build_messages(slice_)
         start = time.monotonic()
         if inspect.iscoroutinefunction(self.fn):
-            text = await self.fn(messages)
+            async_fn = cast(AsyncCallable, self.fn)
+            text: str = await async_fn(messages)
         else:
-            text = await asyncio.to_thread(self.fn, messages)
+            sync_fn = cast(SyncCallable, self.fn)
+            text = await asyncio.to_thread(sync_fn, messages)
         latency_ms = int((time.monotonic() - start) * 1000)
         return AgentOutput(
             text=text,
-            structured={},
+            structured=JSONDict(),
             tool_calls=[],
-            token_count=slice.token_count + len(text) // 4,
+            token_count=slice_.token_count + len(text) // 3,
             latency_ms=latency_ms,
             adapter=self.adapter_name,
         )
