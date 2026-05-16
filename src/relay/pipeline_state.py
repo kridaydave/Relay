@@ -56,6 +56,13 @@ class PipelineState:
 
         Yields the current envelope while holding the lock.
         Automatically acquires and releases the lock.
+
+        Raises:
+            RuntimeError: If called re-entrantly (lock is non-reentrant).
+                This is a deliberate programmer-error hard crash — nested
+                transaction() calls would deadlock. Do NOT catch this exception;
+                fix the caller to not nest transactions. All public API methods
+                that accept a transaction context manager document this constraint.
         """
         if threading.get_ident() == self._lock_owner:
             raise RuntimeError("Re-entrant lock access detected")

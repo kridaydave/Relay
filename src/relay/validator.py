@@ -239,11 +239,16 @@ class HandoffValidator:
     )
 
     def _extract_entities(self, payload: dict[str, Any]) -> frozenset[str]:
-        """Extract entity mentions from payload using iterative traversal.
+        """Approximates entity mentions from payload using iterative traversal.
 
-        Only extracts strings from values whose parent key is an entity-keyed field
-        (entity, entities, subject, object, name, id, identifier). This prevents
-        arbitrary narrative text from polluting the entity set.
+        This heuristic extracts strings from values whose parent key is an
+        entity-keyed field (entity, entities, subject, object, name, id, identifier).
+        It has known false positives (narrative text using entity-like keys) and
+        false negatives (entities in non-entity-keyed fields). Treat output as
+        approximate, not exact.
+
+        Only extracts strings from values whose parent key is an entity-keyed field.
+        This prevents arbitrary narrative text from polluting the entity set.
 
         Tracks nesting depth from root (not stack size). A flat list of 60 strings
         has items at depth 1 and passes. A dict nested 50 levels deep fails with
