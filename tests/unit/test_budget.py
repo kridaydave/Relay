@@ -96,20 +96,21 @@ class TestHeuristicCounter:
 
 
 class TestTiktokenCounterFallback:
-    def test_tiktoken_counter_is_heuristic_when_tiktoken_unavailable(self, monkeypatch):
-        import builtins
+    def test_tiktoken_counter_is_heuristic_when_tiktoken_unavailable(self):
+        """Isolated in subprocess because it mutates sys.modules and builtins.__import__."""
+        import subprocess
         import sys
-        real_import = builtins.__import__
-        def mock_import(name, *args, **kwargs):
-            if name == "tiktoken":
-                raise ImportError
-            return real_import(name, *args, **kwargs)
-        monkeypatch.setattr(builtins, "__import__", mock_import)
-
-        sys.modules.pop("tiktoken", None)
-
-        import importlib
-        import relay.budget.token_counter as tc_mod
-        importlib.reload(tc_mod)
-
-        assert tc_mod.TiktokenCounter is tc_mod.HeuristicCounter
+        code = (
+            "import builtins; "
+            "real = builtins.__import__; "
+            "builtins.__import__ = lambda n, *a, **kw: (_ for _ in ()).throw(ImportError) if n == 'tiktoken' else real(n, *a, **kw); "
+            "import sys; sys.modules.pop('tiktoken', None); "
+            "import importlib; import relay.budget.token_counter as tc; importlib.reload(tc); "
+            "assert tc.AutoTokenCounter is tc.HeuristicCounter"
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", code],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, f"Subprocess failed: {result.stderr}"

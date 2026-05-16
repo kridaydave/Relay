@@ -104,7 +104,7 @@ class TestPipelineRollback2:
         pipeline.execute_step({"data": "next"})
         result = pipeline.rollback()
 
-        assert isinstance(result, (Success, RollbackSuccess))
+        assert isinstance(result, RollbackSuccess)
         assert result.value.step == 1
         assert result.value.payload == {"entities": ["entity1"], "data": "initial"}
 
@@ -127,12 +127,20 @@ class TestConcurrentPipeline:
     """R18: Concurrent code must be tested concurrently."""
 
     @patch("relay.context_broker.ContextBroker.create_initial_envelope")
+    @patch("relay.context_broker.ContextBroker.create_next_envelope")
     def test_concurrent_step_execution_produces_consistent_results(
-        self, mock_initial, temp_storage
+        self, mock_next, mock_initial, temp_storage
     ):
         """Test that concurrent step execution produces consistent results."""
         mock_initial.return_value = Success(
             create_mock_envelope(1, "test-pipeline-id", {"initial": "data"})
+        )
+        mock_next.side_effect = lambda previous_envelope, agent_output, manifest_hash: Success(
+            create_mock_envelope(
+                previous_envelope.step + 1,
+                previous_envelope.pipeline_id,
+                agent_output,
+            )
         )
 
         pipeline = CoreRelayPipeline(

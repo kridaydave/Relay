@@ -187,5 +187,3 @@ class TestCreateNextEnvelope:
         assert result.value.token_budget_used > 100
 
 
-class TestContextBrokerConstruction:
-    pass

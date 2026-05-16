@@ -16,7 +16,7 @@ python -m mypy --strict src/relay             # must pass with zero # type: igno
 - **Error handling**: `Result[T] = Success[T] | RollbackSuccess[T] | Failure` — no exceptions for operational errors
 - **Rollback**: Returns `RollbackSuccess` (not `Success`). `unwrap()` raises on RollbackSuccess; `unwrap_or()` returns default on both Failure and RollbackSuccess; `map_result()` transforms RollbackSuccess.
 - **Pipeline lock**: Non-reentrant `threading.Lock` held via `pipeline_state.transaction()` context manager. Never call `transaction()` inside another transaction.
-- **TiktokenCounter** is NOT exported from `relay.budget.__init__`. Import from `relay.budget.token_counter` directly.
+- **AutoTokenCounter** is NOT exported from `relay.budget.__init__`. Import from `relay.budget.token_counter` directly.
 
 ## Code conventions
 

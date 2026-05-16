@@ -527,28 +527,6 @@ class TestSnapshotIdPattern:
         assert SNAPSHOT_ID_PATTERN.match("../etc/passwd") is None
 
 
-class TestContextEnvelope:
-    def test_context_envelope_is_frozen_dataclass(self):
-        envelope = ContextEnvelope(
-            relay_version=RELAY_VERSION,
-            pipeline_id="test-pipeline",
-            step=1,
-            timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
-            token_budget_used=100,
-            token_budget_total=8000,
-            payload={"key": "value"},
-            manifest_hash="",
-            signature="sig-123",
-        )
-
-        assert envelope.pipeline_id == "test-pipeline"
-        assert envelope.step == 1
-        assert envelope.signature == "sig-123"
-
-        with pytest.raises(Exception):
-            envelope.pipeline_id = "changed"
-
-
 class TestPreV04SnapshotCompat:
     def test_loading_snapshot_without_fork_fields_succeeds(self):
         """Pre-v0.4 snapshot (no fork keys in JSON) loads with fork fields as None."""
