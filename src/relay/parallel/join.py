@@ -76,7 +76,8 @@ def _apply_vote(fork_results: list[ForkResult]) -> Result[dict[str, Any]]:
         )
 
     def _confidence(r: ForkResult) -> float:
-        assert r.validation is not None
+        if r.validation is None:
+            return 0.0
         return r.validation.confidence_score
 
     winner = max(passing, key=_confidence)
