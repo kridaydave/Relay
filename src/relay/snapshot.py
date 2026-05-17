@@ -33,6 +33,9 @@ class LocalFileSnapshotStore:
 
     Owns: checkpoint lifecycle, rollback restore, storage cleanup.
     Does NOT: execute agents or manage pipeline state.
+    Thread safety: this implementation is NOT thread-safe by itself.
+    Concurrent access must be serialized externally (e.g., via
+    CoreRelayPipeline's transaction lock).
     """
 
     def __init__(self, storage_path: str = "./relay_data/snapshots", signing_secret: str | None = None) -> None:
@@ -414,14 +417,15 @@ class LocalFileSnapshotStore:
             "payload": envelope.payload,
             "manifest_hash": envelope.manifest_hash,
             "signature": envelope.signature,
-            "fork_id": envelope.fork_id,
-            "join_strategy": envelope.join_strategy,
-            "fork_count": envelope.fork_count,
-            "forks_succeeded": envelope.forks_succeeded,
             "key_id": envelope.key_id,
             "nonce": envelope.nonce,
             "sequence_number": envelope.sequence_number,
         }
+        if envelope.fork_id is not None:
+            result["fork_id"] = envelope.fork_id
+            result["join_strategy"] = envelope.join_strategy
+            result["fork_count"] = envelope.fork_count
+            result["forks_succeeded"] = envelope.forks_succeeded
         return result
 
     def _require_str(self, data: JSONDict, key: str) -> "Result[str]":

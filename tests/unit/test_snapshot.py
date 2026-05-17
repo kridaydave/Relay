@@ -122,8 +122,6 @@ class TestSnapshotStore:
 
     def test_load_snapshot_fails_when_body_pipeline_id_is_invalid(self) -> None:
         """Snapshot where body pipeline_id is malicious is rejected (Issue #1)."""
-        import json
-        from pathlib import Path
 
         pipeline_id = "valid-pid"
         env = self._create_envelope(pipeline_id=pipeline_id, step=1)
@@ -176,8 +174,6 @@ class TestSnapshotStore:
 
     def test_get_latest_snapshot_propagates_corrupted_index_failure_returns_error(self) -> None:
         """Corrupted index must not be silently converted to PIPELINE_NOT_FOUND."""
-        from pathlib import Path
-
         index_path = Path(self.temp_dir) / "pipeline-xyz" / "index.json"
         index_path.parent.mkdir(parents=True)
         index_path.write_text("not valid json {{{")
@@ -189,9 +185,6 @@ class TestSnapshotStore:
 
     def test_get_latest_snapshot_propagates_index_read_failure_returns_error(self) -> None:
         """OS-level read errors must propagate, not become PIPELINE_NOT_FOUND."""
-        from pathlib import Path
-        from unittest.mock import patch
-
         index_path = Path(self.temp_dir) / "pipeline-xyz" / "index.json"
         index_path.parent.mkdir(parents=True)
         index_path.write_text('{"snapshots": []}')
@@ -204,8 +197,6 @@ class TestSnapshotStore:
 
     def test_get_latest_snapshot_propagates_invalid_index_failure_returns_error(self) -> None:
         """Index with wrong schema (not a dict) must propagate, not become PIPELINE_NOT_FOUND."""
-        from pathlib import Path
-
         index_path = Path(self.temp_dir) / "pipeline-xyz" / "index.json"
         index_path.parent.mkdir(parents=True)
         index_path.write_text('["not", "a", "dict"]')

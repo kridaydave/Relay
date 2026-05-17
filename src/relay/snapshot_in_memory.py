@@ -2,6 +2,9 @@
 
 Owns: in-memory snapshot storage, Protocol compliance verification.
 Does NOT: persist data across process restarts, provide transactional guarantees.
+
+NOTE: InMemorySnapshotStore does NOT verify envelope signatures.
+Use LocalFileSnapshotStore with a signing_secret for integrity guarantees.
 """
 
 import threading

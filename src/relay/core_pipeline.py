@@ -101,17 +101,17 @@ class CoreRelayPipeline:
         )
         if isinstance(broker_result, Failure):
             return broker_result
-        return Success(
-            cls(
-                signing_secret=signing_secret,
-                token_budget=token_budget,
-                storage_path=storage_path,
-                token_counter=token_counter,
-                slice_packer=slice_packer,
-                registry=registry,
-                snapshot_store=snapshot_store,
-            )
+        pipeline = cls(
+            signing_secret=signing_secret,
+            token_budget=token_budget,
+            storage_path=storage_path,
+            token_counter=token_counter,
+            slice_packer=slice_packer,
+            registry=registry,
+            snapshot_store=snapshot_store,
         )
+        pipeline._context_broker = broker_result.value
+        return Success(pipeline)
 
     def __post_init__(self) -> None:
         self._pipeline_id = uuid.uuid4().hex
