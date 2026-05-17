@@ -4,6 +4,10 @@ Owns: pipeline lifecycle, component coordination, budget enforcement hooks, slic
 Does NOT: define agent behaviour, manage prompts, implement token counting, or implement slicing strategies.
 """
 
+__all__ = [
+    "CoreRelayPipeline",
+]
+
 import asyncio
 import hashlib
 import uuid
