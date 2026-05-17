@@ -491,8 +491,9 @@ class TestAgentOutputToPayload:
 
 class TestPipelineConstruction:
     def test_fails_on_short_signing_secret(self) -> None:
-        with pytest.raises(ValueError, match="signing_secret"):
-            CoreRelayPipeline(signing_secret="short")
+        result = CoreRelayPipeline.create(signing_secret="short")
+        assert isinstance(result, Failure)
+        assert result.code == ErrorCode.INVALID_SECRET
 
 
 class TestPipelineContextManager:
@@ -669,24 +670,20 @@ class TestPipelineBudgetEnforcement:
 
 class TestPipelineApplyManifest:
     def test_apply_manifest_adds_hash_and_signature_when_successful(self, temp_storage: str) -> None:
-        with patch("relay.context_broker.ContextBroker.create_initial_envelope") as mock_initial:
-            payload: JSONDict = {"y": "data"}
-            mock_initial.return_value = Success[ContextEnvelope](
-                create_mock_envelope(1, "pipe-id", payload),
-            )
-            manifest = AgentManifest(
-                "a1", "task",
-                reads=frozenset({"x"}), writes=frozenset({"y"}), max_tokens=100,
-            )
-            pipeline = CoreRelayPipeline(
-                signing_secret="a" * 32, token_budget=8000, storage_path=temp_storage,
-            )
-            result = pipeline.execute_step_with_manifest(
-                payload, manifest=manifest,
-            )
-            assert isinstance(result, Success)
-            assert result.value.manifest_hash == manifest.compute_hash()
-            assert result.value.signature != ""
+        pipeline = CoreRelayPipeline(
+            signing_secret="a" * 32, token_budget=8000, storage_path=temp_storage,
+        )
+        payload: JSONDict = {"y": "data"}
+        manifest = AgentManifest(
+            "a1", "task",
+            reads=frozenset({"x"}), writes=frozenset({"y"}), max_tokens=100,
+        )
+        result = pipeline.execute_step_with_manifest(
+            payload, manifest=manifest,
+        )
+        assert isinstance(result, Success)
+        assert result.value.manifest_hash == manifest.compute_hash()
+        assert result.value.signature != ""
 
 
 class TestPipelineRollbackEdgeCases:
@@ -698,18 +695,11 @@ class TestPipelineRollbackEdgeCases:
 
     def test_do_rollback_fails_on_invariant_violation_when_state_is_corrupt(self, pipeline: CoreRelayPipeline) -> None:
         """If has_history() is True but peek_last() is None, _do_rollback fails with INVALID_STATE."""
-        # Manually corrupt the state by having history but no last envelope
-        # We need to mock peek_last to return None while has_history returns True
-        with patch.object(pipeline._state, "has_history", return_value=True), \
-             patch.object(pipeline._state, "peek_last", return_value=None):
-            # We must also mock transaction to not actually do anything
-            from contextlib import contextmanager
-            @contextmanager
-            def mock_transaction() -> Generator[ContextEnvelope | None, None, None]:
-                yield None
-            
-            with patch.object(pipeline._state, "transaction", side_effect=mock_transaction):
-                result = pipeline.rollback()
+        with pipeline._state.transaction():
+            state = pipeline._state
+            with patch.object(state, "has_history", return_value=True), \
+                 patch.object(state, "peek_last", return_value=None):
+                result = pipeline._do_rollback("test", consume=True)
                 assert isinstance(result, Failure)
                 assert result.code == ErrorCode.INVALID_STATE
 

@@ -16,6 +16,7 @@ from relay.envelope import (
     compute_signature,
     estimate_tokens,
     serialize_slice,
+    verify_signature,
 )
 from relay.parallel import ForkResult, ForkSpec, JoinStrategy, apply_join_strategy
 from relay.parallel.fork_runner import run_single_fork
@@ -50,9 +51,12 @@ class CoreRelayPipeline:
     Owns: pipeline lifecycle, component coordination, budget enforcement, slicer dispatch,
           parallel fork-join orchestration.
     Does NOT: define agent behavior, manage prompts, implement token counting, or implement slicing strategies.
+
+    Note: Use create() factory to construct instances with validation. Direct construction
+    bypasses secret validation and is intended only for internal use with pre-validated secrets.
     """
 
-    signing_secret: str
+    signing_secret: str = field(repr=False)
     token_budget: int = 8000
     storage_path: str = "./relay_data/snapshots"
     token_counter: TokenCounter | None = None
@@ -101,12 +105,9 @@ class CoreRelayPipeline:
     def __post_init__(self) -> None:
         self._pipeline_id = uuid.uuid4().hex
         self._state = PipelineState(pipeline_id=self._pipeline_id)
-        broker_result = create_context_broker(
+        self._context_broker = ContextBroker(
             signing_secret=self.signing_secret, token_budget_total=self.token_budget
         )
-        if isinstance(broker_result, Failure):
-            raise ValueError(broker_result.reason)
-        self._context_broker = broker_result.value
         self._handoff_validator = HandoffValidator()
         self._snapshot_store = SnapshotStore(storage_path=self.storage_path)
         self._rollback_handler = RollbackHandler()
@@ -298,6 +299,7 @@ class CoreRelayPipeline:
         REQUIRES: caller holds self._state._lock via transaction() context manager.
         Must NOT call self._state.transaction() — lock is non-reentrant.
         """
+        self._state._assert_lock_held()
         validation_result = self._handoff_validator.validate_handoff(
             previous_envelope=current_envelope, current_envelope=new_envelope
         )
@@ -330,7 +332,8 @@ class CoreRelayPipeline:
 
         Skips re-signing when manifest_hash already matches — avoids wasting
         the signature already computed by create_initial_envelope or
-        create_next_envelope.
+        create_next_envelope. Only verifies the signature when about to re-sign,
+        since that path overwrites a potentially tampered signature.
 
         REQUIRES: caller holds self._state._lock via transaction() context manager.
         """
@@ -342,6 +345,12 @@ class CoreRelayPipeline:
         manifest_hash = manifest.compute_hash()
         if envelope.manifest_hash == manifest_hash:
             return Success(envelope)
+        # Verify before re-signing: prevents overwriting a tampered signature.
+        if not verify_signature(envelope, self._context_broker.signing_secret):
+            return Failure(
+                reason="Cannot apply manifest to envelope with invalid signature",
+                code=ErrorCode.INVALID_SNAPSHOT,
+            )
         envelope_with_hash = envelope.with_manifest_hash(manifest_hash)
         signed = envelope_with_hash.with_signature(
             compute_signature(envelope_with_hash, self._context_broker.signing_secret)
@@ -354,6 +363,7 @@ class CoreRelayPipeline:
         REQUIRES: caller holds self._state._lock via transaction() context manager.
         Must NOT call self._state.transaction() — lock is non-reentrant.
         """
+        self._state._assert_lock_held()
         if not self._state.has_history():
             return Failure(
                 reason="No previous envelope to rollback to",

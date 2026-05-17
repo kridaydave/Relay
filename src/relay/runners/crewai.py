@@ -46,6 +46,7 @@ class CrewAIAdapter:
     Args:
         agent: A CrewAI Agent instance with memory=False.
         adapter_name: Name for this adapter in AgentOutput.
+        timeout_seconds: Maximum time in seconds for agent execution. None disables timeout.
 
     Raises:
         ValueError: If agent has memory=True.
@@ -54,6 +55,7 @@ class CrewAIAdapter:
 
     agent: object
     adapter_name: str = "crewai"
+    timeout_seconds: float | None = 300.0
 
     def __post_init__(self) -> None:
         if hasattr(self.agent, "memory") and _make_crewai_agent(self.agent).memory:
@@ -76,7 +78,10 @@ class CrewAIAdapter:
         task_obj: object = Task(description=self._build_task_description(slice_), agent=self.agent)
         task = _make_crewai_task(task_obj)
         start = time.monotonic()
-        response_raw: object = await asyncio.to_thread(task.execute_sync)
+        coro = asyncio.to_thread(task.execute_sync)
+        if self.timeout_seconds is not None:
+            coro = asyncio.wait_for(coro, timeout=self.timeout_seconds)
+        response_raw: object = await coro
         latency_ms = int((time.monotonic() - start) * 1000)
         text = str(response_raw) if not isinstance(response_raw, str) else response_raw
         return AgentOutput(

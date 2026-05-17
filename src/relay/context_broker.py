@@ -45,7 +45,7 @@ def create_context_broker(
     return Success(ContextBroker(signing_secret=signing_secret, token_budget_total=token_budget_total))
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, repr=False)
 class ContextBroker:
     """Manages context envelope creation and signing.
 

@@ -15,6 +15,7 @@ if TYPE_CHECKING:
 
 
 MAX_EXTRACTION_DEPTH = 50
+MAX_EXTRACTED_ENTITIES = 10000
 
 __all__ = [
     "MAX_EXTRACTION_DEPTH",
@@ -258,6 +259,8 @@ class HandoffValidator:
 
         stack: list[tuple[object, int, bool]] = [(payload, 0, False)]
         while stack:
+            if len(entities) >= MAX_EXTRACTED_ENTITIES:
+                break
             obj, depth, is_entity_context = stack.pop()
             if depth > MAX_EXTRACTION_DEPTH:
                 raise MaxDepthExceededError(

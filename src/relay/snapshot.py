@@ -19,6 +19,7 @@ from relay.envelope import PIPELINE_ID_PATTERN, ContextEnvelope, validate_pipeli
 from relay.types import ErrorCode, Failure, JSONDict, Result, Success
 
 SNAPSHOT_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{1,128}@\d+_[a-f0-9]{12}$")
+MAX_SNAPSHOT_BYTES = 100 * 1024 * 1024  # 100 MB
 
 __all__ = [
     "SnapshotStore",
@@ -80,7 +81,17 @@ class SnapshotStore:
                 code=ErrorCode.INVALID_PIPELINE_ID,
             )
         pipeline_path = self._storage_path / pipeline_id
+        if pipeline_path.is_symlink():
+            return Failure(
+                reason=f"Pipeline path is a symlink, refusing to write: {pipeline_path}",
+                code=ErrorCode.SNAPSHOT_SAVE_FAILED,
+            )
         pipeline_path.mkdir(parents=True, exist_ok=True)
+        if pipeline_path.is_symlink():
+            return Failure(
+                reason=f"Pipeline path is a symlink after creation: {pipeline_path}",
+                code=ErrorCode.SNAPSHOT_SAVE_FAILED,
+            )
 
         snapshot_id = f"{pipeline_id}@{envelope.step}_{uuid.uuid4().hex[:12]}"
 
@@ -89,8 +100,14 @@ class SnapshotStore:
         temp_path = pipeline_path / f"{snapshot_id}.tmp"
 
         try:
+            json_str = json.dumps(self._envelope_to_dict(envelope), indent=2)
+            if len(json_str) > MAX_SNAPSHOT_BYTES:
+                return Failure(
+                    reason=f"Snapshot exceeds maximum size of {MAX_SNAPSHOT_BYTES} bytes",
+                    code=ErrorCode.SNAPSHOT_SAVE_FAILED,
+                )
             with open(temp_path, "w") as f:
-                json.dump(self._envelope_to_dict(envelope), f, indent=2)
+                f.write(json_str)
             os.replace(temp_path, snapshot_path)
         except (OSError, TypeError) as e:
             if temp_path.exists():
@@ -125,6 +142,12 @@ class SnapshotStore:
 
         snapshot_path = self._storage_path / pipeline_id / f"{snapshot_id}.json"
         try:
+            stat_result = snapshot_path.stat()
+            if stat_result.st_size > MAX_SNAPSHOT_BYTES:
+                return Failure(
+                    reason=f"Snapshot file exceeds maximum size of {MAX_SNAPSHOT_BYTES} bytes",
+                    code=ErrorCode.SNAPSHOT_LOAD_FAILED,
+                )
             with open(snapshot_path, "r") as f:
                 data: object = json.load(f)
             if not isinstance(data, dict):

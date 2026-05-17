@@ -159,8 +159,26 @@ def compute_signature(envelope: ContextEnvelope, secret: str) -> str:
     return hmac.new(secret.encode(), base.encode(), hashlib.sha256).hexdigest()
 
 
-def verify_signature(envelope: ContextEnvelope, secret: str) -> bool:
-    """Verify the signature of an envelope."""
+def verify_signature(
+    envelope: ContextEnvelope,
+    secret: str,
+    max_age_seconds: int | None = None,
+) -> bool:
+    """Verify the signature of an envelope.
+
+    Args:
+        envelope: The envelope to verify.
+        secret: HMAC signing secret.
+        max_age_seconds: If provided, reject envelopes older than this many seconds.
+
+    Returns:
+        True if the signature is valid and (if max_age_seconds is provided) the
+        envelope is not stale. False otherwise.
+    """
+    if max_age_seconds is not None:
+        age = (datetime.now(timezone.utc) - envelope.timestamp).total_seconds()
+        if age > max_age_seconds:
+            return False
     expected_sig = compute_signature(envelope, secret)
     return hmac.compare_digest(envelope.signature, expected_sig)
 

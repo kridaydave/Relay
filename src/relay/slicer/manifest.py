@@ -6,7 +6,10 @@ Does NOT: validate manifests, enforce permissions, or manage agent lifecycle.
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass
+
+_AGENT_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
 
 
 @dataclass(frozen=True)
@@ -26,6 +29,13 @@ class AgentManifest:
     reads: frozenset[str]
     writes: frozenset[str]
     max_tokens: int | None
+
+    def __post_init__(self) -> None:
+        if not _AGENT_ID_PATTERN.match(self.agent_id):
+            raise ValueError(
+                f"Invalid agent_id: '{self.agent_id}'. "
+                "Must match ^[a-zA-Z0-9_-]{1,64}$"
+            )
 
     def compute_hash(self) -> str:
         """Compute deterministic SHA256 hash of the manifest.
