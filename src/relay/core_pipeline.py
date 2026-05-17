@@ -305,10 +305,7 @@ class CoreRelayPipeline:
             return validation_result
 
         if self._handoff_validator.should_rollback(validation_result.value):
-            save_result = self._snapshot_store.save_snapshot(current_envelope)
-            if isinstance(save_result, Failure):
-                return save_result
-            self._state.register_snapshot(current_envelope.step, save_result.value)
+            # current_envelope was already snapshotted when committed — skip redundant save.
             self._state.push_current_to_history()
             return RollbackSuccess(
                 value=current_envelope,
@@ -603,10 +600,7 @@ class CoreRelayPipeline:
                 return validation_result
 
             if self._handoff_validator.should_rollback(validation_result.value):
-                save_result = self._snapshot_store.save_snapshot(current_envelope)
-                if isinstance(save_result, Failure):
-                    return save_result
-                self._state.register_snapshot(current_envelope.step, save_result.value)
+                # current_envelope was already snapshotted — skip redundant save.
                 self._state.push_current_to_history()
                 return RollbackSuccess(
                     value=current_envelope,
