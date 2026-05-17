@@ -14,6 +14,8 @@ import pytest
 from relay.envelope import RELAY_VERSION, ContextEnvelope
 from relay.core_pipeline import CoreRelayPipeline
 from relay.parallel import agent_output_to_payload
+from relay.snapshot import LocalFileSnapshotStore
+from relay.snapshot_in_memory import InMemorySnapshotStore
 from relay.runners.protocol import AgentOutput, ContextSlice
 from relay.slicer import AgentManifest
 from relay.types import ErrorCode, Failure, Success, RollbackSuccess, JSONDict, Result
@@ -527,6 +529,62 @@ class TestPipelineClose:
             signing_secret="a" * 32, token_budget=8000, storage_path=temp_storage
         )
         pipeline.close()
+
+
+class TestPipelineSnapshotStoreWiring:
+    """Tests for snapshot_store field injection into CoreRelayPipeline."""
+
+    def test_pipeline_creates_local_file_snapshot_store_by_default(self, temp_storage: str) -> None:
+        """Default construction creates LocalFileSnapshotStore when no snapshot_store provided."""
+        pipeline = CoreRelayPipeline(
+            signing_secret="a" * 32, token_budget=8000, storage_path=temp_storage,
+        )
+        assert isinstance(pipeline._snapshot_store, LocalFileSnapshotStore)
+
+    def test_pipeline_accepts_custom_snapshot_store(self, temp_storage: str) -> None:
+        """Injected InMemorySnapshotStore is used as _snapshot_store."""
+        custom_store = InMemorySnapshotStore()
+        pipeline = CoreRelayPipeline(
+            signing_secret="a" * 32, token_budget=8000,
+            storage_path=temp_storage, snapshot_store=custom_store,
+        )
+        assert pipeline._snapshot_store is custom_store
+
+    def test_pipeline_with_custom_store_executes_step_successfully(self, temp_storage: str) -> None:
+        """Pipeline with InMemorySnapshotStore runs a step and saves to the in-memory store."""
+        custom_store = InMemorySnapshotStore()
+        pipeline = CoreRelayPipeline(
+            signing_secret="a" * 32, token_budget=8000,
+            storage_path=temp_storage, snapshot_store=custom_store,
+        )
+        result = pipeline.execute_step({"data": "test-payload"})
+        assert isinstance(result, Success)
+        assert result.value.step == 1
+        # Verify snapshot was saved to the in-memory store
+        snapshot_id = result.value.pipeline_id
+        snapshots = custom_store.list_snapshots(snapshot_id)
+        assert isinstance(snapshots, Success)
+        assert len(snapshots.value) == 1
+
+    def test_create_factory_passes_snapshot_store_to_pipeline(self, temp_storage: str) -> None:
+        """CoreRelayPipeline.create() accepts and wires custom snapshot_store."""
+        custom_store = InMemorySnapshotStore()
+        result = CoreRelayPipeline.create(
+            signing_secret="a" * 32, token_budget=8000,
+            storage_path=temp_storage, snapshot_store=custom_store,
+        )
+        assert isinstance(result, Success)
+        assert result.value._snapshot_store is custom_store
+
+    def test_close_calls_snapshot_store_close(self, temp_storage: str) -> None:
+        """close() delegates to the injected store's close() method."""
+        custom_store = MagicMock(spec=InMemorySnapshotStore)
+        pipeline = CoreRelayPipeline(
+            signing_secret="a" * 32, token_budget=8000,
+            storage_path=temp_storage, snapshot_store=custom_store,
+        )
+        pipeline.close()
+        custom_store.close.assert_called_once()
 
 
 class TestPipelineInitialStepErrors:
