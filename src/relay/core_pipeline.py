@@ -249,10 +249,9 @@ class CoreRelayPipeline:
         """
         if manifest is not None and self._enforcer is not None:
             if current_envelope is not None:
-                slice_result = self._slice_payload(manifest, current_envelope)
-                if isinstance(slice_result, Failure):
-                    return slice_result
-                projected = slice_result.value
+                projected = serialize_slice(
+                    dict[str, object]({s: "<output>" for s in manifest.writes})
+                )
             else:
                 projected = (
                     serialize_slice(agent_output)
