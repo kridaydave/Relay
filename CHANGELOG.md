@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-05-17
+
+### Added
+- **SnapshotStore Protocol** — `SnapshotStore` is now a `@runtime_checkable` Protocol extending `Closeable`, living in its own file (`src/relay/snapshot_protocol.py`). Enables pluggable snapshot backends via dependency inversion (Rule 1.3).
+- **`InMemorySnapshotStore`** — Lightweight in-memory implementation of the `SnapshotStore` Protocol for testing and ephemeral pipelines. Stores snapshots in `dict[str, dict[str, ContextEnvelope]]` without filesystem I/O.
+- **Pluggable snapshot store injection** — `CoreRelayPipeline` now accepts an optional `snapshot_store: SnapshotStore | None = None` field parameter following the same injection pattern as `token_counter`, `slice_packer`, and `registry`. The `create()` factory also forwards the parameter.
+- **Protocol acceptance tests** — New tests verify `isinstance` checks, `Closeable` subtyping, and method surface for both `LocalFileSnapshotStore` and `InMemorySnapshotStore`.
+
+### Changed
+- Existing `SnapshotStore` class renamed to `LocalFileSnapshotStore` in `src/relay/snapshot.py`. The old name is now the Protocol.
+- `Closeable` Protocol made `@runtime_checkable` to enable structural subtyping checks via `isinstance`.
+- Consumer imports updated across `core_pipeline.py`, `pipeline_rollback.py`, `__init__.py`, and all test files to reflect the Protocol/rename split.
+- Version bumped to 0.5.0.
+
+### Fixed
+- `except Exception` → `except OSError` in test cleanup blocks per Rule 3.2.
+- Removed redundant inline `import shutil` in test functions (already at module level).
+
 ## [0.4.2] - 2026-05-17
 
 ### Changed

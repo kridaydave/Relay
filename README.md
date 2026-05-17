@@ -31,6 +31,7 @@ Relay treats context like a ledger: append-only, signed at every step, and rever
 - **Observability** — Read-only `history`, `snapshot_index`, and `current_envelope` properties (v0.4.1)
 - **Slicer** — Pluggable context slicing strategies (recency, relevance, structural)
 - **Manifest Boundaries** — Agent manifests define read/write permissions with hash verification
+- **Pluggable Snapshot Stores** — Protocol-based injection for custom backends, including `InMemorySnapshotStore` for testing (v0.5)
 - **Type Safe** — PEP 561 compliant with `py.typed` marker (v0.4.1)
 
 ---
@@ -281,7 +282,7 @@ Every context move between agents is wrapped in a signed, immutable envelope:
 
 ```python
 {
-  "relay_version": "0.4.2",
+  "relay_version": "0.5.0",
   "pipeline_id": "uuid-v4",
   "step": 2,
   "timestamp": "2026-05-04T10:22:00Z",

@@ -28,7 +28,9 @@
       "Bash(gh run *)",
       "Bash(python *)",
       "Bash(mypy --strict src/)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Skill(caveman)",
+      "Skill(superpowers:brainstorming)"
     ]
   }
 }

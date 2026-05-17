@@ -77,6 +77,15 @@ Refactor the existing `SnapshotStore` class into a `@runtime_checkable` Protocol
 - `src/relay/__init__.py` (line 15, 37): Update import — keep `SnapshotStore` name for Protocol, add `LocalFileSnapshotStore` and `InMemorySnapshotStore`
 - `RollbackHandler.restore_to_previous()` (line 19-48): Accepts `SnapshotStore` parameter — typing updates only
 
+### Import Map (all break after Protocol moves to snapshot_protocol.py)
+
+| File | Current import | Required change |
+|------|---------------|-----------------|
+| `src/relay/core_pipeline.py:29` | `from relay.snapshot import SnapshotStore` | `from relay.snapshot_protocol import SnapshotStore` |
+| `src/relay/pipeline_rollback.py:8` | `from relay.snapshot import SnapshotStore` | `from relay.snapshot_protocol import SnapshotStore` |
+| `tests/unit/test_snapshot.py:14` | `from relay.snapshot import ... SnapshotStore` | replace with `LocalFileSnapshotStore` |
+| `src/relay/__init__.py:15` | `from relay.snapshot import SnapshotStore` | import Protocol from `snapshot_protocol`; add `LocalFileSnapshotStore`, `InMemorySnapshotStore` |
+
 </code_context>
 
 <specifics>
@@ -85,6 +94,27 @@ Refactor the existing `SnapshotStore` class into a `@runtime_checkable` Protocol
 No specific requirements — open to standard approaches following established codebase patterns.
 
 </specifics>
+
+<review_findings>
+## Review Findings (2026-05-17)
+
+### Gap 1 — `SnapshotStore` Protocol should extend `Closeable`
+`Closeable` Protocol exists at `src/relay/types.py:19` (added in commit c9dd818). Use `class SnapshotStore(Closeable, Protocol)` so `isinstance(store, Closeable)` works and intent is explicit.
+
+### Gap 2 — `LocalFileSnapshotStore.close()` must be added
+Current `SnapshotStore` has no `close()` method. Rename alone won't satisfy the Protocol. Add `close(self) -> None: ...` as a no-op to `LocalFileSnapshotStore`. Same for `InMemorySnapshotStore`.
+
+### Gap 3 — Import map (see Integration Points above)
+Three source files and `__init__.py` import `SnapshotStore` from `relay.snapshot`. All break when Protocol moves. See Import Map table above.
+
+### Gap 4 — `create()` factory also needs `snapshot_store` param
+D-04 mentions field parameter injection, but `CoreRelayPipeline.create()` (lines 74-103) must also accept `snapshot_store: SnapshotStore | None = None` and pass it through to the constructor.
+
+### Minor notes
+- `storage_path` field: becomes ignored when `snapshot_store` is provided. Note this in docstring.
+- `_snapshot_store: SnapshotStore` annotation on line 70 of `core_pipeline.py` will refer to Protocol after refactor — correct under structural subtyping, but verify mypy --strict passes.
+
+</review_findings>
 
 <deferred>
 ## Deferred Ideas

@@ -705,9 +705,8 @@ class TestSnapshotStoreProtocol:
             assert isinstance(store, SnapshotStore)
         finally:
             try:
-                import shutil
                 shutil.rmtree(store._storage_path, ignore_errors=True)
-            except Exception:
+            except OSError:
                 pass
 
     def test_local_file_snapshot_store_isinstance_closeable(self) -> None:
@@ -717,9 +716,8 @@ class TestSnapshotStoreProtocol:
             assert isinstance(store, Closeable)
         finally:
             try:
-                import shutil
                 shutil.rmtree(store._storage_path, ignore_errors=True)
-            except Exception:
+            except OSError:
                 pass
 
     def test_snapshot_store_protocol_has_expected_methods(self) -> None:
