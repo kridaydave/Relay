@@ -263,6 +263,80 @@ class TestVerifySignature:
 
         assert verify_signature(tampered, secret) is False
 
+    def test_verify_signature_passes_when_envelope_is_fresh_and_within_max_age(
+        self, secret: str, initial_payload: JSONDict
+    ) -> None:
+        first = create_initial_envelope(
+            pipeline_id="pipeline-123",
+            initial_payload=initial_payload,
+            secret=secret,
+            manifest_hash="",
+        )
+        assert isinstance(first, Success)
+        envelope = first.value
+
+        assert verify_signature(envelope, secret, max_age_seconds=3600) is True
+
+    def test_verify_signature_fails_when_envelope_is_stale_and_exceeds_max_age(
+        self, secret: str, initial_payload: JSONDict
+    ) -> None:
+        old_ts = datetime(2020, 1, 1, tzinfo=timezone.utc)
+        envelope = ContextEnvelope(
+            relay_version=RELAY_VERSION,
+            pipeline_id="pipeline-123",
+            step=1,
+            timestamp=old_ts,
+            token_budget_used=0,
+            token_budget_total=8000,
+            payload=initial_payload,
+            manifest_hash="",
+            signature="",
+        )
+        signed = compute_signature(envelope, secret)
+        stale = ContextEnvelope(
+            relay_version=RELAY_VERSION,
+            pipeline_id="pipeline-123",
+            step=1,
+            timestamp=old_ts,
+            token_budget_used=0,
+            token_budget_total=8000,
+            payload=initial_payload,
+            manifest_hash="",
+            signature=signed,
+        )
+
+        assert verify_signature(stale, secret, max_age_seconds=1) is False
+
+    def test_verify_signature_passes_when_max_age_is_none_regardless_of_age(
+        self, secret: str, initial_payload: JSONDict
+    ) -> None:
+        old_ts = datetime(2020, 1, 1, tzinfo=timezone.utc)
+        envelope = ContextEnvelope(
+            relay_version=RELAY_VERSION,
+            pipeline_id="pipeline-123",
+            step=1,
+            timestamp=old_ts,
+            token_budget_used=0,
+            token_budget_total=8000,
+            payload=initial_payload,
+            manifest_hash="",
+            signature="",
+        )
+        signed = compute_signature(envelope, secret)
+        stale = ContextEnvelope(
+            relay_version=RELAY_VERSION,
+            pipeline_id="pipeline-123",
+            step=1,
+            timestamp=old_ts,
+            token_budget_used=0,
+            token_budget_total=8000,
+            payload=initial_payload,
+            manifest_hash="",
+            signature=signed,
+        )
+
+        assert verify_signature(stale, secret, max_age_seconds=None) is True
+
 
 class TestTokenEstimation:
     """Ground-truth benchmark for estimate_tokens per R17.

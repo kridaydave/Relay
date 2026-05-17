@@ -685,6 +685,23 @@ class TestPipelineApplyManifest:
         assert result.value.manifest_hash == manifest.compute_hash()
         assert result.value.signature != ""
 
+    def test_apply_manifest_fails_when_envelope_signature_is_invalid(self, temp_storage: str) -> None:
+        pipeline = CoreRelayPipeline(
+            signing_secret="a" * 32, token_budget=8000, storage_path=temp_storage,
+        )
+        manifest = AgentManifest(
+            "a1", "task",
+            reads=frozenset({"x"}), writes=frozenset({"x"}), max_tokens=100,
+        )
+        pipeline.execute_step({"x": "first"})
+        envelope = pipeline.current_envelope
+        assert envelope is not None
+        tampered = envelope.with_signature("tampered")
+        with pipeline._state.transaction():
+            result = pipeline._apply_manifest(tampered, manifest)
+        assert isinstance(result, Failure)
+        assert result.code == ErrorCode.INVALID_SNAPSHOT
+
 
 class TestPipelineRollbackEdgeCases:
     def test_rollback_fails_when_no_history(self, pipeline: CoreRelayPipeline) -> None:
