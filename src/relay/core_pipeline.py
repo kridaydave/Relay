@@ -63,6 +63,7 @@ class CoreRelayPipeline:
     token_counter: TokenCounter | None = None
     slice_packer: SlicePacker | None = None
     registry: AdapterRegistry | None = None
+    snapshot_store: SnapshotStore | None = None
 
     _pipeline_id: str = field(init=False, repr=False)
     _state: PipelineState = field(init=False, repr=False)
@@ -81,11 +82,14 @@ class CoreRelayPipeline:
         token_counter: TokenCounter | None = None,
         slice_packer: SlicePacker | None = None,
         registry: AdapterRegistry | None = None,
+        snapshot_store: SnapshotStore | None = None,
     ) -> Result["CoreRelayPipeline"]:
         """Create a pipeline with Result-based error handling.
 
         Use this factory instead of direct construction to handle
         validation errors without exceptions.
+
+        Note: storage_path is ignored when snapshot_store is provided.
         """
         broker_result = create_context_broker(
             signing_secret=signing_secret, token_budget_total=token_budget
@@ -100,6 +104,7 @@ class CoreRelayPipeline:
                 token_counter=token_counter,
                 slice_packer=slice_packer,
                 registry=registry,
+                snapshot_store=snapshot_store,
             )
         )
 
@@ -110,7 +115,10 @@ class CoreRelayPipeline:
             signing_secret=self.signing_secret, token_budget_total=self.token_budget
         )
         self._handoff_validator = HandoffValidator()
-        self._snapshot_store = LocalFileSnapshotStore(storage_path=self.storage_path)
+        if self.snapshot_store is not None:
+            self._snapshot_store = self.snapshot_store
+        else:
+            self._snapshot_store = LocalFileSnapshotStore(storage_path=self.storage_path)
         self._rollback_handler = RollbackHandler()
         if self.token_counter is not None:
             self._enforcer = HardCapEnforcer(self.token_counter)
@@ -138,8 +146,10 @@ class CoreRelayPipeline:
     def close(self) -> None:
         """Release pipeline resources.
 
-        Releases token counter resources if one was provided.
+        Closes the snapshot store and releases token counter resources
+        if one was provided.
         """
+        self._snapshot_store.close()
         if self.token_counter is not None:
             self.token_counter.close()
 
