@@ -22,7 +22,7 @@ SNAPSHOT_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{1,128}@\d+_[a-f0-9]{12}$")
 MAX_SNAPSHOT_BYTES = 100 * 1024 * 1024  # 100 MB
 
 __all__ = [
-    "SnapshotStore",
+    "LocalFileSnapshotStore",
 ]
 
 
@@ -52,8 +52,8 @@ def _extract_step_from_snapshot_id(s_id: str) -> int:
         raise InvalidSnapshotIdError(f"Invalid snapshot ID format: {s_id}")
 
 
-class SnapshotStore:
-    """Persists and retrieves envelope checkpoints.
+class LocalFileSnapshotStore:
+    """Persists and retrieves envelope checkpoints on the local filesystem.
 
     Owns: checkpoint lifecycle, rollback restore, storage cleanup.
     Does NOT: execute agents or manage pipeline state.
@@ -63,6 +63,14 @@ class SnapshotStore:
         """Initialize the snapshot store with the given storage path."""
         self._storage_path = Path(storage_path)
         self._storage_path.mkdir(parents=True, exist_ok=True)
+
+    def close(self) -> None:
+        """Release any resources held by the snapshot store.
+
+        No-op for the filesystem-based implementation since file handles
+        are not kept open between operations.
+        """
+        ...
 
     def save_snapshot(self, envelope: ContextEnvelope) -> Result[str]:
         """Save an envelope as a snapshot and return the snapshot ID.
