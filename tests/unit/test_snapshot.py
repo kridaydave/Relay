@@ -11,7 +11,7 @@ from unittest.mock import patch
 import pytest
 
 from relay.envelope import RELAY_VERSION, ContextEnvelope, create_initial_envelope
-from relay.snapshot import SNAPSHOT_ID_PATTERN, LocalFileSnapshotStore, InvalidSnapshotIdError, _extract_step_from_snapshot_id
+from relay.snapshot import SNAPSHOT_ID_PATTERN, LocalFileSnapshotStore, InvalidSnapshotIdError, extract_step_from_snapshot_id
 from relay.snapshot_protocol import SnapshotStore
 from relay.types import Closeable, Failure, Success, ErrorCode, JSONDict
 
@@ -604,15 +604,15 @@ class TestSnapshotStoreSaveOSError:
 
 class TestExtractStepFromSnapshotId:
     def test_extract_step_returns_correct_int(self) -> None:
-        assert _extract_step_from_snapshot_id("pipe@42_abc123") == 42
+        assert extract_step_from_snapshot_id("pipe@42_abc123") == 42
 
     def test_extract_step_raises_on_missing_at_symbol(self) -> None:
         with pytest.raises(InvalidSnapshotIdError, match="Invalid snapshot ID format"):
-            _extract_step_from_snapshot_id("no-at-sign")
+            extract_step_from_snapshot_id("no-at-sign")
 
     def test_extract_step_raises_on_non_numeric_step(self) -> None:
         with pytest.raises(InvalidSnapshotIdError, match="Invalid snapshot ID format"):
-            _extract_step_from_snapshot_id("pipe@abc_xyz")
+            extract_step_from_snapshot_id("pipe@abc_xyz")
 
 
 class TestSnapshotIdPattern:
