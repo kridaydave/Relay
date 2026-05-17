@@ -221,3 +221,71 @@ class TestInMemorySnapshotStore:
 
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.PIPELINE_NOT_FOUND
+
+
+class TestInMemorySnapshotStoreDelete:
+    """Tests for InMemorySnapshotStore.delete_snapshot."""
+
+    def setup_method(self) -> None:
+        self.store = InMemorySnapshotStore()
+
+    def teardown_method(self) -> None:
+        self.store.close()
+
+    def _create_envelope(self, pipeline_id: str = "test-pipeline", step: int = 1) -> ContextEnvelope:
+        return ContextEnvelope(
+            relay_version=RELAY_VERSION,
+            pipeline_id=pipeline_id,
+            step=step,
+            timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            token_budget_used=100,
+            token_budget_total=8000,
+            payload={"key": "value"},
+            manifest_hash="",
+            signature="test-signature",
+        )
+
+    def test_delete_existing_snapshot_returns_success_and_removes_from_list(self) -> None:
+        envelope = self._create_envelope()
+        save_result = self.store.save_snapshot(envelope)
+        assert isinstance(save_result, Success)
+        snapshot_id = save_result.value
+
+        list_before = self.store.list_snapshots("test-pipeline")
+        assert isinstance(list_before, Success)
+        assert snapshot_id in list_before.value
+
+        delete_result = self.store.delete_snapshot(snapshot_id)
+        assert isinstance(delete_result, Success)
+        assert delete_result.value is None
+
+        list_after = self.store.list_snapshots("test-pipeline")
+        assert isinstance(list_after, Success)
+        assert snapshot_id not in list_after.value
+
+    def test_delete_with_invalid_snapshot_id_format_returns_invalid_snapshot_id(self) -> None:
+        result = self.store.delete_snapshot("bad-id")
+        assert isinstance(result, Failure)
+        assert result.code == ErrorCode.INVALID_SNAPSHOT_ID
+
+    def test_delete_nonexistent_snapshot_returns_not_found(self) -> None:
+        result = self.store.delete_snapshot("test-pipeline@1_aaaaaaaaaaaa")
+        assert isinstance(result, Failure)
+        assert result.code == ErrorCode.SNAPSHOT_NOT_FOUND
+
+    def test_delete_last_snapshot_leaves_consistent_state_after_removal(self) -> None:
+        envelope = self._create_envelope()
+        save_result = self.store.save_snapshot(envelope)
+        assert isinstance(save_result, Success)
+        snapshot_id = save_result.value
+
+        delete_result = self.store.delete_snapshot(snapshot_id)
+        assert isinstance(delete_result, Success)
+
+        list_result = self.store.list_snapshots("test-pipeline")
+        assert isinstance(list_result, Success)
+        assert list_result.value == []
+
+        latest_result = self.store.get_latest_snapshot("test-pipeline")
+        assert isinstance(latest_result, Failure)
+        assert latest_result.code == ErrorCode.NO_SNAPSHOTS
