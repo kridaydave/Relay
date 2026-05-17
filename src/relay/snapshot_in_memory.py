@@ -9,7 +9,7 @@ import uuid
 from copy import deepcopy
 
 from relay.envelope import PIPELINE_ID_PATTERN, ContextEnvelope
-from relay.snapshot_protocol import SNAPSHOT_ID_PATTERN, _extract_step_from_snapshot_id
+from relay.snapshot_protocol import SNAPSHOT_ID_PATTERN, extract_step_from_snapshot_id
 from relay.types import ErrorCode, Failure, Result, Success
 
 __all__ = ["InMemorySnapshotStore"]
@@ -58,7 +58,7 @@ class InMemorySnapshotStore:
 
             if snapshot_id not in self._index[pipeline_id]:
                 self._index[pipeline_id].append(snapshot_id)
-                self._index[pipeline_id].sort(key=_extract_step_from_snapshot_id)
+                self._index[pipeline_id].sort(key=extract_step_from_snapshot_id)
 
             self._snapshots[pipeline_id][snapshot_id] = deepcopy(envelope)
 

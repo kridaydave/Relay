@@ -16,7 +16,7 @@ from typing import Any, cast
 logger = logging.getLogger(__name__)
 
 from relay.envelope import PIPELINE_ID_PATTERN, ContextEnvelope, validate_pipeline_id, verify_signature
-from relay.snapshot_protocol import SNAPSHOT_ID_PATTERN, InvalidSnapshotIdError, _extract_step_from_snapshot_id
+from relay.snapshot_protocol import SNAPSHOT_ID_PATTERN, InvalidSnapshotIdError, extract_step_from_snapshot_id
 from relay.snapshot_protocol import SnapshotStore as SnapshotStore  # noqa: F811 — re-export Protocol
 from relay.types import ErrorCode, Failure, INITIAL_KEY_ID, JSONDict, Result, Success
 
@@ -332,7 +332,7 @@ class LocalFileSnapshotStore:
         if snapshot_id not in snapshots_list:
             snapshots_list.append(snapshot_id)
             try:
-                snapshots_list.sort(key=_extract_step_from_snapshot_id)
+                snapshots_list.sort(key=extract_step_from_snapshot_id)
             except InvalidSnapshotIdError as e:
                 return Failure(
                     reason=f"Corrupted index entry: {e}",

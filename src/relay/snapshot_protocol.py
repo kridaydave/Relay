@@ -86,7 +86,10 @@ class SnapshotStore(Closeable, Protocol):
         ...
 
 
-__all__ = ["SnapshotStore"]
+__all__ = [
+    "SnapshotStore",
+    "extract_step_from_snapshot_id",
+]
 
 SNAPSHOT_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{1,128}@\d+_[a-f0-9]{12}$")
 
@@ -95,7 +98,7 @@ class InvalidSnapshotIdError(Exception):
     """Raised when snapshot ID format is invalid."""
 
 
-def _extract_step_from_snapshot_id(s_id: str) -> int:
+def extract_step_from_snapshot_id(s_id: str) -> int:
     """Extract step number from snapshot ID for sorting.
 
     Handles format: "pipeline_id@step_uuid".
