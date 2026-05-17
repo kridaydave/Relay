@@ -70,18 +70,19 @@ class TestLocalModelAdapter:
         assert adapter.timeout_seconds == 60.0
 
     @pytest.mark.asyncio
-    async def test_raises_import_error_without_httpx(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def test_raises_import_error_without_httpx(self) -> None:
         import builtins
         real_import = builtins.__import__
         def mock_import(name: str, *args: object, **kwargs: object) -> object:
             if name == "httpx":
                 raise ImportError
             return real_import(name)
-        monkeypatch.setattr(builtins, "__import__", mock_import)
-        with pytest.raises(ImportError, match="relay-middleware\\[local\\]"):
-            await LocalModelAdapter(
-                base_url="http://localhost:11434", model="llama3"
-            ).run(make_test_slice(), make_test_manifest())
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(builtins, "__import__", mock_import)
+            with pytest.raises(ImportError, match="relay-middleware\\[local\\]"):
+                await LocalModelAdapter(
+                    base_url="http://localhost:11434", model="llama3"
+                ).run(make_test_slice(), make_test_manifest())
 
     def test_local_model_adapter_build_payload_includes_model_and_messages_when_called(self) -> None:
         adapter = LocalModelAdapter(base_url="http://localhost:11434", model="llama3")

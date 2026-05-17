@@ -120,6 +120,31 @@ class InMemorySnapshotStore:
 
             return Success(list(self._index[pipeline_id]))
 
+    def delete_snapshot(self, snapshot_id: str) -> Result[None]:
+        """Delete a snapshot by ID from in-memory storage."""
+        if not SNAPSHOT_ID_PATTERN.match(snapshot_id):
+            return Failure(
+                reason="Invalid snapshot ID format",
+                code=ErrorCode.INVALID_SNAPSHOT_ID,
+            )
+
+        pipeline_id, _rest = snapshot_id.split("@", 1)
+
+        with self._lock:
+            pipeline_snapshots = self._snapshots.get(pipeline_id)
+            if pipeline_snapshots is None or snapshot_id not in pipeline_snapshots:
+                return Failure(
+                    reason=f"Snapshot not found: {snapshot_id}",
+                    code=ErrorCode.SNAPSHOT_NOT_FOUND,
+                )
+
+            del pipeline_snapshots[snapshot_id]
+
+            if pipeline_id in self._index:
+                self._index[pipeline_id] = [s for s in self._index[pipeline_id] if s != snapshot_id]
+
+        return Success(None)
+
     def close(self) -> None:
         """Release any resources held by the snapshot store.
 

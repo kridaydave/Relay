@@ -522,23 +522,32 @@ class TestWithSignature:
 
 class TestComputeSignature:
     def test_signature_is_deterministic_when_inputs_are_same(self, secret: str) -> None:
-        res1 = create_initial_envelope(
+        env1 = ContextEnvelope(
+            relay_version=RELAY_VERSION,
             pipeline_id="pipe",
-            initial_payload={"k": "v"},
-            secret=secret,
+            step=1,
+            timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            token_budget_used=0,
+            token_budget_total=8000,
+            payload={"k": "v"},
             manifest_hash="",
+            signature="",
+            nonce="same-nonce",
+            sequence_number=1,
         )
-        assert isinstance(res1, Success)
-        env1 = res1.value
-
-        res2 = create_initial_envelope(
+        env2 = ContextEnvelope(
+            relay_version=RELAY_VERSION,
             pipeline_id="pipe",
-            initial_payload={"k": "v"},
-            secret=secret,
+            step=1,
+            timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            token_budget_used=0,
+            token_budget_total=8000,
+            payload={"k": "v"},
             manifest_hash="",
+            signature="",
+            nonce="same-nonce",
+            sequence_number=1,
         )
-        assert isinstance(res2, Success)
-        env2 = res2.value
 
         sig1 = compute_signature(env1, secret)
         sig2 = compute_signature(env2, secret)

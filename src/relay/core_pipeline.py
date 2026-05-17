@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 
 from relay.budget import HardCapEnforcer, TokenCounter
 from relay.context_broker import ContextBroker, create_context_broker
+from relay.types import create_signing_key
 from relay.envelope import (
     ContextEnvelope,
     compute_signature,
@@ -115,8 +116,9 @@ class CoreRelayPipeline:
     def __post_init__(self) -> None:
         self._pipeline_id = uuid.uuid4().hex
         self._state = PipelineState(pipeline_id=self._pipeline_id)
+        key = create_signing_key(self.signing_secret)
         self._context_broker = ContextBroker(
-            signing_secret=self.signing_secret, token_budget_total=self.token_budget
+            keys={key.key_id: key}, token_budget_total=self.token_budget
         )
         self._handoff_validator = HandoffValidator()
         if self.snapshot_store is not None:

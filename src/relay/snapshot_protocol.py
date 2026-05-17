@@ -68,6 +68,18 @@ class SnapshotStore(Closeable, Protocol):
         """
         ...
 
+    def delete_snapshot(self, snapshot_id: str) -> Result[None]:
+        """Delete a snapshot by ID.
+
+        Args:
+            snapshot_id: The unique identifier of the snapshot to delete.
+
+        Returns:
+            Success(None) on successful deletion, or Failure if the snapshot
+            does not exist or cannot be removed.
+        """
+        ...
+
     def close(self) -> None:
         """Release any resources held by the snapshot store."""
         ...

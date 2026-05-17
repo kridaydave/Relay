@@ -7,7 +7,13 @@ import pytest
 
 from relay.context_broker import ContextBroker, create_context_broker
 from relay.envelope import ContextEnvelope, RELAY_VERSION
-from relay.types import ErrorCode, Failure, Success
+from relay.types import ErrorCode, Failure, SigningKey, Success, create_signing_key
+
+
+def _make_broker(secret: str = "a" * 32, budget: int = 8000) -> ContextBroker:
+    """Helper to create a ContextBroker for testing."""
+    key = create_signing_key(secret)
+    return ContextBroker(keys={key.key_id: key}, token_budget_total=budget)
 
 
 class TestCreateInitialEnvelope:
@@ -49,7 +55,7 @@ class TestCreateInitialEnvelope:
         mock_create.assert_called_once()
 
     def test_broker_fails_on_empty_pipeline_id(self) -> None:
-        broker = ContextBroker(signing_secret="a" * 32, token_budget_total=8000)
+        broker = _make_broker()
         result = broker.create_initial_envelope(
             pipeline_id="",
             initial_payload={"data": "test"},
@@ -61,7 +67,7 @@ class TestCreateInitialEnvelope:
         assert result.code == ErrorCode.INVALID_PIPELINE_ID
 
     def test_broker_fails_on_empty_payload(self) -> None:
-        broker = ContextBroker(signing_secret="a" * 32, token_budget_total=8000)
+        broker = _make_broker()
         result = broker.create_initial_envelope(
             pipeline_id="pipeline-123",
             initial_payload={},
@@ -90,7 +96,7 @@ class TestCreateNextEnvelope:
             )
         )
 
-        broker = ContextBroker(signing_secret="a" * 32, token_budget_total=8000)
+        broker = _make_broker()
         previous_envelope = ContextEnvelope(
             relay_version=RELAY_VERSION,
             pipeline_id="pipeline-123",
@@ -129,7 +135,7 @@ class TestCreateNextEnvelope:
             )
         )
 
-        broker = ContextBroker(signing_secret="a" * 32, token_budget_total=8000)
+        broker = _make_broker()
         previous_envelope = ContextEnvelope(
             relay_version=RELAY_VERSION,
             pipeline_id="pipeline-123",
@@ -167,7 +173,7 @@ class TestCreateNextEnvelope:
             )
         )
 
-        broker = ContextBroker(signing_secret="a" * 32, token_budget_total=8000)
+        broker = _make_broker()
         previous_envelope = ContextEnvelope(
             relay_version=RELAY_VERSION,
             pipeline_id="pipeline-123",

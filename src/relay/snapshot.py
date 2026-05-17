@@ -15,8 +15,8 @@ from typing import Any, cast
 
 logger = logging.getLogger(__name__)
 
-from relay.envelope import PIPELINE_ID_PATTERN, ContextEnvelope, validate_pipeline_id
-from relay.types import ErrorCode, Failure, JSONDict, Result, Success
+from relay.envelope import PIPELINE_ID_PATTERN, ContextEnvelope, validate_pipeline_id, verify_signature
+from relay.types import ErrorCode, Failure, INITIAL_KEY_ID, JSONDict, Result, Success
 
 SNAPSHOT_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{1,128}@\d+_[a-f0-9]{12}$")
 MAX_SNAPSHOT_BYTES = 100 * 1024 * 1024  # 100 MB
@@ -60,10 +60,17 @@ class LocalFileSnapshotStore:
     Does NOT: execute agents or manage pipeline state.
     """
 
-    def __init__(self, storage_path: str = "./relay_data/snapshots") -> None:
-        """Initialize the snapshot store with the given storage path."""
+    def __init__(self, storage_path: str = "./relay_data/snapshots", signing_secret: str | None = None) -> None:
+        """Initialize the snapshot store with the given storage path.
+
+        Args:
+            storage_path: Root directory for snapshot storage.
+            signing_secret: Optional HMAC signing secret. If provided,
+                signatures are verified on every load_snapshot call.
+        """
         self._storage_path = Path(storage_path)
         self._storage_path.mkdir(parents=True, exist_ok=True)
+        self._signing_secret: str | None = signing_secret
 
     def close(self) -> None:
         """Release any resources held by the snapshot store.
@@ -72,6 +79,76 @@ class LocalFileSnapshotStore:
         are not kept open between operations.
         """
         ...
+
+    def delete_snapshot(self, snapshot_id: str) -> Result[None]:
+        """Delete a snapshot by ID.
+
+        Removes the snapshot file and its index entry. Returns Failure
+        if the snapshot does not exist or the file cannot be removed.
+        """
+        if not SNAPSHOT_ID_PATTERN.match(snapshot_id):
+            return Failure(
+                reason="Invalid snapshot ID format",
+                code=ErrorCode.INVALID_SNAPSHOT_ID,
+            )
+        pipeline_id, _rest = snapshot_id.split("@", 1)
+        snapshot_path = self._storage_path / pipeline_id / f"{snapshot_id}.json"
+        try:
+            snapshot_path.unlink(missing_ok=False)
+        except FileNotFoundError:
+            return Failure(
+                reason=f"Snapshot not found: {snapshot_id}",
+                code=ErrorCode.SNAPSHOT_NOT_FOUND,
+            )
+        except OSError as e:
+            return Failure(
+                reason=f"Failed to delete snapshot: {e}",
+                code=ErrorCode.SNAPSHOT_SAVE_FAILED,
+            )
+
+        index_result = self._remove_from_index(pipeline_id, snapshot_id)
+        if isinstance(index_result, Failure):
+            logger.warning("Snapshot file deleted but index update failed: %s", index_result.reason)
+        return Success(None)
+
+    def _remove_from_index(self, pipeline_id: str, snapshot_id: str) -> Result[None]:
+        """Remove a snapshot ID from the pipeline's index."""
+        index_path = self._storage_path / pipeline_id / "index.json"
+        if not index_path.exists():
+            return Success(None)
+
+        try:
+            with open(index_path, "r") as f:
+                data: object = json.load(f)
+                index_data = cast(JSONDict, data) if isinstance(data, dict) else {}
+        except (json.JSONDecodeError, OSError):
+            return Success(None)
+
+        snapshots: list[str] = []
+        existing = index_data.get("snapshots", [])
+        if isinstance(existing, list):
+            for s in existing:
+                if isinstance(s, str) and s != snapshot_id:
+                    snapshots.append(s)
+        index_data["snapshots"] = snapshots
+
+        temp_index_path = index_path.parent / "index.tmp"
+        try:
+            with open(temp_index_path, "w") as f:
+                json.dump(index_data, f, indent=2)
+            os.replace(temp_index_path, index_path)
+        except (OSError, TypeError) as e:
+            logger.warning("Failed to update index after delete: %s", e)
+            return Failure(
+                reason=f"Failed to update index: {e}",
+                code=ErrorCode.INDEX_UPDATE_FAILED,
+            )
+        finally:
+            try:
+                temp_index_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+        return Success(None)
 
     def save_snapshot(self, envelope: ContextEnvelope) -> Result[str]:
         """Save an envelope as a snapshot and return the snapshot ID.
@@ -137,7 +214,11 @@ class LocalFileSnapshotStore:
         return Success(snapshot_id)
 
     def load_snapshot(self, snapshot_id: str) -> Result[ContextEnvelope]:
-        """Load an envelope from a snapshot by ID."""
+        """Load an envelope from a snapshot by ID.
+
+        If this store was initialized with a signing_secret, the envelope
+        signature is verified before returning.
+        """
         if not SNAPSHOT_ID_PATTERN.match(snapshot_id):
             return Failure(
                 reason="Invalid snapshot ID format",
@@ -172,6 +253,12 @@ class LocalFileSnapshotStore:
                         f"Snapshot integrity error: filename indicates step {step} "
                         f"but envelope body contains step {envelope.step}"
                     ),
+                    code=ErrorCode.INVALID_SNAPSHOT,
+                )
+
+            if self._signing_secret is not None and not verify_signature(envelope, self._signing_secret):
+                return Failure(
+                    reason=f"Invalid signature for snapshot: {snapshot_id}",
                     code=ErrorCode.INVALID_SNAPSHOT,
                 )
 
@@ -323,7 +410,7 @@ class LocalFileSnapshotStore:
 
         Uses timespec='seconds' so timestamps are consistent across Python 3.11/3.12.
         """
-        return {
+        result: JSONDict = {
             "relay_version": envelope.relay_version,
             "pipeline_id": envelope.pipeline_id,
             "step": envelope.step,
@@ -337,7 +424,11 @@ class LocalFileSnapshotStore:
             "join_strategy": envelope.join_strategy,
             "fork_count": envelope.fork_count,
             "forks_succeeded": envelope.forks_succeeded,
+            "key_id": envelope.key_id,
+            "nonce": envelope.nonce,
+            "sequence_number": envelope.sequence_number,
         }
+        return result
 
     def _require_str(self, data: JSONDict, key: str) -> "Result[str]":
         """Validate and return a string field from data dict."""
@@ -444,6 +535,23 @@ class LocalFileSnapshotStore:
                 return fs_result
             forks_succeeded = fs_result.value
 
+        key_id_raw: object = data.get("key_id")
+        key_id: str = key_id_raw if isinstance(key_id_raw, str) else INITIAL_KEY_ID
+        if "key_id" not in data or not isinstance(data.get("key_id"), str):
+            logger.warning("Snapshot missing key_id field — defaulting to %r", INITIAL_KEY_ID)
+
+        nonce_raw: object = data.get("nonce")
+        nonce: str = nonce_raw if isinstance(nonce_raw, str) else ""
+        if "nonce" not in data or not isinstance(data.get("nonce"), str):
+            logger.warning("Snapshot missing nonce field — defaulting to empty string")
+
+        sequence_raw: object = data.get("sequence_number")
+        sequence_number: int = 0
+        if isinstance(sequence_raw, int):
+            sequence_number = sequence_raw
+        else:
+            logger.warning("Snapshot missing sequence_number field — defaulting to 0")
+
         try:
             envelope = ContextEnvelope(
                 relay_version=relay_version,
@@ -459,6 +567,9 @@ class LocalFileSnapshotStore:
                 join_strategy=join_strategy,
                 fork_count=fork_count,
                 forks_succeeded=forks_succeeded,
+                key_id=key_id,
+                nonce=nonce,
+                sequence_number=sequence_number,
             )
         except ValueError as e:
             return Failure(reason=str(e), code=ErrorCode.INVALID_SNAPSHOT)

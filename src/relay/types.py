@@ -4,7 +4,9 @@ Owns: Success, Failure, and Result union types, __version__.
 Does NOT: handle specific domain errors, validate data, or make decisions.
 """
 
+import uuid
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Callable, Generic, Protocol, TypeVar, runtime_checkable
 
@@ -12,10 +14,13 @@ __all__ = [
     "Closeable",
     "ErrorCode",
     "Failure",
+    "INITIAL_KEY_ID",
     "JSONDict",
     "Result",
     "RollbackSuccess",
+    "SigningKey",
     "Success",
+    "create_signing_key",
     "__version__",
     "map_error",
     "map_result",
@@ -71,6 +76,35 @@ class ErrorCode(str, Enum):
     ALL_FORKS_FAILED = "ALL_FORKS_FAILED"
     FORK_EXECUTION_FAILED = "FORK_EXECUTION_FAILED"
     INVALID_JOIN_STRATEGY = "INVALID_JOIN_STRATEGY"
+
+
+@dataclass(frozen=True, repr=False)
+class SigningKey:
+    """HMAC signing key with repr redaction for security.
+
+    Wraps a signing secret string and hides its value from repr/str
+    output to prevent accidental leakage in logs, error messages,
+    and debug output.
+    """
+
+    key_id: str
+    secret: str
+    created_at: datetime
+
+    def __repr__(self) -> str:
+        return f"SigningKey(key_id={self.key_id!r}, created_at={self.created_at.isoformat()!r})"
+
+
+def create_signing_key(secret: str) -> SigningKey:
+    """Create a new SigningKey with an auto-generated UUID key_id."""
+    return SigningKey(
+        key_id=uuid.uuid4().hex,
+        secret=secret,
+        created_at=datetime.now(timezone.utc),
+    )
+
+
+INITIAL_KEY_ID: str = "initial"
 
 
 @dataclass(frozen=True)

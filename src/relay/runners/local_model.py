@@ -5,18 +5,32 @@ Does NOT: manage model loading, GPU resources, or server lifecycle.
 
 Compatible with any server that implements /v1/chat/completions
 (Ollama >=0.1.14, vLLM >=0.4.0). No streaming in v0.3.
+
+Security: base_url is validated at construction to prevent SSRF.
+Only HTTPS URLs (or localhost HTTP for development) are accepted.
 """
 
 from __future__ import annotations
 
 import json
+import re
 import time
 from dataclasses import dataclass
 from typing import cast
+from urllib.parse import urlparse
 
 from relay.runners.protocol import AgentOutput, ContextSlice
 from relay.slicer.manifest import AgentManifest
 from relay.types import JSONDict
+
+_LOCALHOST_PATTERN = re.compile(
+    r"^(127\.\d{1,3}\.\d{1,3}\.\d{1,3}|localhost|::1)$"
+)
+_PRIVATE_IP_PATTERN = re.compile(
+    r"^(10\.\d{1,3}\.\d{1,3}\.\d{1,3}|"
+    r"172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|"
+    r"192\.168\.\d{1,3}\.\d{1,3})$"
+)
 
 
 @dataclass(frozen=True)
@@ -39,7 +53,9 @@ class LocalModelAdapter:
     timeout_seconds: float = 60.0
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "base_url", self.base_url.rstrip("/"))
+        stripped = self.base_url.rstrip("/")
+        object.__setattr__(self, "base_url", stripped)
+        _validate_base_url(stripped)
 
     @classmethod
     def create(
@@ -49,9 +65,11 @@ class LocalModelAdapter:
         adapter_name: str = "local_model",
         timeout_seconds: float = 60.0,
     ) -> "LocalModelAdapter":
-        """Factory method — strips trailing slash from base_url before construction."""
+        """Factory method — validates and strips trailing slash from base_url."""
+        stripped = base_url.rstrip("/")
+        _validate_base_url(stripped)
         return cls(
-            base_url=base_url.rstrip("/"),
+            base_url=stripped,
             model=model,
             adapter_name=adapter_name,
             timeout_seconds=timeout_seconds,
@@ -110,4 +128,31 @@ class LocalModelAdapter:
             text=text, structured=JSONDict(), tool_calls=[],
             token_count=token_count, latency_ms=latency_ms,
             adapter=self.adapter_name,
+        )
+
+
+def _validate_base_url(url: str) -> None:
+    """Validate that base_url is safe against SSRF attacks.
+
+    Raises:
+        ValueError: If the URL scheme or host is not allowed.
+    """
+    parsed = urlparse(url)
+    if parsed.scheme not in ("https", "http"):
+        raise ValueError(
+            f"Unsupported URL scheme: {parsed.scheme!r}. "
+            "Only http and https are allowed."
+        )
+    hostname = parsed.hostname or ""
+    is_localhost = bool(_LOCALHOST_PATTERN.match(hostname))
+    is_private_ip = bool(_PRIVATE_IP_PATTERN.match(hostname))
+    if parsed.scheme == "http" and not is_localhost:
+        raise ValueError(
+            f"HTTP is only allowed for localhost connections. "
+            f"Got http://{hostname}. Use HTTPS for remote endpoints."
+        )
+    if is_private_ip and not is_localhost:
+        raise ValueError(
+            f"Private IP range is not allowed: {hostname}. "
+            "Only localhost private addresses are permitted."
         )

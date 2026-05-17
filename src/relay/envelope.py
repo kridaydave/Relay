@@ -12,12 +12,21 @@ import hashlib
 import hmac
 import json
 import re
+import uuid
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from typing import Any
 
 from relay.budget.token_counter import HeuristicCounter
-from relay.types import ErrorCode, Failure, JSONDict, Result, Success, __version__ as RELAY_VERSION
+from relay.types import (
+    ErrorCode,
+    Failure,
+    INITIAL_KEY_ID,
+    JSONDict,
+    Result,
+    Success,
+    __version__ as RELAY_VERSION,
+)
 
 __all__ = [
     "RELAY_VERSION",
@@ -59,6 +68,9 @@ class ContextEnvelope:
         payload: The actual data being passed (agent output).
         manifest_hash: Hash of the agent manifest.
         signature: HMAC-SHA256 signature of the envelope.
+        key_id: Identifier of the signing key used.
+        nonce: Unique nonce for replay protection (UUID hex).
+        sequence_number: Monotonic sequence number for ordering.
     """
 
     relay_version: str
@@ -75,6 +87,10 @@ class ContextEnvelope:
     join_strategy: str | None = None
     fork_count: int | None = None
     forks_succeeded: int | None = None
+
+    key_id: str = INITIAL_KEY_ID
+    nonce: str = ""
+    sequence_number: int = 0
 
     def __post_init__(self) -> None:
         if self.step < 1:
@@ -144,6 +160,9 @@ def compute_signature(envelope: ContextEnvelope, secret: str) -> str:
 
     When fork_id is not None, fork metadata is appended for parallel steps:
     ...|{fork_id}|{join_strategy}|{fork_count}|{forks_succeeded}
+
+    Key metadata is always appended for replay protection and key rotation:
+    ...|{key_id}|{nonce}|{sequence_number}
     """
     payload_json = json.dumps(envelope.payload, sort_keys=True, separators=(",", ":"))
     base = (
@@ -156,24 +175,27 @@ def compute_signature(envelope: ContextEnvelope, secret: str) -> str:
             f"|{envelope.fork_id}|{envelope.join_strategy}|"
             f"{envelope.fork_count}|{envelope.forks_succeeded}"
         )
+    base += (
+        f"|{envelope.key_id}|{envelope.nonce}|{envelope.sequence_number}"
+    )
     return hmac.new(secret.encode(), base.encode(), hashlib.sha256).hexdigest()
 
 
 def verify_signature(
     envelope: ContextEnvelope,
     secret: str,
-    max_age_seconds: int | None = None,
+    max_age_seconds: int | None = 86400,
 ) -> bool:
     """Verify the signature of an envelope.
 
     Args:
         envelope: The envelope to verify.
         secret: HMAC signing secret.
-        max_age_seconds: If provided, reject envelopes older than this many seconds.
+        max_age_seconds: Reject envelopes older than this many seconds.
+            Defaults to 86400 (24 hours). Pass None to disable age checking.
 
     Returns:
-        True if the signature is valid and (if max_age_seconds is provided) the
-        envelope is not stale. False otherwise.
+        True if the signature is valid and the envelope is not stale. False otherwise.
     """
     if max_age_seconds is not None:
         age = (datetime.now(timezone.utc) - envelope.timestamp).total_seconds()
@@ -218,6 +240,8 @@ def create_initial_envelope(
         payload=initial_payload,
         manifest_hash=manifest_hash,
         signature="",
+        nonce=uuid.uuid4().hex,
+        sequence_number=1,
     )
 
     signed = _sign_envelope(envelope, secret)
@@ -259,6 +283,8 @@ def create_next_envelope(
         payload=agent_output,
         manifest_hash=manifest_hash,
         signature="",
+        nonce=uuid.uuid4().hex,
+        sequence_number=previous_envelope.sequence_number + 1,
     )
 
     signed = _sign_envelope(envelope, secret)

@@ -8,13 +8,21 @@ Does NOT: implement signing (owned by relay.envelope), persist envelopes,
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from relay.envelope import ContextEnvelope, create_initial_envelope, create_next_envelope
-from relay.types import ErrorCode, Failure, JSONDict, Result, Success
+from relay.types import (
+    ErrorCode,
+    Failure,
+    INITIAL_KEY_ID,
+    JSONDict,
+    Result,
+    SigningKey,
+    Success,
+    create_signing_key,
+)
 
 __all__ = ["ContextBroker", "create_context_broker"]
-
 
 _MIN_SECRET_LENGTH = 32
 
@@ -42,7 +50,8 @@ def create_context_broker(
             ),
             code=ErrorCode.INVALID_SECRET,
         )
-    return Success(ContextBroker(signing_secret=signing_secret, token_budget_total=token_budget_total))
+    key = create_signing_key(signing_secret)
+    return Success(ContextBroker(keys={key.key_id: key}, token_budget_total=token_budget_total))
 
 
 @dataclass(frozen=True, repr=False)
@@ -56,8 +65,23 @@ class ContextBroker:
     The factory validates secret strength and returns Failure; direct construction
     bypasses validation and is intended only for internal use with pre-validated secrets.
     """
-    signing_secret: str
-    token_budget_total: int
+    keys: dict[str, SigningKey] = field(repr=False)
+    token_budget_total: int = 8000
+
+    @property
+    def signing_secret(self) -> str:
+        """Current signing secret (backward-compat accessor).
+
+        Returns the secret from the most recently added key.
+        """
+        latest = max(self.keys.values(), key=lambda k: k.created_at)
+        return latest.secret
+
+    @property
+    def current_key_id(self) -> str:
+        """ID of the most recently added signing key."""
+        latest = max(self.keys.values(), key=lambda k: k.created_at)
+        return latest.key_id
 
     def create_initial_envelope(
         self,
