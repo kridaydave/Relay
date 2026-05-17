@@ -24,7 +24,11 @@
       "Bash(python -m pytest -x -q)",
       "Skill(caveman:caveman-commit)",
       "Skill(superpowers:subagent-driven-development)",
-      "Bash(python -m mypy tests/ --config-file mypy.ini)"
+      "Bash(python -m mypy tests/ --config-file mypy.ini)",
+      "Bash(gh run *)",
+      "Bash(python *)",
+      "Bash(mypy --strict src/)",
+      "Bash(git push *)"
     ]
   }
 }
