@@ -6,7 +6,7 @@ Does NOT: execute adapters, commit to pipeline state, or manage locks.
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, Coroutine
+from typing import TYPE_CHECKING, Coroutine, overload
 
 logger = logging.getLogger(__name__)
 
@@ -136,6 +136,22 @@ async def _apply_first_wins(
             code=ErrorCode.ALL_FORKS_FAILED,
         )
     return Success(winner_payload)
+
+
+@overload
+async def apply_join_strategy(
+    strategy: JoinStrategy,
+    fork_results: list[ForkResult],
+    first_wins_coros: list[tuple[int, ForkSpec, "Coroutine[None, None, ForkResult]"]],
+) -> Result[JSONDict]: ...
+
+
+@overload
+async def apply_join_strategy(
+    strategy: JoinStrategy,
+    fork_results: list[ForkResult],
+    first_wins_coros: None = None,
+) -> Result[JSONDict]: ...
 
 
 async def apply_join_strategy(
