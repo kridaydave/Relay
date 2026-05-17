@@ -106,9 +106,6 @@ class TestSnapshotStore:
 
     def test_load_snapshot_fails_when_body_step_mismatches_filename(self) -> None:
         """Tampered snapshot where body step differs from filename is rejected."""
-        import json
-        from pathlib import Path
-
         env = self._create_envelope(step=1)
         save_result = self.store.save_snapshot(env)
         assert isinstance(save_result, Success)
@@ -629,8 +626,6 @@ class TestSnapshotIdPattern:
 class TestPreV04SnapshotCompat:
     def test_loading_snapshot_without_fork_fields_succeeds(self) -> None:
         """Pre-v0.4 snapshot (no fork keys in JSON) loads with fork fields as None."""
-        import tempfile
-        import shutil
         store = LocalFileSnapshotStore(storage_path=tempfile.mkdtemp())
         snapshot_data: dict[str, object] = {
             "relay_version": "0.3.3",
@@ -671,8 +666,6 @@ class TestPreV04SnapshotCompat:
 
     def test_roundtrip_envelope_with_fork_fields(self) -> None:
         """Save and load envelope with fork fields preserves all values."""
-        import tempfile
-        import shutil
         tmp = tempfile.mkdtemp()
         try:
             store = LocalFileSnapshotStore(storage_path=tmp)
@@ -708,25 +701,21 @@ class TestSnapshotStoreProtocol:
 
     def test_local_file_snapshot_store_passes_isinstance_check_when_checked_against_snapshot_store_protocol(self) -> None:
         """isinstance(LocalFileSnapshotStore(...), SnapshotStore) must be True."""
-        store = LocalFileSnapshotStore(storage_path=tempfile.mkdtemp())
+        tmp = tempfile.mkdtemp()
         try:
+            store = LocalFileSnapshotStore(storage_path=tmp)
             assert isinstance(store, SnapshotStore)
         finally:
-            try:
-                shutil.rmtree(store._storage_path, ignore_errors=True)
-            except OSError:
-                pass
+            shutil.rmtree(tmp, ignore_errors=True)
 
     def test_local_file_snapshot_store_passes_isinstance_check_when_checked_against_closeable_protocol(self) -> None:
         """LocalFileSnapshotStore must satisfy the Closeable Protocol."""
-        store = LocalFileSnapshotStore(storage_path=tempfile.mkdtemp())
+        tmp = tempfile.mkdtemp()
         try:
+            store = LocalFileSnapshotStore(storage_path=tmp)
             assert isinstance(store, Closeable)
         finally:
-            try:
-                shutil.rmtree(store._storage_path, ignore_errors=True)
-            except OSError:
-                pass
+            shutil.rmtree(tmp, ignore_errors=True)
 
     def test_snapshot_store_protocol_exposes_expected_methods_when_inspected(self) -> None:
         """SnapshotStore Protocol must have exactly the 5 expected methods."""
@@ -750,3 +739,55 @@ class TestSnapshotStoreProtocol:
         """LocalFileSnapshotStore must have a close() method matching Closeable."""
         assert hasattr(LocalFileSnapshotStore, "close")
         assert callable(LocalFileSnapshotStore.close)
+
+
+class TestLocalFileSnapshotStoreDelete:
+    """Tests for LocalFileSnapshotStore.delete_snapshot."""
+
+    def setup_method(self) -> None:
+        self.temp_dir = tempfile.mkdtemp()
+        self.store = LocalFileSnapshotStore(storage_path=self.temp_dir)
+
+    def teardown_method(self) -> None:
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def _create_env(
+        self, pipeline_id: str = "pipeline-del", step: int = 1
+    ) -> ContextEnvelope:
+        return ContextEnvelope(
+            relay_version=RELAY_VERSION,
+            pipeline_id=pipeline_id,
+            step=step,
+            timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            token_budget_used=100,
+            token_budget_total=8000,
+            payload={"data": "test"},
+            manifest_hash="",
+            signature="sig",
+        )
+
+    def test_delete_snapshot_removes_snapshot_and_returns_success(self) -> None:
+        """Save then delete, verify Success."""
+        env = self._create_env()
+        save_result = self.store.save_snapshot(env)
+        assert isinstance(save_result, Success)
+        snapshot_id = save_result.value
+
+        result = self.store.delete_snapshot(snapshot_id)
+
+        assert isinstance(result, Success)
+        assert result.value is None
+
+    def test_delete_snapshot_fails_on_invalid_snapshot_id(self) -> None:
+        """Invalid snapshot ID returns Failure with INVALID_SNAPSHOT_ID."""
+        result = self.store.delete_snapshot("not-a-valid-id")
+
+        assert isinstance(result, Failure)
+        assert result.code == ErrorCode.INVALID_SNAPSHOT_ID
+
+    def test_delete_snapshot_fails_on_nonexistent_snapshot(self) -> None:
+        """Non-existent snapshot returns Failure with SNAPSHOT_NOT_FOUND."""
+        result = self.store.delete_snapshot("pipeline-del@1_abcdef123456")
+
+        assert isinstance(result, Failure)
+        assert result.code == ErrorCode.SNAPSHOT_NOT_FOUND
