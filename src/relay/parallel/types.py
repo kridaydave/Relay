@@ -4,6 +4,7 @@ Owns: JoinStrategy enum, ForkSpec, ForkResult.
 Does NOT: implement join logic, execute adapters, or manage pipeline state.
 """
 
+import logging
 from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, Any
@@ -62,10 +63,15 @@ class ForkResult:
 def agent_output_to_payload(output: AgentOutput) -> JSONDict:
     """Shape AgentOutput into a payload dict for validation and merging.
 
-    ``output.text`` always takes precedence when ``output.structured``
-    also contains a ``"text"`` key, preventing silent data loss.
+    ``output.text`` always takes precedence over ``output.structured["text"]``.
+    A warning is logged when this overwrite occurs.
     """
     raw: JSONDict = dict(output.structured)
+    if "text" in raw:
+        logging.warning(
+            "agent_output_to_payload: output.structured already contains a 'text' key; "
+            "overwriting with output.text (structured value lost)"
+        )
     raw["text"] = output.text
     if output.tool_calls:
         raw["tool_calls"] = output.tool_calls
