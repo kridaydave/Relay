@@ -9,7 +9,7 @@
 
 - [x] **STO-01**: Extract `SnapshotStore` as `@runtime_checkable` Protocol from existing class
 - [x] **STO-02**: Rename existing `SnapshotStore` → `LocalFileSnapshotStore`
-- [ ] **STO-03**: Create `InMemorySnapshotStore` for testing
+- [x] **STO-03**: Create `InMemorySnapshotStore` for testing
 - [ ] **STO-04**: Update `CoreRelayPipeline` to accept Protocol-compatible store instances
 
 ### Structured Audit Logging
