@@ -23,6 +23,7 @@ MAX_SNAPSHOT_BYTES = 100 * 1024 * 1024  # 100 MB
 
 __all__ = [
     "LocalFileSnapshotStore",
+    "SnapshotStore",
 ]
 
 
@@ -462,3 +463,8 @@ class LocalFileSnapshotStore:
         except ValueError as e:
             return Failure(reason=str(e), code=ErrorCode.INVALID_SNAPSHOT)
         return Success(envelope)
+
+
+# Backward compatibility alias for consumers who imported the old SnapshotStore class
+# directly from relay.snapshot. SnapshotStore is now a Protocol in snapshot_protocol.py.
+SnapshotStore = LocalFileSnapshotStore
