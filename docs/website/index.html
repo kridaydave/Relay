@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Relay — Agent-agent context passing, done right</title>
+<meta name="description" content="Lightweight Python middleware that signs, validates, and rolls back AI agent context automatically. Works with any LLM provider or framework." />
+<meta property="og:title" content="Relay — Agent-agent context passing, done right" />
+<meta property="og:description" content="One hallucinating agent silently corrupts context. Relay treats it like a ledger." />
+<meta property="og:type" content="website" />
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:       #0a0a0a;
+  --surface:  #111111;
+  --border:   #222222;
+  --text:     #f0f0f0;
+  --muted:    #777777;
+  --accent:   #e8490f;
+  --accent-h: #ff6a2f;
+  --mono: "SF Mono","Fira Code","Cascadia Code",Consolas,monospace;
+  --font: system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+}
+
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+/* ── SCROLL REVEAL BASE ─────────────────────────────── */
+.reveal {
+  opacity: 0;
+  transform: translateY(24px);
+  transition: opacity 0.6s cubic-bezier(0.16,1,0.3,1),
+              transform 0.6s cubic-bezier(0.16,1,0.3,1);
+}
+.reveal.visible { opacity: 1; transform: translateY(0); }
+.reveal-left  { opacity: 0; transform: translateX(-28px);
+  transition: opacity 0.65s cubic-bezier(0.16,1,0.3,1), transform 0.65s cubic-bezier(0.16,1,0.3,1); }
+.reveal-left.visible  { opacity: 1; transform: translateX(0); }
+.reveal-right { opacity: 0; transform: translateX(28px);
+  transition: opacity 0.65s cubic-bezier(0.16,1,0.3,1), transform 0.65s cubic-bezier(0.16,1,0.3,1); }
+.reveal-right.visible { opacity: 1; transform: translateX(0); }
+
+/* ── NAV ──────────────────────────────────────────────── */
+nav {
+  position: sticky; top: 0; z-index: 100;
+  background: rgba(10,10,10,0.75);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--border);
+  transition: border-bottom-color 0.3s;
+}
+.nav-inner {
+  max-width: 980px; margin: 0 auto; padding: 0 2rem;
+  height: 56px; display: flex; align-items: center; justify-content: space-between;
+}
+.nav-brand {
+  display: flex; align-items: center; gap: 0.55rem; text-decoration: none;
+}
+.nav-brand img { width: 30px; height: 30px; border-radius: 6px; object-fit: cover; }
+.nav-brand span {
+  font-size: 0.9375rem; font-weight: 650; color: var(--text);
+  letter-spacing: -0.01em;
+  transition: color 0.2s;
+}
+.nav-brand:hover span { color: var(--accent); }
+
+.nav-links { display: flex; align-items: center; gap: 0.5rem; }
+.nav-link {
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  padding: 0.3rem 0.7rem; border: 1px solid var(--border); border-radius: 6px;
+  font-size: 0.8rem; font-weight: 500; color: var(--muted);
+  text-decoration: none; background: transparent;
+  transition: border-color 0.18s, color 0.18s, background 0.18s;
+}
+.nav-link:hover { border-color: #444; color: var(--text); background: rgba(255,255,255,0.03); }
+
+/* ── HERO ──────────────────────────────────────────────── */
+.hero {
+  position: relative; overflow: hidden;
+  padding: 6rem 2rem 5rem; text-align: center;
+  min-height: 88vh; display: flex; align-items: center;
+}
+
+/* dot grid */
+.hero::before {
+  content: ""; position: absolute; inset: 0;
+  background-image: radial-gradient(circle, #2a2a2a 1px, transparent 1px);
+  background-size: 28px 28px; opacity: 0.5; pointer-events: none; z-index: 0;
+}
+
+/* network canvas */
+#netCanvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; opacity: 0.85; }
+
+/* aurora blobs */
+.aurora { position: absolute; inset: 0; pointer-events: none; z-index: 1; overflow: hidden; }
+.blob { position: absolute; border-radius: 50%; filter: blur(90px); }
+.blob-1 {
+  width: 600px; height: 380px;
+  background: radial-gradient(ellipse, rgba(232,73,15,0.15) 0%, transparent 70%);
+  top: -80px; left: 50%; transform: translateX(-50%);
+  animation: float1 9s ease-in-out infinite alternate;
+}
+.blob-2 {
+  width: 420px; height: 300px;
+  background: radial-gradient(ellipse, rgba(255,106,47,0.10) 0%, transparent 70%);
+  top: 30px; left: 15%;
+  animation: float2 11s ease-in-out infinite alternate;
+}
+.blob-3 {
+  width: 340px; height: 240px;
+  background: radial-gradient(ellipse, rgba(232,73,15,0.08) 0%, transparent 70%);
+  top: 10px; right: 12%;
+  animation: float3 8s ease-in-out infinite alternate;
+}
+@keyframes float1 {
+  from { transform: translateX(-50%) translateY(0) scale(1); }
+  to   { transform: translateX(-50%) translateY(22px) scale(1.06); }
+}
+@keyframes float2 {
+  from { transform: translate(0,0) scale(1); }
+  to   { transform: translate(16px,18px) scale(1.1); }
+}
+@keyframes float3 {
+  from { transform: translate(0,0) scale(1); }
+  to   { transform: translate(-14px,14px) scale(0.94); }
+}
+
+.hero-content {
+  position: relative; z-index: 1;
+  max-width: 740px; margin: 0 auto; width: 100%;
+}
+
+/* hero entrance animation pieces */
+.hero-logo-wrap { display: inline-block; margin-bottom: 2rem; }
+.hero-logo {
+  width: 96px; height: 96px; border-radius: 18px; object-fit: cover;
+  box-shadow: 0 0 0 1px rgba(232,73,15,0.2), 0 0 40px rgba(232,73,15,0.25), 0 0 80px rgba(232,73,15,0.1);
+  animation: heroin-logo 0.7s cubic-bezier(0.16,1,0.3,1) both,
+             logo-pulse 4s ease-in-out 1s infinite;
+}
+@keyframes heroin-logo {
+  from { opacity: 0; transform: scale(0.88) translateY(10px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+@keyframes logo-pulse {
+  0%,100% { box-shadow: 0 0 0 1px rgba(232,73,15,0.2), 0 0 40px rgba(232,73,15,0.25), 0 0 80px rgba(232,73,15,0.1); }
+  50%      { box-shadow: 0 0 0 1px rgba(232,73,15,0.35), 0 0 60px rgba(232,73,15,0.4), 0 0 100px rgba(232,73,15,0.15); }
+}
+
+.hero h1 {
+  font-size: clamp(2rem,5vw,3.25rem); font-weight: 700;
+  letter-spacing: -0.03em; line-height: 1.15; color: var(--text);
+  margin-bottom: 1.1rem;
+  animation: heroin-text 0.7s 0.1s cubic-bezier(0.16,1,0.3,1) both;
+}
+.hero-sub {
+  font-size: 1.0625rem; color: var(--muted); max-width: 560px;
+  margin: 0 auto 2.25rem; line-height: 1.65;
+  animation: heroin-text 0.7s 0.2s cubic-bezier(0.16,1,0.3,1) both;
+}
+@keyframes heroin-text {
+  from { opacity: 0; transform: translateY(18px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* install block */
+.install-wrap {
+  display: flex; flex-direction: column; align-items: center; gap: 1rem;
+  margin-bottom: 2rem;
+  animation: heroin-text 0.7s 0.32s cubic-bezier(0.16,1,0.3,1) both;
+}
+.install-block {
+  position: relative; overflow: hidden;
+  display: inline-flex; align-items: center; gap: 0.75rem;
+  background: #000; border: 1px solid var(--border); border-radius: 8px;
+  padding: 0.65rem 1rem 0.65rem 1.25rem;
+}
+/* shimmer sweep */
+.install-block::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(105deg, transparent 30%, rgba(232,73,15,0.07) 50%, transparent 70%);
+  background-size: 200% 100%; background-position: -100% 0;
+  animation: shimmer 3.5s 1.5s ease-in-out infinite;
+}
+@keyframes shimmer {
+  0%   { background-position: -100% 0; }
+  50%  { background-position: 200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.install-block code {
+  font-family: var(--mono); font-size: 0.875rem; color: var(--text); letter-spacing: 0.01em;
+  position: relative; z-index: 1;
+}
+.copy-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; border: 1px solid var(--border); border-radius: 5px;
+  background: var(--surface); color: var(--muted); cursor: pointer;
+  transition: border-color 0.18s, color 0.18s; flex-shrink: 0; position: relative; z-index: 1;
+}
+.copy-btn:hover { border-color: var(--accent); color: var(--accent); }
+.copy-btn svg { width: 13px; height: 13px; }
+
+.hero-ctas {
+  display: flex; align-items: center; justify-content: center; gap: 0.75rem; flex-wrap: wrap;
+  animation: heroin-text 0.7s 0.44s cubic-bezier(0.16,1,0.3,1) both;
+}
+.btn {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  padding: 0.6rem 1.35rem; border-radius: 7px; font-size: 0.875rem;
+  font-weight: 600; text-decoration: none; cursor: pointer;
+  border: 1px solid transparent; letter-spacing: -0.005em;
+  transition: background 0.18s, border-color 0.18s, color 0.18s, transform 0.14s, box-shadow 0.18s;
+}
+.btn:hover { transform: translateY(-1px); }
+.btn:active { transform: translateY(0); }
+.btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+.btn-primary:hover {
+  background: var(--accent-h); border-color: var(--accent-h);
+  box-shadow: 0 4px 20px rgba(232,73,15,0.35);
+}
+.btn-outline { background: transparent; color: var(--text); border-color: var(--border); }
+.btn-outline:hover { border-color: #555; background: rgba(255,255,255,0.04); }
+
+/* scroll hint */
+.scroll-hint {
+  position: absolute; bottom: 2rem; left: 50%; transform: translateX(-50%);
+  z-index: 1; opacity: 0;
+  animation: hint-fade 0.6s 1.2s ease-out forwards;
+}
+@keyframes hint-fade { to { opacity: 0.35; } }
+.scroll-hint svg { width: 20px; height: 20px; color: var(--muted); animation: bounce 2s 1.8s ease-in-out infinite; }
+@keyframes bounce { 0%,100% { transform: translateY(0); } 50% { transform: translateY(5px); } }
+
+/* ── PROBLEM / SOLUTION ──────────────────────────────── */
+.ps-section {
+  background: #0d0d0d; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+  padding: 5rem 2rem;
+}
+.ps-inner {
+  max-width: 980px; margin: 0 auto;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 3.5rem;
+}
+.ps-col { padding-left: 1.25rem; }
+.ps-col-problem {
+  border-left: 2px solid transparent;
+  transition: border-left-color 0.5s 0.1s ease;
+}
+.ps-col-problem.visible { border-left-color: #c0392b; }
+.ps-col-solution {
+  border-left: 2px solid transparent;
+  transition: border-left-color 0.5s 0.3s ease;
+}
+.ps-col-solution.visible { border-left-color: var(--accent); }
+
+.ps-label {
+  font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.12em;
+  text-transform: uppercase; margin-bottom: 0.75rem;
+}
+.ps-label-problem { color: #c0392b; }
+.ps-label-solution { color: var(--accent); }
+.ps-col h2 {
+  font-size: 1.2rem; font-weight: 650; letter-spacing: -0.02em;
+  color: var(--text); margin-bottom: 0.75rem; line-height: 1.35;
+}
+.ps-col p { font-size: 0.9375rem; color: var(--muted); line-height: 1.7; }
+
+/* ── FEATURES ─────────────────────────────────────────── */
+.features-wrap { padding: 5rem 2rem; }
+.features-section { max-width: 980px; margin: 0 auto; }
+.section-label {
+  font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--accent);
+  text-align: center; margin-bottom: 0.6rem;
+}
+.section-heading {
+  font-size: clamp(1.5rem,3vw,2rem); font-weight: 700; letter-spacing: -0.025em;
+  text-align: center; color: var(--text); margin-bottom: 3rem; line-height: 1.3;
+}
+.features-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 1rem; }
+
+.feature-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; padding: 1.35rem;
+  transition: border-color 0.25s, transform 0.25s, box-shadow 0.25s;
+  position: relative; overflow: hidden;
+}
+/* card shimmer on hover */
+.feature-card::before {
+  content: ""; position: absolute; inset: 0; border-radius: inherit;
+  background: radial-gradient(circle at var(--mx,50%) var(--my,50%), rgba(232,73,15,0.06) 0%, transparent 60%);
+  opacity: 0; transition: opacity 0.3s;
+}
+.feature-card:hover { border-color: var(--accent); transform: translateY(-3px); box-shadow: 0 8px 30px rgba(232,73,15,0.12), 0 2px 8px rgba(0,0,0,0.4); }
+.feature-card:hover::before { opacity: 1; }
+
+.feature-icon { font-size: 1.4rem; margin-bottom: 0.7rem; display: block; line-height: 1; }
+.feature-card h3 { font-size: 0.9375rem; font-weight: 650; letter-spacing: -0.015em; color: var(--text); margin-bottom: 0.45rem; }
+.feature-card p { font-size: 0.8125rem; color: var(--muted); line-height: 1.6; }
+
+/* ── CODE EXAMPLES ──────────────────────────────────── */
+.code-wrap { padding: 0 2rem 5rem; }
+.code-section { max-width: 980px; margin: 0 auto; }
+.tabs { display: flex; gap: 0.25rem; margin-bottom: 1rem; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 0.3rem; width: fit-content; }
+.tab-btn {
+  padding: 0.4rem 1rem; border: none; background: transparent; color: var(--muted);
+  border-radius: 6px; cursor: pointer; font-size: 0.8125rem; font-weight: 500;
+  font-family: var(--font); transition: all 0.15s;
+}
+.tab-btn.active { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+/* prism override */
+pre[class*="language-"] {
+  background: #000 !important; border: 1px solid var(--border); border-radius: 10px;
+  padding: 1.5rem !important; overflow-x: auto; font-size: 0.825rem !important;
+  line-height: 1.65 !important; margin: 0 !important;
+}
+code[class*="language-"] { font-family: var(--mono) !important; font-size: inherit !important; }
+.token.comment,.token.prolog,.token.doctype,.token.cdata { color: #555; font-style: italic; }
+.token.punctuation { color: #666; }
+.token.number,.token.boolean,.token.constant,.token.deleted { color: #ff8c64; }
+.token.string,.token.char,.token.inserted { color: #7ec76f; }
+.token.operator,.token.entity,.token.url { color: #c9d1d9; }
+.token.keyword { color: var(--accent); }
+.token.function,.token.class-name { color: #c792ea; }
+.token.variable { color: #ffa657; }
+.token.important,.token.bold { font-weight: bold; }
+.token.italic { font-style: italic; }
+
+/* ── FOOTER ─────────────────────────────────────────── */
+footer { border-top: 1px solid var(--border); padding: 2.5rem 2rem; text-align: center; }
+.footer-inner { max-width: 980px; margin: 0 auto; display: flex; flex-direction: column; align-items: center; gap: 0.75rem; }
+.footer-links { display: flex; align-items: center; gap: 1.5rem; flex-wrap: wrap; justify-content: center; }
+.footer-links a { font-size: 0.8125rem; color: var(--muted); text-decoration: none; transition: color 0.18s; }
+.footer-links a:hover { color: var(--accent); }
+.footer-sep { color: #333; font-size: 0.8125rem; }
+.footer-copy { font-size: 0.75rem; color: #3a3a3a; }
+
+/* ── RESPONSIVE ─────────────────────────────────────── */
+@media (max-width: 720px) {
+  .ps-inner { grid-template-columns: 1fr; gap: 2rem; }
+  .features-grid { grid-template-columns: repeat(2,1fr); }
+}
+@media (max-width: 480px) {
+  .features-grid { grid-template-columns: 1fr; }
+  .hero h1 { font-size: 1.9rem; }
+}
+@media (max-width: 640px) {
+  nav .nav-links .nav-link:not(:last-child) { display: none; }
+}
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav id="nav">
+  <div class="nav-inner">
+    <a href="#" class="nav-brand">
+      <img src="../Images/Retro_relay_station_icon_202605151828.jpeg" alt="Relay logo" />
+      <span>Relay</span>
+    </a>
+    <div class="nav-links">
+      <a href="https://github.com/kridaydave/Relay" target="_blank" rel="noopener" class="nav-link">GitHub</a>
+      <a href="https://pypi.org/project/relay-middleware/" target="_blank" rel="noopener" class="nav-link">PyPI v0.4.2</a>
+    </div>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <canvas id="netCanvas" aria-hidden="true"></canvas>
+  <div class="aurora" aria-hidden="true">
+    <div class="blob blob-1"></div>
+    <div class="blob blob-2"></div>
+    <div class="blob blob-3"></div>
+  </div>
+  <div class="hero-content">
+    <div class="hero-logo-wrap">
+      <img src="../Images/Retro_relay_station_icon_202605151828.jpeg" alt="Relay" class="hero-logo" />
+    </div>
+    <h1>Agent-agent context passing,<br>done right.</h1>
+    <p class="hero-sub">
+      One hallucinating agent silently corrupts context. Relay treats it like a ledger —
+      signed, snapshotted, reversible.
+    </p>
+    <div class="install-wrap">
+      <div class="install-block">
+        <code>pip install relay-middleware</code>
+        <button class="copy-btn" id="copyBtn" title="Copy to clipboard">
+          <svg id="copyIcon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="4" y="2" width="9" height="11" rx="1.5"/>
+            <path d="M2 5h2M2 5v8a1.5 1.5 0 001.5 1.5H11"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+    <div class="hero-ctas">
+      <a href="https://github.com/kridaydave/Relay" target="_blank" rel="noopener" class="btn btn-primary">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844a9.59 9.59 0 012.504.337c1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.02 10.02 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
+        View on GitHub
+      </a>
+      <a href="https://pypi.org/project/relay-middleware/" target="_blank" rel="noopener" class="btn btn-outline">PyPI v0.4.2</a>
+    </div>
+  </div>
+  <div class="scroll-hint" aria-hidden="true">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="6 9 12 15 18 9"/>
+    </svg>
+  </div>
+</section>
+
+<!-- PROBLEM / SOLUTION -->
+<section class="ps-section">
+  <div class="ps-inner">
+    <div class="ps-col ps-col-problem reveal-left">
+      <div class="ps-label ps-label-problem">The Problem</div>
+      <h2>Shared context has no integrity guarantees.</h2>
+      <p>
+        One hallucinating agent corrupts the shared context. Every downstream agent
+        inherits the damage. No audit trail, no rollback, no way to know where it broke.
+      </p>
+    </div>
+    <div class="ps-col ps-col-solution reveal-right">
+      <div class="ps-label ps-label-solution">The Solution</div>
+      <h2>Treat context like a ledger, not a variable.</h2>
+      <p>
+        Relay wraps every handoff in a cryptographically signed envelope. Contradictions
+        trigger automatic rollback. The pipeline stays clean without any manual intervention.
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<div class="features-wrap">
+  <section class="features-section">
+    <div class="section-label reveal">Features</div>
+    <h2 class="section-heading reveal">Everything a production pipeline needs.</h2>
+    <div class="features-grid">
+      <div class="feature-card reveal" style="transition-delay:0.05s">
+        <span class="feature-icon">🔐</span>
+        <h3>Cryptographic Signing</h3>
+        <p>Every context envelope HMAC-signed. Tampered payloads rejected before they propagate downstream.</p>
+      </div>
+      <div class="feature-card reveal" style="transition-delay:0.12s">
+        <span class="feature-icon">↩</span>
+        <h3>Instant Rollback</h3>
+        <p>Roll back to any prior snapshot in one call. Hallucinations vanish cleanly — no manual diff required.</p>
+      </div>
+      <div class="feature-card reveal" style="transition-delay:0.19s">
+        <span class="feature-icon">⚡</span>
+        <h3>Parallel Fork-Join</h3>
+        <p>Fan-out to multiple agents simultaneously. Merge via UNION, VOTE, or FIRST_WINS strategies.</p>
+      </div>
+      <div class="feature-card reveal" style="transition-delay:0.26s">
+        <span class="feature-icon">💰</span>
+        <h3>Budget Enforcement</h3>
+        <p>Hard token caps per agent and per pipeline. Limits enforced before any LLM call is made.</p>
+      </div>
+      <div class="feature-card reveal" style="transition-delay:0.33s">
+        <span class="feature-icon">🔌</span>
+        <h3>Any LLM / Framework</h3>
+        <p>LangChain, OpenAI, Anthropic, Ollama, CrewAI, AutoGen. Or your own callable. Lazy-loaded adapters.</p>
+      </div>
+      <div class="feature-card reveal" style="transition-delay:0.40s">
+        <span class="feature-icon">🔎</span>
+        <h3>Fully Type Safe</h3>
+        <p>PEP 561 compliant. mypy&nbsp;--strict passes across all 28 source files. Zero <code style="font-family:var(--mono);font-size:0.78rem">type:&nbsp;ignore</code>.</p>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- CODE EXAMPLES -->
+<div class="code-wrap">
+  <section class="code-section">
+    <div class="section-label reveal">Code</div>
+    <h2 class="section-heading reveal">See the difference.</h2>
+    <div class="reveal" style="transition-delay:0.1s">
+      <div class="tabs">
+        <button class="tab-btn" data-group="code" data-tab="without">Without Relay</button>
+        <button class="tab-btn active" data-group="code" data-tab="with">With Relay</button>
+      </div>
+      <div class="tab-panel" data-group="code" data-tab="without">
+<pre><code class="language-python"># Agent 1 produces output
+agent1_output = {"entities": ["Apple", "2024 revenue"], "summary": "Apple grew"}
+
+# Manual serialization — easy to lose data, corrupt context
+context = json.dumps(agent1_output)
+
+# Agent 2 hallucinates — drops "entities" silently
+agent2_output = {"summary": "revenue increased"}
+
+# Agent 3 inherits corrupted context — no audit trail, no rollback
+agent3_input = f"Given: {json.dumps(agent2_output)}\nSummarize."</code></pre>
+      </div>
+      <div class="tab-panel active" data-group="code" data-tab="with">
+<pre><code class="language-python">from relay.core_pipeline import CoreRelayPipeline
+from relay.types import RollbackSuccess
+
+pipeline = CoreRelayPipeline(
+    signing_secret="your-secret-key",
+    token_budget=8000
+)
+
+# Agent 1 — creates signed, immutable envelope
+result = pipeline.execute_step({"entities": ["Apple"], "revenue": "2024"})
+envelope1 = result.value  # signed, snapshotted
+
+# Agent 2 — accidentally drops "entities" (hallucination)
+result = pipeline.execute_step({"summary": "growth"})
+
+# Relay detects the contradiction and rolls back automatically
+if isinstance(result, RollbackSuccess):
+    clean = pipeline.current_envelope  # envelope1 restored</code></pre>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- FOOTER -->
+<footer>
+  <div class="footer-inner">
+    <div class="footer-links">
+      <a href="https://github.com/kridaydave/Relay" target="_blank" rel="noopener">GitHub</a>
+      <span class="footer-sep">·</span>
+      <a href="https://pypi.org/project/relay-middleware/" target="_blank" rel="noopener">PyPI</a>
+      <span class="footer-sep">·</span>
+      <a href="https://github.com/kridaydave/Relay/blob/main/LICENSE" target="_blank" rel="noopener">MIT License</a>
+      <span class="footer-sep">·</span>
+      <a href="https://github.com/kridaydave/Relay/blob/main/CHANGELOG.md" target="_blank" rel="noopener">Changelog</a>
+    </div>
+    <p class="footer-copy">Built by Kriday and team · v0.4.2 · No runtime dependencies. No telemetry.</p>
+  </div>
+</footer>
+
+<script src="prism.js"></script>
+<script>
+// ── Copy button ───────────────────────────────────────
+const copyBtn = document.getElementById('copyBtn');
+const copyIcon = document.getElementById('copyIcon');
+copyBtn.addEventListener('click', () => {
+  navigator.clipboard.writeText('pip install relay-middleware').then(() => {
+    copyIcon.innerHTML = '<polyline points="2,8 6,12 14,4"/>';
+    copyIcon.setAttribute('viewBox','0 0 16 16');
+    copyBtn.style.color = '#4caf50';
+    copyBtn.style.borderColor = '#4caf50';
+    setTimeout(() => {
+      copyBtn.style.color = '';
+      copyBtn.style.borderColor = '';
+      copyIcon.setAttribute('viewBox','0 0 16 16');
+      copyIcon.innerHTML = '<rect x="4" y="2" width="9" height="11" rx="1.5"/><path d="M2 5h2M2 5v8a1.5 1.5 0 001.5 1.5H11"/>';
+    }, 2000);
+  });
+});
+
+// ── Tabs ─────────────────────────────────────────────
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const g = btn.dataset.group, t = btn.dataset.tab;
+    document.querySelectorAll(`.tab-btn[data-group="${g}"]`).forEach(b => b.classList.remove('active'));
+    document.querySelectorAll(`.tab-panel[data-group="${g}"]`).forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelector(`.tab-panel[data-group="${g}"][data-tab="${t}"]`).classList.add('active');
+  });
+});
+
+// ── Scroll reveals ────────────────────────────────────
+const revealEls = document.querySelectorAll('.reveal, .reveal-left, .reveal-right, .ps-col-problem, .ps-col-solution');
+const obs = new IntersectionObserver((entries) => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      e.target.classList.add('visible');
+      obs.unobserve(e.target);
+    }
+  });
+}, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
+revealEls.forEach(el => obs.observe(el));
+
+// ── Feature card glow follow mouse ───────────────────
+document.querySelectorAll('.feature-card').forEach(card => {
+  card.addEventListener('mousemove', e => {
+    const r = card.getBoundingClientRect();
+    const x = ((e.clientX - r.left) / r.width * 100).toFixed(1);
+    const y = ((e.clientY - r.top)  / r.height * 100).toFixed(1);
+    card.style.setProperty('--mx', x + '%');
+    card.style.setProperty('--my', y + '%');
+  });
+});
+
+// ── Nav border on scroll ──────────────────────────────
+window.addEventListener('scroll', () => {
+  document.getElementById('nav').style.borderBottomColor = window.scrollY > 10 ? '#2d2d2d' : '#222';
+}, { passive: true });
+
+// ── Network canvas (agents + context packets) ─────────
+(function() {
+  const canvas = document.getElementById('netCanvas');
+  const ctx    = canvas.getContext('2d');
+  const ACCENT = { r: 232, g: 73, b: 15 };
+  const PACK   = { r: 255, g: 140, b: 60 };
+  const MAX_DIST = 160;
+  const NODE_COUNT = 60;
+
+  let W, H, nodes, packets, animId;
+
+  function rgba(c, a) { return `rgba(${c.r},${c.g},${c.b},${a})`; }
+
+  function resize() {
+    W = canvas.offsetWidth;
+    H = canvas.offsetHeight;
+    canvas.width  = W;
+    canvas.height = H;
+  }
+
+  function mkNode() {
+    const hub = Math.random() < 0.18;
+    return {
+      x:  Math.random() * W,
+      y:  Math.random() * H,
+      vx: (Math.random() - 0.5) * (hub ? 0.25 : 0.45),
+      vy: (Math.random() - 0.5) * (hub ? 0.25 : 0.45),
+      r:  hub ? 3.2 : 1.6,
+      hub,
+      phase: Math.random() * Math.PI * 2,
+    };
+  }
+
+  function init() {
+    resize();
+    nodes   = Array.from({ length: NODE_COUNT }, mkNode);
+    packets = [];
+  }
+
+  function spawnPacket() {
+    const i = Math.floor(Math.random() * nodes.length);
+    const j = Math.floor(Math.random() * nodes.length);
+    if (i === j) return;
+    const dx = nodes[j].x - nodes[i].x;
+    const dy = nodes[j].y - nodes[i].y;
+    const d  = Math.sqrt(dx * dx + dy * dy);
+    if (d < MAX_DIST && d > 30) {
+      packets.push({ from: i, to: j, t: 0, speed: 0.007 + Math.random() * 0.008 });
+    }
+  }
+
+  const spawnTimer = setInterval(spawnPacket, 280);
+
+  function frame() {
+    ctx.clearRect(0, 0, W, H);
+
+    // move nodes
+    nodes.forEach(n => {
+      n.x += n.vx; n.y += n.vy; n.phase += 0.018;
+      if (n.x < 0 || n.x > W) n.vx *= -1;
+      if (n.y < 0 || n.y > H) n.vy *= -1;
+    });
+
+    // connections
+    for (let i = 0; i < nodes.length; i++) {
+      for (let j = i + 1; j < nodes.length; j++) {
+        const dx = nodes[i].x - nodes[j].x;
+        const dy = nodes[i].y - nodes[j].y;
+        const d  = Math.sqrt(dx * dx + dy * dy);
+        if (d < MAX_DIST) {
+          const a = (1 - d / MAX_DIST) * 0.22;
+          ctx.beginPath();
+          ctx.moveTo(nodes[i].x, nodes[i].y);
+          ctx.lineTo(nodes[j].x, nodes[j].y);
+          ctx.strokeStyle = rgba(ACCENT, a);
+          ctx.lineWidth   = 0.75;
+          ctx.stroke();
+        }
+      }
+    }
+
+    // packets (context envelopes traveling the network)
+    for (let k = packets.length - 1; k >= 0; k--) {
+      const p = packets[k];
+      p.t += p.speed;
+      if (p.t >= 1) { packets.splice(k, 1); continue; }
+      const nx = nodes[p.from].x + (nodes[p.to].x - nodes[p.from].x) * p.t;
+      const ny = nodes[p.from].y + (nodes[p.to].y - nodes[p.from].y) * p.t;
+      // glow halo
+      const grad = ctx.createRadialGradient(nx, ny, 0, nx, ny, 9);
+      grad.addColorStop(0, rgba(PACK, 0.5));
+      grad.addColorStop(1, rgba(PACK, 0));
+      ctx.beginPath(); ctx.arc(nx, ny, 9, 0, Math.PI * 2);
+      ctx.fillStyle = grad; ctx.fill();
+      // core dot
+      ctx.beginPath(); ctx.arc(nx, ny, 2.2, 0, Math.PI * 2);
+      ctx.fillStyle = rgba(PACK, 0.95); ctx.fill();
+    }
+
+    // nodes
+    nodes.forEach(n => {
+      const glow = (Math.sin(n.phase) + 1) * 0.5;
+      const a    = n.hub ? 0.55 + glow * 0.35 : 0.35 + glow * 0.2;
+      // outer glow for hubs
+      if (n.hub) {
+        const g = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, 12);
+        g.addColorStop(0, rgba(ACCENT, 0.25 + glow * 0.15));
+        g.addColorStop(1, rgba(ACCENT, 0));
+        ctx.beginPath(); ctx.arc(n.x, n.y, 12, 0, Math.PI * 2);
+        ctx.fillStyle = g; ctx.fill();
+      }
+      ctx.beginPath(); ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
+      ctx.fillStyle = rgba(ACCENT, a); ctx.fill();
+    });
+
+    animId = requestAnimationFrame(frame);
+  }
+
+  // pause when tab hidden (save CPU)
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) { cancelAnimationFrame(animId); clearInterval(spawnTimer); }
+    else frame();
+  });
+
+  window.addEventListener('resize', () => { resize(); }, { passive: true });
+
+  init();
+  frame();
+})();
+</script>
+</body>
+</html>
