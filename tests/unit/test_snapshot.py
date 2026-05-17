@@ -1,5 +1,6 @@
 """Unit tests for relay.snapshot."""
 
+import inspect
 import json
 import shutil
 import tempfile
@@ -11,7 +12,8 @@ import pytest
 
 from relay.envelope import RELAY_VERSION, ContextEnvelope, create_initial_envelope
 from relay.snapshot import SNAPSHOT_ID_PATTERN, LocalFileSnapshotStore, InvalidSnapshotIdError, _extract_step_from_snapshot_id
-from relay.types import Failure, Success, ErrorCode, JSONDict
+from relay.snapshot_protocol import SnapshotStore
+from relay.types import Closeable, Failure, Success, ErrorCode, JSONDict
 
 
 class TestSnapshotStore:
@@ -686,3 +688,59 @@ class TestPreV04SnapshotCompat:
             assert loaded.step == 2
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
+
+
+class TestSnapshotStoreProtocol:
+    """Tests that SnapshotStore Protocol contract is satisfied by LocalFileSnapshotStore."""
+
+    def test_snapshot_store_is_a_runtime_checkable_protocol(self) -> None:
+        """SnapshotStore must be a @runtime_checkable Protocol."""
+        # @runtime_checkable decorator adds __instancecheck__ to Protocol classes
+        assert hasattr(SnapshotStore, "__instancecheck__")
+
+    def test_local_file_snapshot_store_isinstance_snapshot_store(self) -> None:
+        """isinstance(LocalFileSnapshotStore(...), SnapshotStore) must be True."""
+        store = LocalFileSnapshotStore(storage_path=tempfile.mkdtemp())
+        try:
+            assert isinstance(store, SnapshotStore)
+        finally:
+            try:
+                import shutil
+                shutil.rmtree(store._storage_path, ignore_errors=True)
+            except Exception:
+                pass
+
+    def test_local_file_snapshot_store_isinstance_closeable(self) -> None:
+        """LocalFileSnapshotStore must satisfy the Closeable Protocol."""
+        store = LocalFileSnapshotStore(storage_path=tempfile.mkdtemp())
+        try:
+            assert isinstance(store, Closeable)
+        finally:
+            try:
+                import shutil
+                shutil.rmtree(store._storage_path, ignore_errors=True)
+            except Exception:
+                pass
+
+    def test_snapshot_store_protocol_has_expected_methods(self) -> None:
+        """SnapshotStore Protocol must have exactly the 5 expected methods."""
+        expected_methods = {
+            "save_snapshot",
+            "load_snapshot",
+            "get_latest_snapshot",
+            "list_snapshots",
+            "close",
+        }
+        protocol_methods = {
+            name
+            for name, member in inspect.getmembers(SnapshotStore)
+            if not name.startswith("_") and callable(member)
+        }
+        assert expected_methods.issubset(protocol_methods), (
+            f"Missing methods: {expected_methods - protocol_methods}"
+        )
+
+    def test_local_file_snapshot_store_has_close_method(self) -> None:
+        """LocalFileSnapshotStore must have a close() method matching Closeable."""
+        assert hasattr(LocalFileSnapshotStore, "close")
+        assert callable(LocalFileSnapshotStore.close)
