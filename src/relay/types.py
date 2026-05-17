@@ -6,7 +6,7 @@ Does NOT: handle specific domain errors, validate data, or make decisions.
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Callable, Generic, TypeVar
+from typing import Callable, Generic, Protocol, TypeVar
 
 JSONDict = dict[str, object]
 """A JSON-serializable dictionary with string keys and object values."""
@@ -14,6 +14,12 @@ JSONDict = dict[str, object]
 __version__ = "0.4.2"
 
 T = TypeVar("T")
+
+
+class Closeable(Protocol):
+    """Protocol for resources that require explicit cleanup."""
+
+    def close(self) -> None: ...
 
 
 class ErrorCode(str, Enum):
