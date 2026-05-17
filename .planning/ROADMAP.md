@@ -6,7 +6,7 @@
 **Goal:** Convert `SnapshotStore` to a Protocol, enabling test doubles and pluggable backends.
 **Mode:** mvp
 **Requirements:** STO-01, STO-02, STO-03, STO-04
-**Progress:** 2/3 plans complete (✅ 01-01, ✅ 01-02, ◻ 01-03)
+**Progress:** 3/3 plans complete (✅ 01-01, ✅ 01-02, ✅ 01-03)
 **Success Criteria:**
 1. `SnapshotStore` exists as `@runtime_checkable` Protocol in its own file
 2. Existing `SnapshotStore` renamed to `LocalFileSnapshotStore` with all tests passing
