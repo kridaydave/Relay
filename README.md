@@ -23,12 +23,15 @@ Relay treats context like a ledger: append-only, signed at every step, and rever
 ## Features
 
 - **Agent Runners** — Universal adapter layer for any LLM provider or framework (v0.3)
+- **Parallel Fork-Join** — Run multiple agents concurrently and merge via `UNION`, `VOTE`, or `FIRST_WINS` (v0.4)
 - **Context Broker** — Normalizes, timestamps, and cryptographically signs context envelopes
 - **Handoff Validator** — Detects contradictions and triggers rollback on corruption
 - **Snapshot Store** — Persists immutable checkpoints for automatic rollback
 - **Budget Enforcer** — Hard token cap enforcement before every agent call
+- **Observability** — Read-only `history`, `snapshot_index`, and `current_envelope` properties (v0.4.1)
 - **Slicer** — Pluggable context slicing strategies (recency, relevance, structural)
 - **Manifest Boundaries** — Agent manifests define read/write permissions with hash verification
+- **Type Safe** — PEP 561 compliant with `py.typed` marker (v0.4.1)
 
 ---
 
