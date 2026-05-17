@@ -9,6 +9,7 @@ Does NOT: implement signing (owned by relay.envelope), persist envelopes,
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 
 from relay.envelope import ContextEnvelope, create_initial_envelope, create_next_envelope
 from relay.types import (
@@ -25,6 +26,11 @@ from relay.types import (
 __all__ = ["ContextBroker", "create_context_broker"]
 
 _MIN_SECRET_LENGTH = 32
+
+
+def _by_created_at(key: SigningKey) -> datetime:
+    """Sort key: return the key's creation timestamp."""
+    return key.created_at
 
 
 def create_context_broker(
@@ -74,14 +80,12 @@ class ContextBroker:
 
         Returns the secret from the most recently added key.
         """
-        latest = max(self.keys.values(), key=lambda k: k.created_at)
-        return latest.secret
+        return max(self.keys.values(), key=_by_created_at).secret
 
     @property
     def current_key_id(self) -> str:
         """ID of the most recently added signing key."""
-        latest = max(self.keys.values(), key=lambda k: k.created_at)
-        return latest.key_id
+        return max(self.keys.values(), key=_by_created_at).key_id
 
     def create_initial_envelope(
         self,
