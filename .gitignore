@@ -47,3 +47,4 @@ ENV/
 .claude/
 .gemini/
 docs/codename.md
+Internal-changelog.md
