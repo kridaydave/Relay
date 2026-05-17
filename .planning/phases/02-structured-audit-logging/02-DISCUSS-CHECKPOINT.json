@@ -1,0 +1,55 @@
+{
+  "phase": "2",
+  "phase_name": "Structured Audit Logging",
+  "timestamp": "2026-05-17T21:19:48Z",
+  "areas_completed": ["Audit event schema & lifecycle points", "Sink failure model"],
+  "areas_remaining": ["Payload redaction approach", "Timing capture pattern", "SEC-12: max_age_seconds"],
+  "decisions": {
+    "Audit event schema & lifecycle points": [
+      {
+        "question": "Lifecycle points (10+ events)",
+        "answer": "Full coverage — 17 events across 8 categories",
+        "options_presented": ["Core flow (~6 events)", "Core + enforcement (~10 events)", "Full coverage (~14 events)"]
+      },
+      {
+        "question": "Event fields",
+        "answer": "Rich metadata — agent name, adapter type, snapshot ID, event-specific data",
+        "options_presented": ["Minimal (metadata only)", "Rich metadata"]
+      },
+      {
+        "question": "Event naming convention",
+        "answer": "snake_case (e.g. step_execution_succeeded)",
+        "options_presented": ["snake_case", "Dotted hierarchy"]
+      },
+      {
+        "question": "Emission mode",
+        "answer": "Inline (synchronous)",
+        "options_presented": ["Inline (synchronous)", "Background queue"]
+      },
+      {
+        "question": "Event type structure",
+        "answer": "Union of typed dataclasses (typed subtypes per event)",
+        "options_presented": ["Single dataclass + optional fields", "Union of typed events"]
+      },
+      {
+        "question": "Outcome values",
+        "answer": "Four outcomes: success / failure / rollback / skipped",
+        "options_presented": ["Simple: success / failure", "Four values"]
+      },
+      {
+        "question": "Concrete event list approval",
+        "answer": "Approved: 17 events across 8 categories (pipeline lifecycle, step exec, budget, validation, rollback, parallel, snapshot, signature)",
+        "options_presented": ["Looks good", "Let me adjust"]
+      }
+    ],
+    "Sink failure model": [
+      {
+        "question": "Behavior on sink failure",
+        "answer": "ERROR-level log (visible), pipeline continues. Fire-and-forget with loud error.",
+        "options_presented": ["Fire-and-forget (silent)", "Reliable (Result)", "Buffered with retry"]
+      }
+    ]
+  },
+  "deferred_ideas": [],
+  "canonical_refs": []
+}
