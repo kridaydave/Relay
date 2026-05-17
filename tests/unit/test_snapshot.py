@@ -10,14 +10,14 @@ from unittest.mock import patch
 import pytest
 
 from relay.envelope import RELAY_VERSION, ContextEnvelope, create_initial_envelope
-from relay.snapshot import SNAPSHOT_ID_PATTERN, SnapshotStore, InvalidSnapshotIdError, _extract_step_from_snapshot_id
+from relay.snapshot import SNAPSHOT_ID_PATTERN, LocalFileSnapshotStore, InvalidSnapshotIdError, _extract_step_from_snapshot_id
 from relay.types import Failure, Success, ErrorCode, JSONDict
 
 
 class TestSnapshotStore:
     def setup_method(self) -> None:
         self.temp_dir = tempfile.mkdtemp()
-        self.store = SnapshotStore(storage_path=self.temp_dir)
+        self.store = LocalFileSnapshotStore(storage_path=self.temp_dir)
 
     def teardown_method(self) -> None:
         shutil.rmtree(self.temp_dir, ignore_errors=True)
@@ -236,7 +236,7 @@ class TestSnapshotStore:
 class TestSnapshotStoreSaveErrors:
     def setup_method(self) -> None:
         self.temp_dir = tempfile.mkdtemp()
-        self.store = SnapshotStore(storage_path=self.temp_dir)
+        self.store = LocalFileSnapshotStore(storage_path=self.temp_dir)
 
     def teardown_method(self) -> None:
         shutil.rmtree(self.temp_dir, ignore_errors=True)
@@ -287,7 +287,7 @@ class TestSnapshotStoreSaveErrors:
 class TestSnapshotStoreLoadErrors:
     def setup_method(self) -> None:
         self.temp_dir = tempfile.mkdtemp()
-        self.store = SnapshotStore(storage_path=self.temp_dir)
+        self.store = LocalFileSnapshotStore(storage_path=self.temp_dir)
 
     def teardown_method(self) -> None:
         shutil.rmtree(self.temp_dir, ignore_errors=True)
@@ -330,7 +330,7 @@ class TestSnapshotStoreLoadErrors:
 class TestSnapshotStoreGetLatestErrors:
     def setup_method(self) -> None:
         self.temp_dir = tempfile.mkdtemp()
-        self.store = SnapshotStore(storage_path=self.temp_dir)
+        self.store = LocalFileSnapshotStore(storage_path=self.temp_dir)
 
     def teardown_method(self) -> None:
         shutil.rmtree(self.temp_dir, ignore_errors=True)
@@ -350,7 +350,7 @@ class TestSnapshotStoreGetLatestErrors:
 class TestSnapshotStoreListErrors:
     def setup_method(self) -> None:
         self.temp_dir = tempfile.mkdtemp()
-        self.store = SnapshotStore(storage_path=self.temp_dir)
+        self.store = LocalFileSnapshotStore(storage_path=self.temp_dir)
 
     def teardown_method(self) -> None:
         shutil.rmtree(self.temp_dir, ignore_errors=True)
@@ -381,7 +381,7 @@ class TestSnapshotStoreListErrors:
 class TestSnapshotStoreLoadIndexErrors:
     def setup_method(self) -> None:
         self.temp_dir = tempfile.mkdtemp()
-        self.store = SnapshotStore(storage_path=self.temp_dir)
+        self.store = LocalFileSnapshotStore(storage_path=self.temp_dir)
 
     def teardown_method(self) -> None:
         shutil.rmtree(self.temp_dir, ignore_errors=True)
@@ -411,7 +411,7 @@ class TestSnapshotStoreLoadIndexErrors:
 class TestSnapshotStoreAddIndexErrors:
     def setup_method(self) -> None:
         self.temp_dir = tempfile.mkdtemp()
-        self.store = SnapshotStore(storage_path=self.temp_dir)
+        self.store = LocalFileSnapshotStore(storage_path=self.temp_dir)
 
     def teardown_method(self) -> None:
         shutil.rmtree(self.temp_dir, ignore_errors=True)
@@ -446,7 +446,7 @@ class TestSnapshotStoreAddIndexErrors:
 class TestSnapshotDictToEnvelope:
     def setup_method(self) -> None:
         self.temp_dir = tempfile.mkdtemp()
-        self.store = SnapshotStore(storage_path=self.temp_dir)
+        self.store = LocalFileSnapshotStore(storage_path=self.temp_dir)
 
     def teardown_method(self) -> None:
         shutil.rmtree(self.temp_dir, ignore_errors=True)
@@ -566,7 +566,7 @@ class TestSnapshotDictToEnvelope:
 class TestSnapshotStoreSaveOSError:
     def setup_method(self) -> None:
         self.temp_dir = tempfile.mkdtemp()
-        self.store = SnapshotStore(storage_path=self.temp_dir)
+        self.store = LocalFileSnapshotStore(storage_path=self.temp_dir)
 
     def teardown_method(self) -> None:
         shutil.rmtree(self.temp_dir, ignore_errors=True)
@@ -621,7 +621,7 @@ class TestPreV04SnapshotCompat:
         """Pre-v0.4 snapshot (no fork keys in JSON) loads with fork fields as None."""
         import tempfile
         import shutil
-        store = SnapshotStore(storage_path=tempfile.mkdtemp())
+        store = LocalFileSnapshotStore(storage_path=tempfile.mkdtemp())
         snapshot_data: dict[str, object] = {
             "relay_version": "0.3.3",
             "pipeline_id": "test-pipe",
@@ -644,7 +644,7 @@ class TestPreV04SnapshotCompat:
     def test_envelope_to_dict_includes_fork_fields_when_serialized(self) -> None:
         """_envelope_to_dict serializes all four fork fields."""
         import tempfile
-        store = SnapshotStore(storage_path=tempfile.mkdtemp())
+        store = LocalFileSnapshotStore(storage_path=tempfile.mkdtemp())
         env = ContextEnvelope(
             relay_version=RELAY_VERSION, pipeline_id="test", step=1,
             timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
@@ -665,7 +665,7 @@ class TestPreV04SnapshotCompat:
         import shutil
         tmp = tempfile.mkdtemp()
         try:
-            store = SnapshotStore(storage_path=tmp)
+            store = LocalFileSnapshotStore(storage_path=tmp)
             env = ContextEnvelope(
                 relay_version=RELAY_VERSION, pipeline_id="test", step=2,
                 timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),

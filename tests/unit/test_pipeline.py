@@ -348,7 +348,7 @@ class TestConcurrentPipeline:
         """Test that concurrent rollback access is handled safely."""
         with patch("relay.context_broker.ContextBroker.create_initial_envelope") as mock_initial, \
              patch("relay.context_broker.ContextBroker.create_next_envelope") as mock_next, \
-             patch("relay.core_pipeline.SnapshotStore") as mock_store_cls:
+             patch("relay.core_pipeline.LocalFileSnapshotStore") as mock_store_cls:
 
             mock_store = MagicMock()
             mock_store.save_snapshot.return_value = Success[str]("snapshot-id")
