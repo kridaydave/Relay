@@ -56,11 +56,11 @@ class InMemorySnapshotStore:
                 self._snapshots[pipeline_id] = {}
                 self._index[pipeline_id] = []
 
-            self._snapshots[pipeline_id][snapshot_id] = deepcopy(envelope)
-
             if snapshot_id not in self._index[pipeline_id]:
                 self._index[pipeline_id].append(snapshot_id)
                 self._index[pipeline_id].sort(key=_extract_step_from_snapshot_id)
+
+            self._snapshots[pipeline_id][snapshot_id] = deepcopy(envelope)
 
         return Success(snapshot_id)
 
