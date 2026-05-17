@@ -95,7 +95,14 @@ class LocalFileSnapshotStore:
         try:
             with open(index_path, "r") as f:
                 data: object = json.load(f)
-                index_data = cast(JSONDict, data) if isinstance(data, dict) else {}
+                if isinstance(data, dict):
+                    index_data = cast(JSONDict, data)
+                else:
+                    logger.warning(
+                        "Index file %s has unexpected format (expected dict, got %s) — "
+                        "resetting to empty index", index_path, type(data).__name__,
+                    )
+                    index_data = {}
         except (json.JSONDecodeError, OSError):
             return Success(None)
 
