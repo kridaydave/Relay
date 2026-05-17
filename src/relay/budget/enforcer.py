@@ -1,6 +1,6 @@
 """Budget enforcement for token cap validation.
 
-Owns: hard-cap check before agent calls, negative-count validation.
+Owns: hard-cap check before agent calls.
 Does NOT: count tokens, manage budgets, or execute agents.
 """
 
@@ -32,12 +32,6 @@ class HardCapEnforcer:
             Success(None) if within budget, Failure if exceeded or invalid counter.
         """
         projected_cost = self.counter.count(projected_slice)
-        if projected_cost < 0:
-            return Failure(
-                reason=f"TokenCounter returned negative value: {projected_cost}",
-                code=ErrorCode.INVALID_TOKEN_COUNT,
-            )
-
         if budget_used + projected_cost > budget_total:
             return Failure(
                 reason=f"Budget exceeded: used {budget_used}, projected {projected_cost}, limit {budget_total}",
