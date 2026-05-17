@@ -4,6 +4,10 @@ Owns: pipeline state (_current_envelope, _previous_envelopes, _snapshot_ids, _pi
 Does NOT: create envelopes, validate handoffs, or manage snapshots.
 """
 
+__all__ = [
+    "PipelineState",
+]
+
 import threading
 from contextlib import contextmanager
 from typing import Generator
