@@ -13,6 +13,7 @@ from relay.pipeline_rollback import RollbackHandler
 from relay.pipeline_state import PipelineState
 from relay.slicer import AgentManifest, SlicePacker
 from relay.snapshot import LocalFileSnapshotStore
+from relay.snapshot_in_memory import InMemorySnapshotStore
 from relay.snapshot_protocol import SnapshotStore
 from relay.types import ErrorCode, Failure, Result, RollbackSuccess, Success, __version__
 from relay.validator import HandoffValidator
@@ -35,6 +36,7 @@ __all__: list[str] = [
     "RollbackHandler",
     "RollbackSuccess",
     "SlicePacker",
+    "InMemorySnapshotStore",
     "LocalFileSnapshotStore",
     "SnapshotStore",
     "Success",
