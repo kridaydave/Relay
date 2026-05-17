@@ -373,10 +373,12 @@ class CoreRelayPipeline:
             self._snapshot_store,
             reason,
         )
-        if isinstance(result, RollbackSuccess):
-            if consume:
-                self._state.consume_last()
-            self._state.set_current(result.value)
+        if isinstance(result, Failure):
+            return result
+        # RollbackSuccess is the only non-Failure return from restore_to_previous.
+        if consume:
+            self._state.consume_last()
+        self._state.set_current(result.value)
         return result
 
     def _slice_payload(
