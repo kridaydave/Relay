@@ -409,6 +409,14 @@ class TestSnapshotStoreLoadIndexErrors:
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.INDEX_READ_FAILED
 
+    def test_load_index_fails_when_index_not_found(self) -> None:
+        pipeline_dir = Path(self.temp_dir) / "pipe-x"
+        pipeline_dir.mkdir(parents=True)
+
+        result = self.store._load_index("pipe-x")
+
+        assert isinstance(result, Failure)
+        assert result.code == ErrorCode.INDEX_NOT_FOUND
 
 class TestSnapshotStoreAddIndexErrors:
     def setup_method(self) -> None:
