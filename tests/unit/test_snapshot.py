@@ -693,12 +693,12 @@ class TestPreV04SnapshotCompat:
 class TestSnapshotStoreProtocol:
     """Tests that SnapshotStore Protocol contract is satisfied by LocalFileSnapshotStore."""
 
-    def test_snapshot_store_is_a_runtime_checkable_protocol(self) -> None:
+    def test_snapshot_store_is_runtime_checkable_when_decorated(self) -> None:
         """SnapshotStore must be a @runtime_checkable Protocol."""
         # @runtime_checkable decorator adds __instancecheck__ to Protocol classes
         assert hasattr(SnapshotStore, "__instancecheck__")
 
-    def test_local_file_snapshot_store_isinstance_snapshot_store(self) -> None:
+    def test_local_file_snapshot_store_passes_isinstance_check_when_checked_against_snapshot_store_protocol(self) -> None:
         """isinstance(LocalFileSnapshotStore(...), SnapshotStore) must be True."""
         store = LocalFileSnapshotStore(storage_path=tempfile.mkdtemp())
         try:
@@ -709,7 +709,7 @@ class TestSnapshotStoreProtocol:
             except OSError:
                 pass
 
-    def test_local_file_snapshot_store_isinstance_closeable(self) -> None:
+    def test_local_file_snapshot_store_passes_isinstance_check_when_checked_against_closeable_protocol(self) -> None:
         """LocalFileSnapshotStore must satisfy the Closeable Protocol."""
         store = LocalFileSnapshotStore(storage_path=tempfile.mkdtemp())
         try:
@@ -720,7 +720,7 @@ class TestSnapshotStoreProtocol:
             except OSError:
                 pass
 
-    def test_snapshot_store_protocol_has_expected_methods(self) -> None:
+    def test_snapshot_store_protocol_exposes_expected_methods_when_inspected(self) -> None:
         """SnapshotStore Protocol must have exactly the 5 expected methods."""
         expected_methods = {
             "save_snapshot",
@@ -738,7 +738,7 @@ class TestSnapshotStoreProtocol:
             f"Missing methods: {expected_methods - protocol_methods}"
         )
 
-    def test_local_file_snapshot_store_has_close_method(self) -> None:
+    def test_local_file_snapshot_store_has_close_method_when_checked(self) -> None:
         """LocalFileSnapshotStore must have a close() method matching Closeable."""
         assert hasattr(LocalFileSnapshotStore, "close")
         assert callable(LocalFileSnapshotStore.close)

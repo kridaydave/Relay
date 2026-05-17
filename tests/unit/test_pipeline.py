@@ -541,7 +541,7 @@ class TestPipelineSnapshotStoreWiring:
         )
         assert isinstance(pipeline._snapshot_store, LocalFileSnapshotStore)
 
-    def test_pipeline_accepts_custom_snapshot_store(self, temp_storage: str) -> None:
+    def test_pipeline_accepts_custom_snapshot_store_when_provided(self, temp_storage: str) -> None:
         """Injected InMemorySnapshotStore is used as _snapshot_store."""
         custom_store = InMemorySnapshotStore()
         pipeline = CoreRelayPipeline(
@@ -566,7 +566,7 @@ class TestPipelineSnapshotStoreWiring:
         assert isinstance(snapshots, Success)
         assert len(snapshots.value) == 1
 
-    def test_create_factory_passes_snapshot_store_to_pipeline(self, temp_storage: str) -> None:
+    def test_create_factory_passes_snapshot_store_to_pipeline_when_called(self, temp_storage: str) -> None:
         """CoreRelayPipeline.create() accepts and wires custom snapshot_store."""
         custom_store = InMemorySnapshotStore()
         result = CoreRelayPipeline.create(
@@ -576,7 +576,7 @@ class TestPipelineSnapshotStoreWiring:
         assert isinstance(result, Success)
         assert result.value._snapshot_store is custom_store
 
-    def test_close_calls_snapshot_store_close(self, temp_storage: str) -> None:
+    def test_close_calls_snapshot_store_close_when_invoked(self, temp_storage: str) -> None:
         """close() delegates to the injected store's close() method."""
         custom_store = MagicMock(spec=InMemorySnapshotStore)
         pipeline = CoreRelayPipeline(

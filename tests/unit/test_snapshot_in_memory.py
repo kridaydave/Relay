@@ -37,11 +37,11 @@ class TestInMemorySnapshotStore:
 
     # --- Protocol satisfaction tests ---
 
-    def test_in_memory_store_satisfies_snapshot_store_protocol(self) -> None:
+    def test_in_memory_store_satisfies_snapshot_store_protocol_when_checked(self) -> None:
         """InMemorySnapshotStore must satisfy the SnapshotStore Protocol."""
         assert isinstance(self.store, SnapshotStore)
 
-    def test_in_memory_store_satisfies_closeable_protocol(self) -> None:
+    def test_in_memory_store_satisfies_closeable_protocol_when_checked(self) -> None:
         """InMemorySnapshotStore must satisfy the Closeable Protocol."""
         assert isinstance(self.store, Closeable)
 
@@ -115,7 +115,7 @@ class TestInMemorySnapshotStore:
         assert id2 in result.value
         assert id3 in result.value
 
-    def test_list_snapshots_sorts_by_step(self) -> None:
+    def test_list_snapshots_sorts_by_step_when_saved_out_of_order(self) -> None:
         """list_snapshots returns IDs sorted numerically by step."""
         pipeline_id = "pipeline-sort"
         env2 = self._create_envelope(pipeline_id=pipeline_id, step=2)
@@ -133,7 +133,7 @@ class TestInMemorySnapshotStore:
         assert "pipeline-sort@2_" in result.value[1]
         assert "pipeline-sort@10_" in result.value[2]
 
-    def test_save_and_load_multiple_pipelines_independently(self) -> None:
+    def test_snapshots_do_not_interfere_when_saving_to_multiple_pipelines(self) -> None:
         """Snapshots for different pipelines do not interfere."""
         env_a = self._create_envelope(pipeline_id="pipe-a", step=1)
         env_b = self._create_envelope(pipeline_id="pipe-b", step=1)
@@ -196,7 +196,7 @@ class TestInMemorySnapshotStore:
 
     # --- Close tests ---
 
-    def test_close_clears_all_data(self) -> None:
+    def test_close_clears_all_stored_data_when_called(self) -> None:
         """close() clears all stored snapshots and index entries."""
         envelope = self._create_envelope()
         self.store.save_snapshot(envelope)
@@ -206,7 +206,7 @@ class TestInMemorySnapshotStore:
         assert len(self.store._snapshots) == 0
         assert len(self.store._index) == 0
 
-    def test_close_is_idempotent(self) -> None:
+    def test_close_is_idempotent_when_called_multiple_times(self) -> None:
         """Calling close() multiple times does not raise errors."""
         self.store.close()
         self.store.close()
