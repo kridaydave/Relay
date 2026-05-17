@@ -1,5 +1,9 @@
 # Relay
 
+<p align="center">
+  <img src="docs/Images/Retro_relay_station_icon_202605151828.jpeg" width="400" alt="Relay Logo">
+</p>
+
 **Agent-agent context passing, done right.**
 
 Relay is a lightweight, open source Python middleware library for passing context reliably between AI agents in a multi-agent pipeline. Works with any LLM provider or framework — LangChain, OpenAI, Anthropic, LiteLLM, or your own agents.
