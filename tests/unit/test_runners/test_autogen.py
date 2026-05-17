@@ -8,6 +8,15 @@ from relay.runners.autogen import AutoGenAdapter
 from .conftest import make_test_manifest, make_test_slice
 
 
+class _MockAgent:
+    """Mock agent with protocol attributes for AutoGenAdapter validation."""
+    def __init__(self) -> None:
+        self.chat_messages: dict[object, list[dict[str, str]]] = {}
+
+    def initiate_chat(self, agent: object, message: str, max_turns: int) -> None:
+        pass
+
+
 class _MockProxy:
     def __init__(self, chat_messages: dict[object, list[dict[str, str]]]) -> None:
         self.chat_messages = chat_messages
@@ -40,7 +49,7 @@ class TestAutoGenAdapter:
             return real_import(name)
 
         monkeypatch.setattr(builtins, "__import__", mock_import)
-        mock_agent: object = object()
+        mock_agent: object = _MockAgent()
         with pytest.raises(ImportError, match="relay-middleware\\[autogen\\]"):
             adapter = AutoGenAdapter(agent=mock_agent)
             adapter._make_user_proxy()
@@ -56,14 +65,14 @@ class TestAutoGenAdapter:
             return real_import(name)
 
         monkeypatch.setattr(builtins, "__import__", mock_import)
-        mock_agent: object = object()
+        mock_agent: object = _MockAgent()
         with pytest.raises(ImportError, match="relay-middleware\\[autogen\\]"):
             adapter = AutoGenAdapter(agent=mock_agent)
             await adapter.run(make_test_slice(), make_test_manifest())
 
     @pytest.mark.asyncio
     async def test_single_turn_extracts_last_message(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        mock_agent: object = object()
+        mock_agent: object = _MockAgent()
         proxy = _MockProxy(
             chat_messages={
                 mock_agent: [
@@ -81,7 +90,7 @@ class TestAutoGenAdapter:
 
     @pytest.mark.asyncio
     async def test_returns_fallback_text_when_no_history(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        mock_agent: object = object()
+        mock_agent: object = _MockAgent()
         proxy = _MockProxy(
             chat_messages={mock_agent: []}
         )

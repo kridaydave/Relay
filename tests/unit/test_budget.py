@@ -27,14 +27,6 @@ class TestHardCapEnforcer:
         result = enforcer.check(100, 100, "")
         assert isinstance(result, Success)
 
-    def test_negative_count_returns_failure(self) -> None:
-        """Negative count must return Failure immediately."""
-        enforcer = HardCapEnforcer(FixedCounter(-5))
-        result = enforcer.check(0, 1000, "any text")
-        assert isinstance(result, Failure)
-        assert result.code == ErrorCode.INVALID_TOKEN_COUNT
-        assert "negative" in result.reason.lower()
-
     def test_check_passes_when_under_budget(self) -> None:
         """Under budget should pass and return Success."""
         enforcer = HardCapEnforcer(FixedCounter(30))

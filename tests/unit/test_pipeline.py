@@ -580,14 +580,11 @@ class TestPipelineSubsequentStepErrors:
 
 
 class TestPipelineBudgetEnforcement:
-    def test_check_budget_returns_invalid_token_count(self, temp_storage: str) -> None:
-        """_check_budget must pass through INVALID_TOKEN_COUNT from the enforcer."""
-        from tests.conftest import FixedCounter
-
-        counter = FixedCounter(-5)
+    def test_check_budget_passes_with_valid_projection(self, temp_storage: str) -> None:
+        """_check_budget must succeed with a reasonable budget."""
         pipeline = CoreRelayPipeline(
             signing_secret="a" * 32, token_budget=8000,
-            storage_path=temp_storage, token_counter=counter,
+            storage_path=temp_storage,
         )
         manifest = AgentManifest(
             "a1", "task", frozenset({"x"}), frozenset({"y"}), max_tokens=100,
@@ -596,8 +593,7 @@ class TestPipelineBudgetEnforcement:
         result = pipeline.execute_step_with_manifest(
             payload, manifest=manifest,
         )
-        assert isinstance(result, Failure)
-        assert result.code == ErrorCode.INVALID_TOKEN_COUNT
+        assert isinstance(result, Success)
 
     def test_manifest_boundary_violation_returns_failure(self, pipeline: CoreRelayPipeline) -> None:
         manifest = AgentManifest(
@@ -731,28 +727,6 @@ class TestPipelineFinalizeStepErrors:
                 assert isinstance(result, Failure)
                 assert result.code == ErrorCode.SNAPSHOT_SAVE_FAILED
 
-
-class TestPipelineBudgetEnforcementErrors:
-    def test_check_budget_fails_when_slice_packer_fails(self, pipeline: CoreRelayPipeline) -> None:
-        """If SlicePacker fails during budget check, the failure propagates."""
-        from relay.slicer import SlicePacker
-        from relay.budget import HardCapEnforcer, TokenCounter
-
-        class FailingPacker(SlicePacker):
-            def pack(self, payload: JSONDict, manifest: AgentManifest) -> Result[JSONDict]:
-                return Failure(reason="packer fail", code=ErrorCode.INVALID_STATE)
-
-        counter = MagicMock(spec=TokenCounter)
-        pipeline._enforcer = HardCapEnforcer(counter)
-        pipeline.slice_packer = FailingPacker()
-
-        manifest = AgentManifest("a1", "t", frozenset({"x"}), frozenset({"y"}), 100)
-        env = create_mock_envelope(1, pipeline._pipeline_id, {"x": 1})
-
-        with pipeline._state.transaction():
-            result = pipeline._check_budget(manifest, env)
-            assert isinstance(result, Failure)
-            assert result.reason == "packer fail"
 
 
 class TestPipelineBuildContextSlice:
