@@ -16,6 +16,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from typing import Any
 
+from relay.budget.token_counter import HeuristicCounter
 from relay.types import ErrorCode, Failure, JSONDict, Result, Success, __version__ as RELAY_VERSION
 
 __all__ = [
@@ -30,6 +31,7 @@ __all__ = [
     "validate_pipeline_id",
 ]
 PIPELINE_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{1,128}$")
+_ESTIMATOR = HeuristicCounter()
 _MAX_STEP = 10**6  # 1 million steps should be plenty
 
 
@@ -253,6 +255,9 @@ def serialize_slice(data: JSONDict) -> str:
 def estimate_tokens(payload: JSONDict) -> int:
     """Approximates token count from payload JSON string length.
 
+    Delegates to HeuristicCounter to avoid duplicating the estimation
+    logic across envelope.py and token_counter.py.
+
     This heuristic estimates BPE tokens by dividing character count by 3.
     This is approximately 0.33 tokens/char, which is within the 0.25-0.40
     range of real BPE tokenizers (GPT-4 family, cl100k_base).
@@ -266,4 +271,4 @@ def estimate_tokens(payload: JSONDict) -> int:
     See test_envelope.py::TestTokenEstimation for the ground-truth benchmark.
     """
     json_str = json.dumps(payload, sort_keys=True, separators=(",", ":"))
-    return max(1, len(json_str) // 3)
+    return _ESTIMATOR.count(json_str)
