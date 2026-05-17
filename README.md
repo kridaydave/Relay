@@ -274,7 +274,7 @@ Every context move between agents is wrapped in a signed, immutable envelope:
 
 ```python
 {
-  "relay_version": "0.4.1",
+  "relay_version": "0.4.2",
   "pipeline_id": "uuid-v4",
   "step": 2,
   "timestamp": "2026-05-04T10:22:00Z",
