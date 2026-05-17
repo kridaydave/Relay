@@ -263,6 +263,8 @@ class SnapshotStore:
                     for k, v in data.items():
                         if isinstance(k, str):
                             data_dict[k] = v
+                        else:
+                            logger.warning("Non-string key '%s' dropped from index", k)
                     return Success(data_dict)
                 return Failure(
                     reason="Invalid index format - expected dict",
