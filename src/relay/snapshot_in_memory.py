@@ -4,6 +4,7 @@ Owns: in-memory snapshot storage, Protocol compliance verification.
 Does NOT: persist data across process restarts, provide transactional guarantees, or support concurrent access.
 """
 
+import threading
 import uuid
 
 from relay.envelope import PIPELINE_ID_PATTERN, ContextEnvelope
@@ -22,6 +23,7 @@ class InMemorySnapshotStore:
 
     def __init__(self) -> None:
         """Initialize an empty in-memory snapshot store."""
+        self._lock = threading.Lock()
         self._snapshots: dict[str, dict[str, ContextEnvelope]] = {}
         self._index: dict[str, list[str]] = {}
 
@@ -47,15 +49,16 @@ class InMemorySnapshotStore:
 
         snapshot_id = f"{pipeline_id}@{envelope.step}_{uuid.uuid4().hex[:12]}"
 
-        if pipeline_id not in self._snapshots:
-            self._snapshots[pipeline_id] = {}
-            self._index[pipeline_id] = []
+        with self._lock:
+            if pipeline_id not in self._snapshots:
+                self._snapshots[pipeline_id] = {}
+                self._index[pipeline_id] = []
 
-        self._snapshots[pipeline_id][snapshot_id] = envelope
+            self._snapshots[pipeline_id][snapshot_id] = envelope
 
-        if snapshot_id not in self._index[pipeline_id]:
-            self._index[pipeline_id].append(snapshot_id)
-            self._index[pipeline_id].sort(key=_extract_step_from_snapshot_id)
+            if snapshot_id not in self._index[pipeline_id]:
+                self._index[pipeline_id].append(snapshot_id)
+                self._index[pipeline_id].sort(key=_extract_step_from_snapshot_id)
 
         return Success(snapshot_id)
 
@@ -69,49 +72,52 @@ class InMemorySnapshotStore:
 
         pipeline_id, _rest = snapshot_id.split("@", 1)
 
-        pipeline_snapshots = self._snapshots.get(pipeline_id)
-        if pipeline_snapshots is None:
-            return Failure(
-                reason=f"Snapshot not found: {snapshot_id}",
-                code=ErrorCode.SNAPSHOT_NOT_FOUND,
-            )
+        with self._lock:
+            pipeline_snapshots = self._snapshots.get(pipeline_id)
+            if pipeline_snapshots is None:
+                return Failure(
+                    reason=f"Snapshot not found: {snapshot_id}",
+                    code=ErrorCode.SNAPSHOT_NOT_FOUND,
+                )
 
-        envelope = pipeline_snapshots.get(snapshot_id)
-        if envelope is None:
-            return Failure(
-                reason=f"Snapshot not found: {snapshot_id}",
-                code=ErrorCode.SNAPSHOT_NOT_FOUND,
-            )
+            envelope = pipeline_snapshots.get(snapshot_id)
+            if envelope is None:
+                return Failure(
+                    reason=f"Snapshot not found: {snapshot_id}",
+                    code=ErrorCode.SNAPSHOT_NOT_FOUND,
+                )
 
-        return Success(envelope)
+            return Success(envelope)
 
     def get_latest_snapshot(self, pipeline_id: str) -> Result[ContextEnvelope]:
         """Get the most recent snapshot for a pipeline.
 
         Returns the last entry in the sorted index for the given pipeline.
         """
-        if pipeline_id not in self._index:
-            return Failure(
-                reason=f"No snapshots found for pipeline: {pipeline_id}",
-                code=ErrorCode.PIPELINE_NOT_FOUND,
-            )
+        with self._lock:
+            if pipeline_id not in self._index:
+                return Failure(
+                    reason=f"No snapshots found for pipeline: {pipeline_id}",
+                    code=ErrorCode.PIPELINE_NOT_FOUND,
+                )
 
-        index_entries = self._index[pipeline_id]
-        if not index_entries:
-            return Failure(
-                reason=f"No snapshots found for pipeline: {pipeline_id}",
-                code=ErrorCode.NO_SNAPSHOTS,
-            )
+            index_entries = self._index[pipeline_id]
+            if not index_entries:
+                return Failure(
+                    reason=f"No snapshots found for pipeline: {pipeline_id}",
+                    code=ErrorCode.NO_SNAPSHOTS,
+                )
 
-        latest_id = index_entries[-1]
+            latest_id = index_entries[-1]
         return self.load_snapshot(latest_id)
 
     def list_snapshots(self, pipeline_id: str) -> Result[list[str]]:
         """List all snapshot IDs for a pipeline in step-sorted order."""
-        if pipeline_id not in self._index:
-            return Success([])
+        with self._lock:
+            if pipeline_id not in self._index:
+                return Success([])
 
-        return Success(list(self._index[pipeline_id]))
+            return Success(list(self._index[pipeline_id]))
 
     def close(self) -> None:
         """Release any resources held by the snapshot store.
@@ -119,5 +125,6 @@ class InMemorySnapshotStore:
         Clears all in-memory storage. Idempotent — calling close() multiple
         times is safe.
         """
-        self._snapshots.clear()
-        self._index.clear()
+        with self._lock:
+            self._snapshots.clear()
+            self._index.clear()
