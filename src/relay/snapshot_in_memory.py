@@ -6,6 +6,7 @@ Does NOT: persist data across process restarts, provide transactional guarantees
 
 import threading
 import uuid
+from copy import deepcopy
 
 from relay.envelope import PIPELINE_ID_PATTERN, ContextEnvelope
 from relay.snapshot import SNAPSHOT_ID_PATTERN, _extract_step_from_snapshot_id
@@ -54,7 +55,7 @@ class InMemorySnapshotStore:
                 self._snapshots[pipeline_id] = {}
                 self._index[pipeline_id] = []
 
-            self._snapshots[pipeline_id][snapshot_id] = envelope
+            self._snapshots[pipeline_id][snapshot_id] = deepcopy(envelope)
 
             if snapshot_id not in self._index[pipeline_id]:
                 self._index[pipeline_id].append(snapshot_id)
@@ -87,7 +88,7 @@ class InMemorySnapshotStore:
                     code=ErrorCode.SNAPSHOT_NOT_FOUND,
                 )
 
-            return Success(envelope)
+            return Success(deepcopy(envelope))
 
     def get_latest_snapshot(self, pipeline_id: str) -> Result[ContextEnvelope]:
         """Get the most recent snapshot for a pipeline.
