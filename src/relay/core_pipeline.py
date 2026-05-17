@@ -351,8 +351,6 @@ class CoreRelayPipeline:
         the signature already computed by create_initial_envelope or
         create_next_envelope. Only verifies the signature when about to re-sign,
         since that path overwrites a potentially tampered signature.
-
-        REQUIRES: caller holds self._state._lock via transaction() context manager.
         """
         if manifest is None:
             return Success(envelope)

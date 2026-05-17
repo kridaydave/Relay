@@ -256,7 +256,7 @@ class TestSnapshotStoreSaveErrors:
         )
 
     def test_save_snapshot_fails_on_os_error(self) -> None:
-        with patch("builtins.open", side_effect=OSError("disk full")):
+        with patch("os.fdopen", side_effect=OSError("disk full")):
             result = self.store.save_snapshot(self._make_env())
 
         assert isinstance(result, Failure)

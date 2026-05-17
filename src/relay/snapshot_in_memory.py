@@ -1,7 +1,7 @@
 """In-memory snapshot store for Relay testing and lightweight pipelines.
 
 Owns: in-memory snapshot storage, Protocol compliance verification.
-Does NOT: persist data across process restarts, provide transactional guarantees, or support concurrent access.
+Does NOT: persist data across process restarts, provide transactional guarantees.
 """
 
 import threading
@@ -9,7 +9,7 @@ import uuid
 from copy import deepcopy
 
 from relay.envelope import PIPELINE_ID_PATTERN, ContextEnvelope
-from relay.snapshot import SNAPSHOT_ID_PATTERN, _extract_step_from_snapshot_id
+from relay.snapshot_protocol import SNAPSHOT_ID_PATTERN, _extract_step_from_snapshot_id
 from relay.types import ErrorCode, Failure, Result, Success
 
 __all__ = ["InMemorySnapshotStore"]
@@ -19,7 +19,8 @@ class InMemorySnapshotStore:
     """In-memory snapshot store for testing and lightweight pipelines.
 
     Owns: in-memory snapshot storage, Protocol compliance verification.
-    Does NOT: persist data across process restarts, provide transactional guarantees, or support concurrent access.
+    Does NOT: persist data across process restarts, provide transactional guarantees.
+    Thread safety: uses threading.Lock for per-method atomicity but does not provide snapshot-level atomicity across method calls.
     """
 
     def __init__(self) -> None:
@@ -71,7 +72,9 @@ class InMemorySnapshotStore:
                 code=ErrorCode.INVALID_SNAPSHOT_ID,
             )
 
-        pipeline_id, _rest = snapshot_id.split("@", 1)
+        pipeline_id, rest = snapshot_id.split("@", 1)
+        parts = rest.rsplit("_", 1)
+        step = int(parts[0])
 
         with self._lock:
             pipeline_snapshots = self._snapshots.get(pipeline_id)
@@ -86,6 +89,15 @@ class InMemorySnapshotStore:
                 return Failure(
                     reason=f"Snapshot not found: {snapshot_id}",
                     code=ErrorCode.SNAPSHOT_NOT_FOUND,
+                )
+
+            if envelope.step != step:
+                return Failure(
+                    reason=(
+                        f"Snapshot integrity error: snapshot ID indicates step {step} "
+                        f"but envelope body contains step {envelope.step}"
+                    ),
+                    code=ErrorCode.INVALID_SNAPSHOT,
                 )
 
             return Success(deepcopy(envelope))
@@ -110,7 +122,14 @@ class InMemorySnapshotStore:
                 )
 
             latest_id = index_entries[-1]
-        return self.load_snapshot(latest_id)
+            pipeline_snapshots = self._snapshots.get(pipeline_id)
+            if pipeline_snapshots is None or latest_id not in pipeline_snapshots:
+                return Failure(
+                    reason=f"Snapshot not found: {latest_id}",
+                    code=ErrorCode.SNAPSHOT_NOT_FOUND,
+                )
+
+            return Success(deepcopy(pipeline_snapshots[latest_id]))
 
     def list_snapshots(self, pipeline_id: str) -> Result[list[str]]:
         """List all snapshot IDs for a pipeline in step-sorted order."""

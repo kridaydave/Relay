@@ -8,6 +8,7 @@ import pytest
 
 from relay.envelope import RELAY_VERSION, ContextEnvelope
 from relay.pipeline_rollback import RollbackHandler
+from relay.snapshot_protocol import SnapshotStore
 from relay.types import Failure, RollbackSuccess, Success, ErrorCode, JSONDict
 
 
@@ -39,7 +40,6 @@ class TestRestoreToPrevious:
         mock_store.load_snapshot.return_value = Success[ContextEnvelope](env1)
 
         snapshot_ids: dict[int, str] = {1: "snapshot-1"}
-        from relay.snapshot_protocol import SnapshotStore
         result = rollback_handler.restore_to_previous(env1, snapshot_ids, cast(SnapshotStore, mock_store), "Test rollback")
 
         assert isinstance(result, RollbackSuccess)
@@ -52,7 +52,6 @@ class TestRestoreToPrevious:
         env1 = create_mock_envelope(1)
 
         snapshot_ids: dict[int, str] = {}
-        from relay.snapshot_protocol import SnapshotStore
         result = rollback_handler.restore_to_previous(env1, snapshot_ids, cast(SnapshotStore, mock_store), "Test rollback")
 
         assert isinstance(result, Failure)
@@ -65,7 +64,6 @@ class TestRestoreToPrevious:
         env1 = create_mock_envelope(1)
 
         snapshot_ids: dict[int, str] = {1: "snapshot-1"}
-        from relay.snapshot_protocol import SnapshotStore
         result = rollback_handler.restore_to_previous(env1, snapshot_ids, cast(SnapshotStore, mock_store), "Test rollback")
 
         assert isinstance(result, Failure)
@@ -78,7 +76,6 @@ class TestRestoreToPrevious:
         mock_store.load_snapshot.return_value = Success[ContextEnvelope](env1)
 
         snapshot_ids: dict[int, str] = {1: "snapshot-1"}
-        from relay.snapshot_protocol import SnapshotStore
         result = rollback_handler.restore_to_previous(
             env1, snapshot_ids, cast(SnapshotStore, mock_store), "Contradiction detected: hallucination"
         )

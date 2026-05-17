@@ -1,23 +1,23 @@
 ---
 phase: code-review
-fixed_at: 2026-05-17T14:30:00Z
+fixed_at: 2026-05-17T15:00:00Z
 review_path: REVIEW.md
-iteration: 1
-findings_in_scope: 11
-fixed: 8
+iteration: 2
+findings_in_scope: 12
+fixed: 9
 skipped: 2
 status: partial
 ---
 
 # Phase: Code Review Fix Report
 
-**Fixed at:** 2026-05-17T14:30:00Z
+**Fixed at:** 2026-05-17T15:00:00Z
 **Source review:** REVIEW.md
-**Iteration:** 1
+**Iteration:** 2
 
-**Summary:**
-- Findings in scope: 11
-- Fixed: 8
+**Summary (all iterations):**
+- Total findings in scope: 12 (11 from review + 1 supplemental WR-05)
+- Fixed: 9
 - Skipped: 2
 - Tests updated for compatibility: 3 files (test_budget.py, test_pipeline.py, test_autogen.py)
 
@@ -58,6 +58,16 @@ status: partial
 **Files modified:** `src/relay/runners/autogen.py`
 **Commit:** 5394ec1
 **Applied fix:** Added `__post_init__` method to `AutoGenAdapter` that validates the `agent` object has `initiate_chat` and `chat_messages` attributes at construction time, providing fail-fast feedback instead of a confusing `AttributeError` at call time.
+
+### WR-05: delete_snapshot untested in InMemorySnapshotStore
+
+**Files modified:** `tests/unit/test_snapshot_in_memory.py`
+**Commit:** 6a64d26
+**Applied fix:** Added `TestInMemorySnapshotStoreDelete` test class with 4 tests covering:
+1. Happy path: save then delete, verify `Success` and that `list_snapshots` no longer includes the deleted snapshot.
+2. Invalid snapshot ID returns `Failure` with `ErrorCode.INVALID_SNAPSHOT_ID`.
+3. Non-existent snapshot returns `Failure` with `ErrorCode.SNAPSHOT_NOT_FOUND`.
+4. After deleting the last snapshot, `list_snapshots` returns empty and `get_latest_snapshot` returns `NO_SNAPSHOTS`.
 
 ### IN-02: Duplicate token estimation logic across envelope.py and budget/token_counter.py
 
@@ -103,6 +113,6 @@ status: partial
 
 ---
 
-_Fixed: 2026-05-17T14:30:00Z_
+_Fixed: 2026-05-17T15:00:00Z_
 _Fixer: gsd-code-fixer_
-_Iteration: 1_
+_Iteration: 2_

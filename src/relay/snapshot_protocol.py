@@ -6,6 +6,7 @@ Does NOT: contain file-based or any concrete implementation of snapshot storage.
 
 from __future__ import annotations
 
+import re
 from typing import Protocol, runtime_checkable
 
 from relay.envelope import ContextEnvelope
@@ -86,3 +87,29 @@ class SnapshotStore(Closeable, Protocol):
 
 
 __all__ = ["SnapshotStore"]
+
+SNAPSHOT_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{1,128}@\d+_[a-f0-9]{12}$")
+
+
+class InvalidSnapshotIdError(Exception):
+    """Raised when snapshot ID format is invalid."""
+
+
+def _extract_step_from_snapshot_id(s_id: str) -> int:
+    """Extract step number from snapshot ID for sorting.
+
+    Handles format: "pipeline_id@step_uuid".
+
+    Returns:
+        Sort key (step number).
+
+    Raises:
+        InvalidSnapshotIdError: If snapshot ID format is invalid.
+    """
+    try:
+        if "@" not in s_id:
+            raise InvalidSnapshotIdError(f"Invalid snapshot ID format: {s_id}")
+        rest = s_id.split("@", 1)[1]
+        return int(rest.split("_")[0])
+    except (ValueError, IndexError):
+        raise InvalidSnapshotIdError(f"Invalid snapshot ID format: {s_id}")

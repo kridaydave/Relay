@@ -7,7 +7,7 @@ Does NOT: execute agents or manage pipeline state.
 import json
 import logging
 import os
-import re
+import stat
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -16,41 +16,16 @@ from typing import Any, cast
 logger = logging.getLogger(__name__)
 
 from relay.envelope import PIPELINE_ID_PATTERN, ContextEnvelope, validate_pipeline_id, verify_signature
+from relay.snapshot_protocol import SNAPSHOT_ID_PATTERN, InvalidSnapshotIdError, _extract_step_from_snapshot_id
+from relay.snapshot_protocol import SnapshotStore as SnapshotStore  # noqa: F811 — re-export Protocol
 from relay.types import ErrorCode, Failure, INITIAL_KEY_ID, JSONDict, Result, Success
 
-SNAPSHOT_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{1,128}@\d+_[a-f0-9]{12}$")
 MAX_SNAPSHOT_BYTES = 100 * 1024 * 1024  # 100 MB
 
 __all__ = [
     "LocalFileSnapshotStore",
     "SnapshotStore",
 ]
-
-
-class InvalidSnapshotIdError(Exception):
-    """Raised when snapshot ID format is invalid."""
-
-    pass
-
-
-def _extract_step_from_snapshot_id(s_id: str) -> int:
-    """Extract step number from snapshot ID for sorting.
-
-    Handles format: "pipeline_id@step_uuid".
-
-    Returns:
-        Sort key (step number).
-
-    Raises:
-        InvalidSnapshotIdError: If snapshot ID format is invalid.
-    """
-    try:
-        if "@" not in s_id:
-            raise InvalidSnapshotIdError(f"Invalid snapshot ID format: {s_id}")
-        rest = s_id.split("@", 1)[1]
-        return int(rest.split("_")[0])
-    except (ValueError, IndexError):
-        raise InvalidSnapshotIdError(f"Invalid snapshot ID format: {s_id}")
 
 
 class LocalFileSnapshotStore:
@@ -192,7 +167,9 @@ class LocalFileSnapshotStore:
                     reason=f"Snapshot exceeds maximum size of {MAX_SNAPSHOT_BYTES} bytes",
                     code=ErrorCode.SNAPSHOT_SAVE_FAILED,
                 )
-            with open(temp_path, "w") as f:
+            _O_NOFOLLOW = cast(int, getattr(os, 'O_NOFOLLOW', 0))
+            fd = os.open(temp_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY | _O_NOFOLLOW, stat.S_IRUSR | stat.S_IWUSR)
+            with os.fdopen(fd, "w") as f:
                 f.write(json_str)
             os.replace(temp_path, snapshot_path)
         except (OSError, TypeError) as e:
@@ -574,8 +551,3 @@ class LocalFileSnapshotStore:
         except ValueError as e:
             return Failure(reason=str(e), code=ErrorCode.INVALID_SNAPSHOT)
         return Success(envelope)
-
-
-# Backward compatibility alias for consumers who imported the old SnapshotStore class
-# directly from relay.snapshot. SnapshotStore is now a Protocol in snapshot_protocol.py.
-SnapshotStore = LocalFileSnapshotStore
