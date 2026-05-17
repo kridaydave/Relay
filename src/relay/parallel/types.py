@@ -60,6 +60,9 @@ class ForkResult:
     failure: "Failure | None"
 
 
+logger = logging.getLogger(__name__)
+
+
 def agent_output_to_payload(output: AgentOutput) -> JSONDict:
     """Shape AgentOutput into a payload dict for validation and merging.
 
@@ -68,7 +71,7 @@ def agent_output_to_payload(output: AgentOutput) -> JSONDict:
     """
     raw: JSONDict = dict(output.structured)
     if "text" in raw:
-        logging.warning(
+        logger.warning(
             "agent_output_to_payload: output.structured already contains a 'text' key; "
             "overwriting with output.text (structured value lost)"
         )

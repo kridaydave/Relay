@@ -138,6 +138,23 @@ class TestSnapshotStore:
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.INVALID_PIPELINE_ID
 
+    def test_load_snapshot_fails_when_body_pipeline_id_differs_from_filename(self) -> None:
+        """Snapshot where body pipeline_id is a different valid id than filename is rejected."""
+        pipeline_id = "pipe-a"
+        env = self._create_envelope(pipeline_id=pipeline_id, step=1)
+        save_result = self.store.save_snapshot(env)
+        assert isinstance(save_result, Success)
+        snapshot_id = save_result.value
+
+        path = Path(self.temp_dir) / pipeline_id / f"{snapshot_id}.json"
+        read_data: JSONDict = json.loads(path.read_text())
+        read_data["pipeline_id"] = "other-pipe"
+        path.write_text(json.dumps(read_data))
+
+        result = self.store.load_snapshot(snapshot_id)
+        assert isinstance(result, Failure)
+        assert result.code == ErrorCode.INVALID_SNAPSHOT
+
     def test_snapshot_index_sorts_ids_numerically_for_consistency(self) -> None:
         pipeline_id = "pipeline-sort"
         env2 = self._create_envelope(pipeline_id=pipeline_id, step=2)
@@ -615,9 +632,15 @@ class TestSnapshotIdPattern:
 
 
 class TestPreV04SnapshotCompat:
+    def setup_method(self) -> None:
+        self.temp_dir = tempfile.mkdtemp()
+
+    def teardown_method(self) -> None:
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+
     def test_loading_snapshot_without_fork_fields_succeeds(self) -> None:
         """Pre-v0.4 snapshot (no fork keys in JSON) loads with fork fields as None."""
-        store = LocalFileSnapshotStore(storage_path=tempfile.mkdtemp())
+        store = LocalFileSnapshotStore(storage_path=self.temp_dir)
         snapshot_data: dict[str, object] = {
             "relay_version": "0.3.3",
             "pipeline_id": "test-pipe",
@@ -639,8 +662,7 @@ class TestPreV04SnapshotCompat:
 
     def test_envelope_to_dict_includes_fork_fields_when_serialized(self) -> None:
         """_envelope_to_dict serializes all four fork fields."""
-        import tempfile
-        store = LocalFileSnapshotStore(storage_path=tempfile.mkdtemp())
+        store = LocalFileSnapshotStore(storage_path=self.temp_dir)
         env = ContextEnvelope(
             relay_version=RELAY_VERSION, pipeline_id="test", step=1,
             timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
@@ -657,29 +679,25 @@ class TestPreV04SnapshotCompat:
 
     def test_roundtrip_envelope_with_fork_fields(self) -> None:
         """Save and load envelope with fork fields preserves all values."""
-        tmp = tempfile.mkdtemp()
-        try:
-            store = LocalFileSnapshotStore(storage_path=tmp)
-            env = ContextEnvelope(
-                relay_version=RELAY_VERSION, pipeline_id="test", step=2,
-                timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
-                token_budget_used=200, token_budget_total=8000,
-                payload={"data": "y"}, manifest_hash="hash", signature="sig",
-                fork_id="uuid-2", join_strategy="VOTE",
-                fork_count=3, forks_succeeded=1,
-            )
-            save_result = store.save_snapshot(env)
-            assert isinstance(save_result, Success)
-            load_result = store.load_snapshot(save_result.value)
-            assert isinstance(load_result, Success)
-            loaded = load_result.value
-            assert loaded.fork_id == "uuid-2"
-            assert loaded.join_strategy == "VOTE"
-            assert loaded.fork_count == 3
-            assert loaded.forks_succeeded == 1
-            assert loaded.step == 2
-        finally:
-            shutil.rmtree(tmp, ignore_errors=True)
+        store = LocalFileSnapshotStore(storage_path=self.temp_dir)
+        env = ContextEnvelope(
+            relay_version=RELAY_VERSION, pipeline_id="test", step=2,
+            timestamp=datetime(2024, 1, 1, tzinfo=timezone.utc),
+            token_budget_used=200, token_budget_total=8000,
+            payload={"data": "y"}, manifest_hash="hash", signature="sig",
+            fork_id="uuid-2", join_strategy="VOTE",
+            fork_count=3, forks_succeeded=1,
+        )
+        save_result = store.save_snapshot(env)
+        assert isinstance(save_result, Success)
+        load_result = store.load_snapshot(save_result.value)
+        assert isinstance(load_result, Success)
+        loaded = load_result.value
+        assert loaded.fork_id == "uuid-2"
+        assert loaded.join_strategy == "VOTE"
+        assert loaded.fork_count == 3
+        assert loaded.forks_succeeded == 1
+        assert loaded.step == 2
 
 
 class TestSnapshotStoreProtocol:

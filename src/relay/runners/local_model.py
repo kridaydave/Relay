@@ -98,7 +98,10 @@ class LocalModelAdapter:
             data_raw: object = response.json()
         latency_ms = int((time.monotonic() - start) * 1000)
         if not isinstance(data_raw, dict):
-            data_raw = {}
+            raise ValueError(
+                f"Expected JSON object from API, got {type(data_raw).__name__}. "
+                f"Response: {response.text[:500]}"
+            )
         data = cast(JSONDict, data_raw)
         choices_raw: object = data.get("choices", [])
         if isinstance(choices_raw, list) and choices_raw:

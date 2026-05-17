@@ -273,10 +273,17 @@ def create_next_envelope(
 
     token_used = previous_envelope.token_budget_used + estimate_tokens(agent_output)
 
+    next_step = previous_envelope.step + 1
+    if next_step > _MAX_STEP:
+        return Failure(
+            reason=f"Step {next_step} exceeds maximum {_MAX_STEP}",
+            code=ErrorCode.INVALID_STEP,
+        )
+
     envelope = ContextEnvelope(
         relay_version=RELAY_VERSION,
         pipeline_id=previous_envelope.pipeline_id,
-        step=previous_envelope.step + 1,
+        step=next_step,
         timestamp=now or datetime.now(timezone.utc),
         token_budget_used=token_used,
         token_budget_total=previous_envelope.token_budget_total,

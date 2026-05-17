@@ -106,7 +106,12 @@ class LocalFileSnapshotStore:
                         "resetting to empty index", index_path, type(data).__name__,
                     )
                     index_data = {}
-        except (json.JSONDecodeError, OSError):
+        except json.JSONDecodeError as e:
+            return Failure(
+                reason=f"Corrupted index JSON: {e}",
+                code=ErrorCode.CORRUPTED_INDEX,
+            )
+        except OSError:
             return Success(None)
 
         snapshots: list[str] = []
@@ -219,13 +224,13 @@ class LocalFileSnapshotStore:
 
         snapshot_path = self._storage_path / pipeline_id / f"{snapshot_id}.json"
         try:
-            stat_result = snapshot_path.stat()
-            if stat_result.st_size > MAX_SNAPSHOT_BYTES:
-                return Failure(
-                    reason=f"Snapshot file exceeds maximum size of {MAX_SNAPSHOT_BYTES} bytes",
-                    code=ErrorCode.SNAPSHOT_LOAD_FAILED,
-                )
             with open(snapshot_path, "r") as f:
+                stat_result = os.fstat(f.fileno())
+                if stat_result.st_size > MAX_SNAPSHOT_BYTES:
+                    return Failure(
+                        reason=f"Snapshot file exceeds maximum size of {MAX_SNAPSHOT_BYTES} bytes",
+                        code=ErrorCode.SNAPSHOT_LOAD_FAILED,
+                    )
                 data: object = json.load(f)
             if not isinstance(data, dict):
                 return Failure(reason="Invalid snapshot data format", code=ErrorCode.INVALID_SNAPSHOT)

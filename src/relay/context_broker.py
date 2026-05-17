@@ -80,11 +80,15 @@ class ContextBroker:
 
         Returns the secret from the most recently added key.
         """
+        if not self.keys:
+            raise ValueError("ContextBroker has no signing keys configured")
         return max(self.keys.values(), key=_by_created_at).secret
 
     @property
     def current_key_id(self) -> str:
         """ID of the most recently added signing key."""
+        if not self.keys:
+            raise ValueError("ContextBroker has no signing keys configured")
         return max(self.keys.values(), key=_by_created_at).key_id
 
     def create_initial_envelope(
