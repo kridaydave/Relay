@@ -46,6 +46,14 @@ class AutoGenAdapter:
     agent: object
     adapter_name: str = "autogen"
 
+    def __post_init__(self) -> None:
+        """Validate that agent satisfies the required protocol at construction time."""
+        if not hasattr(self.agent, "initiate_chat") or not hasattr(self.agent, "chat_messages"):
+            raise ValueError(
+                "AutoGenAdapter.agent must satisfy the AssistantAgent protocol "
+                "(require: initiate_chat, chat_messages)"
+            )
+
     def _make_user_proxy(self) -> _UserProxyWithChat:
         try:
             from autogen import UserProxyAgent  # type: ignore[import-not-found]
