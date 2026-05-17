@@ -8,6 +8,19 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Callable, Generic, Protocol, TypeVar, runtime_checkable
 
+__all__ = [
+    "Closeable",
+    "ErrorCode",
+    "Failure",
+    "JSONDict",
+    "Result",
+    "RollbackSuccess",
+    "Success",
+    "__version__",
+    "map_error",
+    "map_result",
+]
+
 JSONDict = dict[str, object]
 """A JSON-serializable dictionary with string keys and object values."""
 
