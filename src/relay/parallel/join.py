@@ -169,7 +169,10 @@ async def apply_join_strategy(
         return _apply_vote(fork_results)
     elif strategy == JoinStrategy.FIRST_WINS:
         if first_wins_coros is None:
-            raise ValueError("first_wins_coros must be provided for FIRST_WINS strategy")
+            return Failure(
+                reason="first_wins_coros must be provided for FIRST_WINS strategy",
+                code=ErrorCode.INVALID_JOIN_STRATEGY,
+            )
         return await _apply_first_wins(first_wins_coros)
     else:
         return Failure(
