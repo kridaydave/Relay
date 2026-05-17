@@ -26,7 +26,8 @@ from relay.pipeline_state import PipelineState
 from relay.runners import AdapterRegistry
 from relay.runners.protocol import ContextSlice
 from relay.slicer import AgentManifest, SlicePacker
-from relay.snapshot import SnapshotStore
+from relay.snapshot import LocalFileSnapshotStore
+from relay.snapshot_protocol import SnapshotStore
 from relay.types import ErrorCode, Failure, JSONDict, Result, RollbackSuccess, Success
 from relay.validator import (
     HandoffValidator,
@@ -109,7 +110,7 @@ class CoreRelayPipeline:
             signing_secret=self.signing_secret, token_budget_total=self.token_budget
         )
         self._handoff_validator = HandoffValidator()
-        self._snapshot_store = SnapshotStore(storage_path=self.storage_path)
+        self._snapshot_store = LocalFileSnapshotStore(storage_path=self.storage_path)
         self._rollback_handler = RollbackHandler()
         if self.token_counter is not None:
             self._enforcer = HardCapEnforcer(self.token_counter)

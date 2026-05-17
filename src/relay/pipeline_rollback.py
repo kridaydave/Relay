@@ -5,7 +5,7 @@ Does NOT: manage pipeline state, create envelopes, or validate handoffs.
 """
 
 from relay.envelope import ContextEnvelope
-from relay.snapshot import SnapshotStore
+from relay.snapshot_protocol import SnapshotStore
 from relay.types import ErrorCode, Failure, Result, RollbackSuccess
 
 
