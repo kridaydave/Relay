@@ -33,7 +33,7 @@ _PRIVATE_IP_PATTERN = re.compile(
 )
 
 
-@dataclass(frozen=True)
+@dataclass
 class LocalModelAdapter:
     """Adapter for OpenAI-compatible REST endpoints (Ollama, vLLM, etc.).
 
@@ -53,9 +53,8 @@ class LocalModelAdapter:
     timeout_seconds: float = 60.0
 
     def __post_init__(self) -> None:
-        stripped = self.base_url.rstrip("/")
-        object.__setattr__(self, "base_url", stripped)
-        _validate_base_url(stripped)
+        self.base_url = self.base_url.rstrip("/")
+        _validate_base_url(self.base_url)
 
     @classmethod
     def create(

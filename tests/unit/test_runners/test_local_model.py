@@ -4,7 +4,6 @@ import sys
 from typing import cast
 
 import pytest
-from dataclasses import FrozenInstanceError
 
 from relay.runners.local_model import LocalModelAdapter
 from relay.types import JSONDict
@@ -55,11 +54,6 @@ class TestLocalModelAdapter:
     def test_local_model_adapter_preserves_url_without_trailing_slash_when_initialized(self) -> None:
         adapter = LocalModelAdapter(base_url="http://localhost:11434", model="llama3")
         assert adapter.base_url == "http://localhost:11434"
-
-    def test_local_model_adapter_is_frozen_when_modified(self) -> None:
-        adapter = LocalModelAdapter(base_url="http://localhost:11434", model="llama3")
-        with pytest.raises(FrozenInstanceError):
-            adapter.model = "changed"  # type: ignore[misc]
 
     def test_local_model_adapter_uses_default_adapter_name_when_unspecified(self) -> None:
         adapter = LocalModelAdapter(base_url="http://localhost:11434", model="llama3")
