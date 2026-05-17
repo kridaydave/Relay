@@ -100,6 +100,16 @@ class InMemorySnapshotStore:
                     code=ErrorCode.INVALID_SNAPSHOT,
                 )
 
+            if envelope.pipeline_id != pipeline_id:
+                return Failure(
+                    reason=(
+                        f"Snapshot integrity error: snapshot ID indicates pipeline "
+                        f"{pipeline_id} but envelope body contains pipeline "
+                        f"{envelope.pipeline_id}"
+                    ),
+                    code=ErrorCode.INVALID_SNAPSHOT,
+                )
+
             return Success(deepcopy(envelope))
 
     def get_latest_snapshot(self, pipeline_id: str) -> Result[ContextEnvelope]:

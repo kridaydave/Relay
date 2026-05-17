@@ -233,6 +233,16 @@ class LocalFileSnapshotStore:
                     code=ErrorCode.INVALID_SNAPSHOT,
                 )
 
+            if envelope.pipeline_id != pipeline_id:
+                return Failure(
+                    reason=(
+                        f"Snapshot integrity error: filename indicates pipeline "
+                        f"{pipeline_id} but envelope body contains pipeline "
+                        f"{envelope.pipeline_id}"
+                    ),
+                    code=ErrorCode.INVALID_SNAPSHOT,
+                )
+
             if self._signing_secret is not None and not verify_signature(envelope, self._signing_secret):
                 return Failure(
                     reason=f"Invalid signature for snapshot: {snapshot_id}",
