@@ -78,7 +78,7 @@ class LangChainAdapter:
     async def run(self, slice_: ContextSlice, manifest: AgentManifest) -> AgentOutput:
         """Invoke the Runnable and return normalised output."""
         try:
-            import langchain_core  # type: ignore[import-not-found]  # pyright: ignore[reportMissingImports]  # noqa: F401
+            import langchain_core  # noqa: F401
         except ImportError:
             raise ImportError(
                 "langchain-core is required for LangChainAdapter. "

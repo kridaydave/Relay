@@ -49,7 +49,7 @@ jobs:
       - name: Check version consistency
         run: |
           PV=$(grep '^version' pyproject.toml | sed 's/.*"\(.*\)".*/\1/')
-          TV=$(grep '__version__' src/relay/types.py | sed 's/.*"\(.*\)".*/\1/')
+          TV=$(grep '^__version__' src/relay/types.py | sed 's/.*"\(.*\)".*/\1/')
           if [ "$PV" != "$TV" ]; then
             echo "Error: version mismatch pyproject.toml='$PV' vs types.py='$TV'"
             exit 1
