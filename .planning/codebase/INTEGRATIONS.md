@@ -1,135 +1,126 @@
-# External Integrations
-
-**Analysis Date:** 2026-05-17
-
-## APIs & External Services
-
-**LLM Provider Adapters (optional, lazy-imported):**
-- **Local model REST API** — OpenAI-compatible `/v1/chat/completions` endpoints
-  - Adapter: `LocalModelAdapter` in `src/relay/runners/local_model.py`
-  - Compatible servers: Ollama >=0.1.14, vLLM >=0.4.0, any OpenAI-compatible API
-  - Connection: `base_url` (e.g., `http://localhost:11434`) + `model` name
-  - SDK/Client: `httpx` (lazy-imported, optional dependency `[local]`)
-  - No streaming in v0.3/v0.4 — blocking POST requests
-
-- **LangChain Runnables** — Any LangChain `Runnable` (LCEL chain, chat model, etc.)
-  - Adapter: `LangChainAdapter` in `src/relay/runners/langchain.py`
-  - SDK/Client: `langchain-core>=0.1` (optional dependency `[langchain]`)
-  - Constraint: Agent must be stateless (no `ConversationBufferMemory` etc.)
-
-- **CrewAI Agents** — CrewAI `Agent` with `memory=False`
-  - Adapter: `CrewAIAdapter` in `src/relay/runners/crewai.py`
-  - SDK/Client: `crewai>=0.30` (optional dependency `[crewai]`)
-  - Constraint: `memory=True` detected at construction — hard failure (ValueError)
-
-- **AutoGen AssistantAgents** — AutoGen single-turn execution
-  - Adapter: `AutoGenAdapter` in `src/relay/runners/autogen.py`
-  - SDK/Client: `pyautogen>=0.2` (optional dependency `[autogen]`)
-  - A fresh `UserProxyAgent` is created per `run()` call — no history accumulation
-
-- **Raw SDK/Arbitrary Callables** — Any Python callable, sync or async
-  - Adapter: `RawSDKAdapter` in `src/relay/runners/raw_sdk.py`
-  - Dependencies: stdlib only (no optional packages required)
-  - Signature: `(messages: list[dict[str, str]]) -> str` or `async -> str`
-  - Wrap pattern: `RawSDKAdapter(fn=openai_callable)`
-
-**No direct LLM API SDK imports** — The codebase itself does not import `openai`, `anthropic`, or any other provider SDK. All provider integration is through the adapter pattern — the user provides the integration code.
-
-## Data Storage
-
-**Databases:**
-- Not used — no database dependency detected
-
-**File Storage:**
-- Local filesystem only — JSON snapshot persistence
-  - Location: `./relay_data/snapshots/` (configurable via `CoreRelayPipeline(storage_path=...)`)
-  - Format: JSON files per snapshot, `index.json` per pipeline
-  - Pattern: `{pipeline_id}@{step}_{uuid}.json`
-  - Index: `{pipeline_id}/index.json` — ordered list of snapshot IDs
-  - Max size: 100 MB per snapshot file (`MAX_SNAPSHOT_BYTES = 100 * 1024 * 1024`)
-  - Write strategy: Atomic via `os.replace` (write to `.tmp` then rename)
-  - Security: Pipeline ID validated against `^[a-zA-Z0-9_-]{1,128}$` before filesystem use
-  - Symlink protection: Refuses to write if pipeline path is a symlink
-  - Module: `src/relay/snapshot.py`
-
-**Caching:**
-- None detected — no caching layer or service
-
-## Authentication & Identity
-
-**Auth Provider:**
-- Custom HMAC-SHA256 signing — no external auth provider
-  - Implementation: `src/relay/envelope.py` — `compute_signature()` / `verify_signature()`
-  - Algorithm: `hmac.new(secret.encode(), base.encode(), hashlib.sha256).hexdigest()`
-  - Comparison: `hmac.compare_digest()` (constant-time, never `==`)
-  - Envelope fields covered: `relay_version|pipeline_id|step|timestamp|token_budget_used|token_budget_total|manifest_hash|payload_json`
-  - Secret strength: Must be ≥32 characters (validated at `ContextBroker` construction in `src/relay/context_broker.py`)
-  - Optional staleness check: `max_age_seconds` parameter on `verify_signature()`
-
-**Identity:**
-- Agent manifests define identity via `agent_id` field (`AgentManifest` in `src/relay/slicer/manifest.py`)
-- Agent manifest hash (`SHA-256`) is embedded in each `ContextEnvelope`
-- Pipeline IDs are auto-generated via `uuid.uuid4().hex`
-
-## Monitoring & Observability
-
-**Error Tracking:**
-- None — no Sentry, Datadog, or similar integration
-- Errors returned as `Result[T] = Success[T] | RollbackSuccess[T] | Failure` (no exceptions for operational errors)
-- 61 distinct `ErrorCode` values defined in `src/relay/types.py`
-
-**Logging:**
-- Python `logging` module — minimal usage
-  - `src/relay/snapshot.py` — warnings for temp file/index cleanup failures
-  - `src/relay/parallel/join.py` — warnings for unexpected fork exceptions
-- No structured logging, no log aggregation, no metrics
-
-**Observability Properties:**
-- Pipeline exposes read-only properties: `history`, `snapshot_index`, `current_envelope`
-- Module: `src/relay/core_pipeline.py`
-
-## CI/CD & Deployment
-
-**Hosting:**
-- Not applicable — pure Python library distributed via PyPI
-- Package name: `relay-middleware` (version `0.4.2`)
-- GitHub repository: `https://github.com/kridaydave/relay`
-
-**CI Pipeline:**
-- GitHub Actions — `.github/workflows/ci.yml`
-  - Runs on: `ubuntu-latest`
-  - Python version: `3.12`
-  - Triggers: push/PR to `main`
-  - Steps:
-    1. Checkout + Python setup
-    2. `pip install -e .[dev]`
-    3. Verify `py.typed` marker exists (PEP 561 compliance)
-    4. `mypy --strict src/` — type check with zero suppressions
-    5. `scripts/check_test_names.py` — enforce test naming convention
-    6. `pytest tests/ -v` — full test suite
-
-**No deployment pipeline detected** — no PyPI publish workflow, no Docker build, no CD
-
-## Environment Configuration
-
-**Required env vars:**
-- None — all configuration is programmatic (constructor parameters)
-
-**Secrets location:**
-- `signing_secret` passed directly to `CoreRelayPipeline.create()` or `ContextBroker`
-- No env-file loading, no secret manager integration
-- `.env` file is git-ignored but none present currently
-
-## Webhooks & Callbacks
-
-**Incoming:**
-- None — no HTTP server, no webhook endpoints
-
-**Outgoing:**
-- None — no callback registration mechanism
-
-**Note:** The adapter pattern allows users to create callbacks via `RawSDKAdapter` wrapping any callable, but this is user-provided code, not a built-in integration.
-
+---
+last_mapped_date: "2026-05-18"
+last_mapped_commit: "N/A"
+focus: "tech"
 ---
 
-*Integration audit: 2026-05-17*
+# INTEGRATIONS.md — External Integrations
+
+> **Last updated:** 2026-05-18
+> **Scope:** Full repo
+
+## LLM Framework Adapters
+
+Relay provides a universal adapter layer (`src/relay/runners/`) that wraps external LLM agent frameworks behind a common `AgentRunner` protocol.
+
+### Adapter Protocol (`src/relay/runners/protocol.py`)
+
+```python
+class AgentRunner(Protocol):
+    async def run(self, slice: ContextSlice, manifest: AgentManifest) -> AgentOutput: ...
+```
+
+All adapters implement this async interface. The pipeline calls `adapter.run(slice, manifest)`.
+
+### Bundled Adapters
+
+| Adapter | Module | Framework | Install Extra | Import Safety |
+|---------|--------|-----------|---------------|---------------|
+| `RawSDKAdapter` | `src/relay/runners/raw_sdk.py` | Direct HTTP (httpx) | `local` | Eager — stdlib + httpx only |
+| `LangChainAdapter` | `src/relay/runners/langchain.py` | LangChain | `langchain` | Lazy via `__getattr__` |
+| `CrewAIAdapter` | `src/relay/runners/crewai.py` | CrewAI | `crewai` | Lazy via `__getattr__` |
+| `AutoGenAdapter` | `src/relay/runners/autogen.py` | AutoGen | `autogen` | Lazy via `__getattr__` |
+| `LocalModelAdapter` | `src/relay/runners/local_model.py` | Local HTTP model | `local` | Lazy via `__getattr__` |
+
+### Lazy Import Pattern
+
+`src/relay/runners/__init__.py` uses `__getattr__` to lazy-import framework adapters:
+
+```python
+_LAZY_ADAPTERS: dict[str, str] = {
+    "LangChainAdapter": "relay.runners.langchain",
+    "CrewAIAdapter": "relay.runners.crewai",
+    "AutoGenAdapter": "relay.runners.autogen",
+    "LocalModelAdapter": "relay.runners.local_model",
+}
+```
+
+This ensures `import relay.runners` does NOT require langchain/crewai/autogen/httpx to be installed.
+
+### AdapterRegistry (`src/relay/runners/registry.py`)
+
+Central registry for managing adapter instances:
+- `register(name, adapter)` — add an adapter
+- `get(name)` → `Result[AgentRunner]` — lookup by name
+- `list_names()` → `list[str]` — list registered adapters
+
+## Token Counting
+
+| Implementation | Module | Dependency | Fallback |
+|---------------|--------|------------|----------|
+| `_TiktokenCounter` | `src/relay/budget/token_counter.py` | `tiktoken` (optional) | `HeuristicCounter` |
+| `HeuristicCounter` | `src/relay/budget/token_counter.py` | None (stdlib) | Always available |
+
+Auto-selection in `token_counter.py`:
+```python
+try:
+    import tiktoken
+    AutoTokenCounter = _TiktokenCounter
+except ImportError:
+    AutoTokenCounter = HeuristicCounter
+```
+
+Heuristic: `max(1, len(text) // 3)` — approximately 0.33 tokens/char, within 0.25-0.40 range of real BPE tokenizers (cl100k_base).
+
+## Snapshot Storage
+
+| Implementation | Module | Storage | Protocol |
+|---------------|--------|---------|----------|
+| `LocalFileSnapshotStore` | `src/relay/snapshot.py` | Local filesystem (JSON files) | `SnapshotStore` |
+| `InMemorySnapshotStore` | `src/relay/snapshot_in_memory.py` | In-memory dict | `SnapshotStore` |
+
+Protocol (`src/relay/snapshot_protocol.py`):
+```python
+class SnapshotStore(Protocol):
+    def save_snapshot(self, envelope: ContextEnvelope) -> Result[str]: ...
+    def load_snapshot(self, snapshot_id: str) -> Result[ContextEnvelope]: ...
+    def get_latest_snapshot(self, pipeline_id: str) -> Result[ContextEnvelope]: ...
+    def list_snapshots(self, pipeline_id: str) -> Result[list[str]]: ...
+    def delete_snapshot(self, snapshot_id: str) -> Result[None]: ...
+    def close(self) -> None: ...
+```
+
+Filesystem storage details:
+- Path pattern: `{storage_path}/{pipeline_id}/{snapshot_id}.json`
+- Index file: `{storage_path}/{pipeline_id}/index.json`
+- Atomic writes: `os.O_CREAT | os.O_EXCL | os.O_WRONLY | O_NOFOLLOW` → `os.replace()`
+- Max size: 100 MB per snapshot
+- Symlink defense: checks before and after directory creation
+
+## Audit Logging
+
+| Component | Module | Destination |
+|-----------|--------|-------------|
+| `JsonLogSink` | `src/relay/audit/sink.py` | `relay_audit.log` (JSON lines) |
+| `PayloadRedactor` | `src/relay/audit/redactor.py` | Redacts sensitive fields |
+
+Sink protocol:
+```python
+class AuditSink(Protocol):
+    def emit(self, event: AuditEvent) -> None: ...
+    def close(self) -> None: ...
+```
+
+Fire-and-forget semantics (D-06): errors are logged by the sink, never propagated.
+
+## External Dependencies Summary
+
+| Category | Packages | Required? |
+|----------|----------|-----------|
+| Core runtime | None | No — zero deps |
+| Token counting | `tiktoken` | Optional |
+| Agent frameworks | `langchain-core`, `crewai`, `pyautogen` | Optional (pick one or more) |
+| HTTP client | `httpx` | Optional (for local model adapter) |
+| Dev tooling | `pytest`, `mypy`, `coverage`, `pytest-asyncio`, `anyio` | Dev only |
+
+No external databases, message queues, auth providers, or webhook integrations. Relay is a pure library — all state is in-memory or local filesystem.
