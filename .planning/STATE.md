@@ -3,15 +3,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Release
-status: Phase 2 planned
-stopped_at: Phase 2 ready to execute
-last_updated: "2026-05-17T16:00:00.000Z"
+status: Phase 2 complete
+stopped_at: Phase 2 execution complete
+last_updated: "2026-05-18T00:00:00.000Z"
 progress:
   total_phases: 9
-  completed_phases: 1
-  total_plans: 7
-  completed_plans: 3
-  percent: 11
+  completed_phases: 2
+  total_plans: 11
+  completed_plans: 7
+  percent: 22
 ---
 
 # Relay — Project State
@@ -22,14 +22,14 @@ See: `.planning/PROJECT.md` (updated 2026-05-17)
 
 **Core value:** Reliable, verifiable context passing between AI agents with cryptographic integrity guarantees, zero data loss, and explicit rollback recovery
 
-**Current focus:** Phase 02 — structured-audit-logging
+**Current focus:** Phase 03 — pytest-plugin (next)
 
 ## Roadmap Status
 
 | Phase | Goal | Requirements | Status |
 |-------|------|--------------|--------|
 | 1 | SnapshotStore Protocol Extraction | STO-01 to STO-04 | ✅ Complete |
-| 2 | Structured Audit Logging | AUD-01 to AUD-04, SEC-12 | ◆ Planned (4 plans) |
+| 2 | Structured Audit Logging | AUD-01 to AUD-04, SEC-12 | ✅ Complete |
 | 3 | Pytest Plugin | TST-01 to TST-05 | ○ Pending |
 | 4 | OpenTelemetry Integration | OTL-01 to OTL-04 | ○ Pending |
 | 5 | CLI Inspector | CLI-01 to CLI-05, SEC-06 | ○ Pending |
@@ -72,9 +72,10 @@ Resume file: .planning/phases/02-structured-audit-logging/
 | Date | Event |
 |------|-------|
 | 2026-05-17 | Phase 1 context gathered |
-| 2026-05-17 | Session resumed; research found Plan 01-01-C missing `__post_init__` fix and stale patch target; fixed in Plan 01-01; ready for execution |
-| 2026-05-17 | Plan 01-01 executed: SnapshotStore Protocol, LocalFileSnapshotStore rename, all consumers/tests updated, Closeable made @runtime_checkable |
-| 2026-05-17 | Plan 01-02 executed: InMemorySnapshotStore created and exported; 16 tests passing |
-| 2026-05-17 | Plan 01-03 executed: SnapshotStore Protocol wired into CoreRelayPipeline; Phase 01 complete |
-| 2026-05-17 | Phase 2 researched (02-RESEARCH.md), pattern-mapped (02-PATTERNS.md), validated (02-VALIDATION.md) |
-| 2026-05-17 | Phase 2 plans created: 02-01 (core audit + lifecycle), 02-02 (step/budget/validation/rollback/snapshot events), 02-03 (parallel events), 02-04 (SEC-12 + signature) |
+| 2026-05-17 | Plans 01-01 through 01-03 executed; Phase 01 complete |
+| 2026-05-17 | Phase 2 researched, pattern-mapped, validated, planned |
+| 2026-05-18 | Plan 02-01 executed: relay.audit module with 17 events, AuditSink Protocol, JsonLogSink, PayloadRedactor, wired into CoreRelayPipeline |
+| 2026-05-18 | Plan 02-02 executed: 10 audit events wired (step, budget, validation, rollback, snapshot) |
+| 2026-05-18 | Plan 02-03 executed: 3 parallel audit events (fork_started, fork_completed, join_completed) |
+| 2026-05-18 | Plan 02-04 executed: SEC-12 max_age_seconds, STALE_SIGNATURE ErrorCode, verify_signature → Result[None], signature audit events |
+| 2026-05-18 | Phase 2 complete: 17 audit events across 8 categories, all 422 unit + 28 integration tests passing, mypy --strict zero suppressions |

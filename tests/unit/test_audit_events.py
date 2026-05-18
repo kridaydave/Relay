@@ -318,12 +318,14 @@ class TestBranchReceipt:
     """Verify BranchReceipt constructs correctly with all fields."""
 
     def test_branch_receipt_has_correct_event_type_when_constructed(self) -> None:
+        """BranchReceipt must have event_type 'branch_receipt'."""
         event = BranchReceipt(
             pipeline_id="p", step=1, fork_index=0, adapter_name="a",
         )
         assert event.event_type == "branch_receipt"
 
     def test_branch_receipt_carries_all_metadata_when_constructed(self) -> None:
+        """BranchReceipt must store all metadata fields when provided."""
         event = BranchReceipt(
             pipeline_id="test-pipeline",
             step=3,
@@ -363,8 +365,19 @@ class TestBranchReceipt:
         assert event.branch_error == ""
 
     def test_branch_receipt_is_frozen_when_mutation_attempted(self) -> None:
+        """Frozen dataclass must raise AttributeError on mutation attempt."""
         event = BranchReceipt(
             pipeline_id="p", step=1, fork_index=0, adapter_name="a",
         )
         with pytest.raises(AttributeError):
             event.fork_index = 99  # type: ignore[misc]
+
+    def test_branch_receipt_carries_error_when_branch_failed(self) -> None:
+        """BranchReceipt must carry branch_error when branch_success is False."""
+        event = BranchReceipt(
+            pipeline_id="p", step=1, fork_index=0, adapter_name="a",
+            branch_success=False,
+            branch_error="BUDGET_EXCEEDED",
+        )
+        assert event.branch_success is False
+        assert event.branch_error == "BUDGET_EXCEEDED"

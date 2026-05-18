@@ -18,14 +18,14 @@
 **Goal:** Emit structured, redacted audit events from pipeline lifecycle with pluggable sinks.
 **Mode:** mvp
 **Requirements:** AUD-01, AUD-02, AUD-03, AUD-04, SEC-12
-**Progress:** 0/4 plans complete
+**Progress:** 4/4 plans complete (✅ 02-01, ✅ 02-02, ✅ 02-03, ✅ 02-04)
 **Plans:** 4 plans
 ```
 Plans:
-- [ ] 02-01-PLAN.md — Core audit module + pipeline lifecycle events (AUD-01, AUD-03)
-- [ ] 02-02-PLAN.md — Step, budget, snapshot, validation, rollback events (AUD-01, AUD-02, AUD-04)
-- [ ] 02-03-PLAN.md — Parallel execution events (AUD-01)
-- [ ] 02-04-PLAN.md — SEC-12 max_age_seconds + signature events (SEC-12, AUD-01)
+- [x] 02-01-PLAN.md — Core audit module + pipeline lifecycle events (AUD-01, AUD-03)
+- [x] 02-02-PLAN.md — Step, budget, snapshot, validation, rollback events (AUD-01, AUD-02, AUD-04)
+- [x] 02-03-PLAN.md — Parallel execution events (AUD-01)
+- [x] 02-04-PLAN.md — SEC-12 max_age_seconds + signature events (SEC-12, AUD-01)
 ```
 **Success Criteria:**
 1. Audit events emitted at 10+ lifecycle points (create, commit, rollback, fork, join, budget fail, validation fail)

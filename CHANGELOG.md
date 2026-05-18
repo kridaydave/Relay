@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-05-18
+
+### Added (Design — not yet implemented)
+- **`BranchReceipt` audit event** — Per-branch audit receipt for fork-join steps, approved as new event type to make merge decisions auditable without replaying runs. Each receipt carries: parent/final snapshot hashes, agent_id + policy_hash, tools/files touched, claims delta, conflicts detected, join rule applied, merge decision, and branch outcome. Design doc written to `docs/superpowers/specs/`.
+
+### Fixed
+- **50 test name violations** in `test_audit_events.py`, `test_audit_redactor.py`, `test_audit_sink.py` — renamed to full sentences per Rule 7.1 (heuristic: ≥4 segments + connecting word). All tests pass, mypy clean.
+
 ## [0.5.0] - 2026-05-17
 
 ### Added
