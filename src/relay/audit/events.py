@@ -239,6 +239,51 @@ class JoinCompleted:
 
 
 @dataclass(frozen=True)
+class BranchReceipt:
+    """Per-branch audit receipt for a fork-join step.
+
+    One emitted per fork, capturing the full merge audit trail
+    so the merge decision is verifiable without replay.
+    """
+
+    event_type: str = field(default="branch_receipt", init=False)
+    pipeline_id: str
+    step: int
+    # 1. Branch identity
+    fork_index: int
+    adapter_name: str
+    outcome: AuditOutcome = AuditOutcome.SUCCESS
+    timestamp: str = field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat(timespec="seconds")
+    )
+    latency_ms: float = 0.0
+
+    # 2. Snapshot chain
+    parent_snapshot_hash: str = ""
+    final_snapshot_hash: str = ""
+
+    # 3. Agent context
+    agent_id: str = ""
+    policy_hash: str = ""
+    tools_used: tuple[str, ...] = ()
+    sections_read: tuple[str, ...] = ()
+    sections_written: tuple[str, ...] = ()
+
+    # 4. Claims delta
+    keys_added: tuple[str, ...] = ()
+    keys_removed: tuple[str, ...] = ()
+
+    # 5. Merge audit
+    join_strategy: str = ""
+    merge_decision: str = ""
+    conflict_keys: tuple[str, ...] = ()
+
+    # 6. Outcome
+    branch_success: bool = True
+    branch_error: str = ""
+
+
+@dataclass(frozen=True)
 class SnapshotSaved:
     """Emitted when a snapshot is saved."""
 
@@ -299,6 +344,7 @@ type AuditEvent = (
     | ForkStarted
     | ForkCompleted
     | JoinCompleted
+    | BranchReceipt
     | SnapshotSaved
     | SignatureVerificationPassed
     | SignatureVerificationStale
@@ -321,6 +367,7 @@ __all__ = [
     "ForkStarted",
     "ForkCompleted",
     "JoinCompleted",
+    "BranchReceipt",
     "SnapshotSaved",
     "SignatureVerificationPassed",
     "SignatureVerificationStale",

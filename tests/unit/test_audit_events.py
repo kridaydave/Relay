@@ -7,6 +7,7 @@ import pytest
 from relay.audit.events import (
     AuditEvent,
     AuditOutcome,
+    BranchReceipt,
     BudgetCheckFailed,
     BudgetCheckPassed,
     ForkCompleted,
@@ -235,6 +236,7 @@ class TestAuditEvents:
             ForkStarted(pipeline_id="p", step=1),
             ForkCompleted(pipeline_id="p", step=1),
             JoinCompleted(pipeline_id="p", step=1),
+            BranchReceipt(pipeline_id="p", step=1, fork_index=0, adapter_name="a"),
             SnapshotSaved(pipeline_id="p", step=1),
             SignatureVerificationPassed(pipeline_id="p", step=1),
             SignatureVerificationStale(pipeline_id="p", step=1),
@@ -260,6 +262,7 @@ class TestAuditEvents:
             (ForkStarted(pipeline_id="p", step=1), "fork_started"),
             (ForkCompleted(pipeline_id="p", step=1), "fork_completed"),
             (JoinCompleted(pipeline_id="p", step=1), "join_completed"),
+            (BranchReceipt(pipeline_id="p", step=1, fork_index=0, adapter_name="a"), "branch_receipt"),
             (SnapshotSaved(pipeline_id="p", step=1), "snapshot_saved"),
             (SignatureVerificationPassed(pipeline_id="p", step=1), "signature_verification_passed"),
             (SignatureVerificationStale(pipeline_id="p", step=1), "signature_verification_stale"),
@@ -309,3 +312,59 @@ class TestParallelAuditEvents:
         ):
             with pytest.raises(AttributeError):
                 event.event_type = "mutated"  # type: ignore[misc]
+
+
+class TestBranchReceipt:
+    """Verify BranchReceipt constructs correctly with all fields."""
+
+    def test_branch_receipt_has_correct_event_type_when_constructed(self) -> None:
+        event = BranchReceipt(
+            pipeline_id="p", step=1, fork_index=0, adapter_name="a",
+        )
+        assert event.event_type == "branch_receipt"
+
+    def test_branch_receipt_carries_all_metadata_when_constructed(self) -> None:
+        event = BranchReceipt(
+            pipeline_id="test-pipeline",
+            step=3,
+            fork_index=1,
+            adapter_name="agent-b",
+            parent_snapshot_hash="abc",
+            final_snapshot_hash="def",
+            agent_id="agent-b",
+            policy_hash="manifest-hash-123",
+            tools_used=("read_file", "search"),
+            sections_read=("context",),
+            sections_written=("output",),
+            keys_added=("new_key",),
+            keys_removed=("old_key",),
+            join_strategy="UNION",
+            merge_decision="included",
+            conflict_keys=(),
+            branch_success=True,
+        )
+        assert event.pipeline_id == "test-pipeline"
+        assert event.step == 3
+        assert event.fork_index == 1
+        assert event.adapter_name == "agent-b"
+        assert event.parent_snapshot_hash == "abc"
+        assert event.final_snapshot_hash == "def"
+        assert event.agent_id == "agent-b"
+        assert event.policy_hash == "manifest-hash-123"
+        assert event.tools_used == ("read_file", "search")
+        assert event.sections_read == ("context",)
+        assert event.sections_written == ("output",)
+        assert event.keys_added == ("new_key",)
+        assert event.keys_removed == ("old_key",)
+        assert event.join_strategy == "UNION"
+        assert event.merge_decision == "included"
+        assert event.conflict_keys == ()
+        assert event.branch_success is True
+        assert event.branch_error == ""
+
+    def test_branch_receipt_is_frozen_when_mutation_attempted(self) -> None:
+        event = BranchReceipt(
+            pipeline_id="p", step=1, fork_index=0, adapter_name="a",
+        )
+        with pytest.raises(AttributeError):
+            event.fork_index = 99  # type: ignore[misc]
