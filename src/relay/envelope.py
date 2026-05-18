@@ -15,9 +15,6 @@ import re
 import uuid
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
-from typing import Any
-
-from relay.budget.token_counter import HeuristicCounter
 from relay.types import (
     ErrorCode,
     Failure,
@@ -40,7 +37,6 @@ __all__ = [
     "validate_pipeline_id",
 ]
 PIPELINE_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{1,128}$")
-_ESTIMATOR = HeuristicCounter()
 _MAX_STEP = 10**6  # 1 million steps should be plenty
 
 
@@ -332,4 +328,4 @@ def estimate_tokens(payload: JSONDict) -> int:
     See test_envelope.py::TestTokenEstimation for the ground-truth benchmark.
     """
     json_str = json.dumps(payload, sort_keys=True, separators=(",", ":"))
-    return _ESTIMATOR.count(json_str)
+    return max(1, len(json_str) // 3)

@@ -391,8 +391,12 @@ class CoreRelayPipeline:
                         dict[str, object]({s: "<slice>" for s in manifest.writes})
                     )
                 )
+            estimated_output = max(1, len(projected) // 6)
             enforcer_result = self._enforcer.check(
-                budget_used, self.token_budget, projected
+                budget_used,
+                self.token_budget,
+                projected,
+                estimated_output_cost=estimated_output,
             )
             if isinstance(enforcer_result, Failure):
                 self._emit_audit_event(
@@ -449,7 +453,7 @@ class CoreRelayPipeline:
         REQUIRES: caller holds self._state._lock via transaction() context manager.
         Must NOT call self._state.transaction() — lock is non-reentrant.
         """
-        self._state._assert_lock_held()
+        self._state.assert_lock_held()
         validation_result = self._handoff_validator.validate_handoff(
             previous_envelope=current_envelope, current_envelope=new_envelope
         )
@@ -553,7 +557,7 @@ class CoreRelayPipeline:
         REQUIRES: caller holds self._state._lock via transaction() context manager.
         Must NOT call self._state.transaction() — lock is non-reentrant.
         """
-        self._state._assert_lock_held()
+        self._state.assert_lock_held()
         if not self._state.has_history():
             return Failure(
                 reason="No previous envelope to rollback to",
@@ -583,7 +587,14 @@ class CoreRelayPipeline:
         )
         if isinstance(result, Failure):
             return result
-        # RollbackSuccess is the only non-Failure return from restore_to_previous.
+        if not isinstance(result, RollbackSuccess):
+            return Failure(
+                reason=(
+                    f"restore_to_previous returned {type(result).__name__} "
+                    f"instead of RollbackSuccess"
+                ),
+                code=ErrorCode.INVALID_STATE,
+            )
         self._emit_audit_event(
             RollbackCompleted(
                 pipeline_id=self._pipeline_id,
@@ -837,7 +848,11 @@ class CoreRelayPipeline:
                     code=ErrorCode.ALL_FORKS_FAILED,
                 )
             else:
-                assert winner.agent_output is not None
+                if winner.agent_output is None:
+                    return Failure(
+                        reason="FIRST_WINS winner had agent_output=None — invariant violated",
+                        code=ErrorCode.UNKNOWN_ERROR,
+                    )
                 merged_result = Success(agent_output_to_payload(winner.agent_output))
         else:
             merged_result = await apply_join_strategy(join_strategy, collected_fork_results, None)

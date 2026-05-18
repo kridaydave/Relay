@@ -1,9 +1,16 @@
 repos:
   - repo: local
     hooks:
-      - id: mypy
-        name: mypy
+      - id: mypy-src
+        name: mypy (source)
         entry: python -m mypy --strict src/
+        language: system
+        types: [python]
+        pass_filenames: false
+
+      - id: mypy-tests
+        name: mypy (tests)
+        entry: python -m mypy --strict tests/
         language: system
         types: [python]
         pass_filenames: false
@@ -20,4 +27,22 @@ repos:
         entry: python scripts/check_test_names.py
         language: system
         types: [python]
+        pass_filenames: false
+
+      - id: no-assert-in-production
+        name: no-assert-in-production
+        entry: python -c "import sys,re; lines=[(i+1,l) for i,l in enumerate(open('src/relay/core_pipeline.py')) if re.match(r'^\s*assert\b',l)]; exit(1 if lines else 0)"
+        language: system
+        pass_filenames: false
+
+      - id: version-consistency
+        name: version-consistency
+        entry: python -c "import re; pyproject=open('pyproject.toml').read(); types=open('src/relay/types.py').read(); pv=re.search(r'^version\s*=\s*\"(.+?)\"',pyproject,re.M); tv=re.search(r'__version__\s*=\s*\"(.+?)\"',types); exit(0 if pv and tv and pv.group(1)==tv.group(1) else 1)"
+        language: system
+        pass_filenames: false
+
+      - id: no-type-ignore-in-source
+        name: no-type-ignore-in-source
+        entry: python -c "import sys,re,pathlib; found=sum(re.findall(r'# type: ignore', p.read_text()) for p in pathlib.Path('src/relay').rglob('*.py')); exit(1 if found else 0)"
+        language: system
         pass_filenames: false

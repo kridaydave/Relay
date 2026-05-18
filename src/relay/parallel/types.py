@@ -7,7 +7,7 @@ Does NOT: implement join logic, execute adapters, or manage pipeline state.
 import logging
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from relay.runners.protocol import AgentOutput
 from relay.types import Failure, JSONDict

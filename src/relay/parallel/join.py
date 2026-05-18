@@ -96,7 +96,7 @@ def _apply_vote(fork_results: list[ForkResult]) -> Result[JSONDict]:
 
 async def _apply_first_wins(
     fork_index_coros: list[tuple[int, ForkSpec, "Coroutine[None, None, ForkResult]"]],
-) -> tuple[Result[JSONDict], list[ForkResult]]:
+) -> Result[JSONDict]:
     """Accept the first passing fork; cancel the rest.
 
     Cancellation is best-effort — tasks already in flight may complete naturally.
@@ -129,22 +129,12 @@ async def _apply_first_wins(
             task.cancel()
     await asyncio.gather(*tasks, return_exceptions=True)
 
-    collected: list[ForkResult] = []
-    for task in tasks:
-        if task.done() and not task.cancelled():
-            try:
-                result = task.result()
-                if isinstance(result, ForkResult):
-                    collected.append(result)
-            except Exception:
-                pass
-
     if winner_payload is None:
         return Failure(
             reason=f"FIRST_WINS: all {len(tasks)} forks failed or were cancelled",
             code=ErrorCode.ALL_FORKS_FAILED,
-        ), collected
-    return Success(winner_payload), collected
+        )
+    return Success(winner_payload)
 
 
 @overload
@@ -182,8 +172,7 @@ async def apply_join_strategy(
                 reason="first_wins_coros must be provided for FIRST_WINS strategy",
                 code=ErrorCode.INVALID_JOIN_STRATEGY,
             )
-        result, _collected = await _apply_first_wins(first_wins_coros)
-        return result
+        return await _apply_first_wins(first_wins_coros)
     else:
         return Failure(
             reason=f"Unknown join strategy: {strategy!r}",

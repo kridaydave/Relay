@@ -44,6 +44,13 @@ class LangChainAdapter:
     runnable: object
     adapter_name: str = "langchain"
 
+    def __post_init__(self) -> None:
+        if not hasattr(self.runnable, "ainvoke") and not hasattr(self.runnable, "invoke"):
+            raise ValueError(
+                "LangChainAdapter.runnable must satisfy the Runnable protocol "
+                "(require: ainvoke or invoke method)"
+            )
+
     def _build_input(self, slice_: ContextSlice) -> JSONDict:
         return {
             "input": json.dumps(slice_.sections, indent=2),

@@ -11,7 +11,7 @@ import stat
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +25,9 @@ MAX_SNAPSHOT_BYTES = 100 * 1024 * 1024  # 100 MB
 __all__ = [
     "LocalFileSnapshotStore",
     "SnapshotStore",
+    "SNAPSHOT_ID_PATTERN",
+    "InvalidSnapshotIdError",
+    "extract_step_from_snapshot_id",
 ]
 
 
@@ -111,7 +114,8 @@ class LocalFileSnapshotStore:
                 reason=f"Corrupted index JSON: {e}",
                 code=ErrorCode.CORRUPTED_INDEX,
             )
-        except OSError:
+        except OSError as e:
+            logger.warning("Failed to read index file %s: %s", index_path, e)
             return Success(None)
 
         snapshots: list[str] = []
@@ -136,8 +140,8 @@ class LocalFileSnapshotStore:
         finally:
             try:
                 temp_index_path.unlink(missing_ok=True)
-            except OSError:
-                pass
+            except OSError as e:
+                logger.warning("Failed to clean up temp index file %s: %s", temp_index_path, e)
         return Success(None)
 
     def save_snapshot(self, envelope: ContextEnvelope) -> Result[str]:

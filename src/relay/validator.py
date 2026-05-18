@@ -5,7 +5,7 @@ Does NOT: sign envelopes, persist data, execute agents.
 """
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, cast
 
 from relay.envelope import ContextEnvelope
 from relay.types import ErrorCode, Failure, JSONDict, Result, Success

@@ -13,7 +13,7 @@ python -m mypy --strict src/relay             # must pass with zero # type: igno
 ## Architecture
 
 - **Package source**: `src/relay/` (setuptools with `[tool.setuptools.packages.find] where = ["src"]`)
-- **Layer dependency order** (lower never imports upper): `types.py` → `envelope.py` → `snapshot.py` → `validator.py` → `context_broker.py` → `budget/` + `slicer/` → `pipeline_state.py` → `pipeline_rollback.py` + `parallel/` → `core_pipeline.py`
+- **Layer dependency order** (lower never imports upper): `types.py` → `envelope.py` → `snapshot.py` + `snapshot_protocol.py` → `validator.py` → `context_broker.py` → `budget/` + `slicer/` → `audit/` → `pipeline_state.py` → `pipeline_rollback.py` + `parallel/` → `core_pipeline.py`
 - **Entrypoint**: `CoreRelayPipeline` in `core_pipeline.py` — orchestrates all components
 - **Error handling**: `Result[T] = Success[T] | RollbackSuccess[T] | Failure` — no exceptions for operational errors
 - **Rollback**: Returns `RollbackSuccess` (not `Success`). `unwrap()` raises on RollbackSuccess; `unwrap_or()` returns default on both Failure and RollbackSuccess; `map_result()` transforms RollbackSuccess.

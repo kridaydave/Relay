@@ -49,6 +49,13 @@ class PipelineState:
         return self._current_envelope
 
     def _assert_lock_held(self) -> None:
+        self.assert_lock_held()
+
+    def assert_lock_held(self) -> None:
+        """Verify the transaction lock is held by the current thread.
+
+        Raises RuntimeError if the caller does not hold the lock.
+        """
         if threading.get_ident() != self._lock_owner:
             raise RuntimeError(
                 "Lock must be held via transaction() context manager"

@@ -89,6 +89,10 @@ class StructuralSlicePacker:
     ) -> Result[JSONDict]:
         """Pack context based on manifest reads.
 
+        When manifest.max_tokens is set, sections are added in sorted order
+        until the token budget is exhausted. When unset, all declared read
+        sections are returned.
+
         Returns:
             Success with selected subset, or Failure if section missing.
         """
@@ -98,7 +102,15 @@ class StructuralSlicePacker:
                 reason=f"Manifest declares read for sections {missing} but they do not exist in payload",
                 code=ErrorCode.MISSING_SECTIONS,
             )
-        return Success(dict[str, object]({key: payload[key] for key in sorted(manifest.reads)}))
+        result: JSONDict = {}
+        used_tokens = 0
+        for key in sorted(manifest.reads):
+            section_tokens = estimate_tokens(dict[str, object]({key: payload[key]}))
+            if manifest.max_tokens is not None and used_tokens + section_tokens > manifest.max_tokens:
+                break
+            result[key] = payload[key]
+            used_tokens += section_tokens
+        return Success(result)
 
 
 class RelevanceSlicePacker:
@@ -108,7 +120,7 @@ class RelevanceSlicePacker:
     Requires injected EmbeddingProvider. Propagates provider exceptions unchanged.
     """
 
-    def __init__(self, provider: EmbeddingProvider):
+    def __init__(self, provider: EmbeddingProvider) -> None:
         if not isinstance(provider, EmbeddingProvider):
             raise TypeError(
                 f"Expected an EmbeddingProvider, got {type(provider).__name__}. "

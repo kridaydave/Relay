@@ -56,7 +56,7 @@ class AutoGenAdapter:
 
     def _make_user_proxy(self) -> _UserProxyWithChat:
         try:
-            from autogen import UserProxyAgent  # type: ignore[import-not-found]
+            from autogen import UserProxyAgent
         except ImportError:
             raise ImportError(
                 "pyautogen is required for AutoGenAdapter. "

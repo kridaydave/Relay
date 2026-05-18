@@ -75,6 +75,19 @@ async def run_single_fork(
 
     fork_payload = agent_output_to_payload(agent_output)
 
+    # Boundary check first: did the agent write to allowed sections?
+    written_sections = set(fork_payload.keys())
+    boundary_result = validate_manifest_boundaries(spec.manifest, written_sections)
+    if isinstance(boundary_result, Failure):
+        return ForkResult(
+            fork_index=fork_index,
+            adapter_name=spec.adapter_name,
+            success=False,
+            agent_output=agent_output,
+            validation=None,
+            failure=boundary_result,
+        )
+
     scope_keys = spec.manifest.reads | spec.manifest.writes
     filtered_payload: JSONDict = {
         k: v for k, v in pre_fork_envelope.payload.items() if k in scope_keys
@@ -96,19 +109,6 @@ async def run_single_fork(
 
     validation = validation_result.value
     passed = not validator.should_rollback(validation)
-
-    if passed:
-        written_sections = set(fork_payload.keys())
-        boundary_result = validate_manifest_boundaries(spec.manifest, written_sections)
-        if isinstance(boundary_result, Failure):
-            return ForkResult(
-                fork_index=fork_index,
-                adapter_name=spec.adapter_name,
-                success=False,
-                agent_output=agent_output,
-                validation=None,
-                failure=boundary_result,
-            )
 
     return ForkResult(
         fork_index=fork_index,

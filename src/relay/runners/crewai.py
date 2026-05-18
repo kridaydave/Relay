@@ -69,7 +69,7 @@ class CrewAIAdapter:
 
     async def run(self, slice_: ContextSlice, manifest: AgentManifest) -> AgentOutput:
         try:
-            from crewai import Task  # type: ignore[import-not-found]
+            from crewai import Task
         except ImportError:
             raise ImportError(
                 "crewai is required for CrewAIAdapter. "
