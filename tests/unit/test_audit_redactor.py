@@ -9,7 +9,7 @@ from relay.types import JSONDict
 class TestPayloadRedactor:
     """Verify PayloadRedactor strips non-allowlisted fields."""
 
-    def test_redactor_strips_non_allowlisted_fields(self) -> None:
+    def test_redactor_strips_non_allowlisted_fields_when_redacting(self) -> None:
         """Fields not in ALLOWED_FIELDS must be removed."""
         redactor = PayloadRedactor()
         payload: JSONDict = {
@@ -24,7 +24,7 @@ class TestPayloadRedactor:
         assert "secret_key" not in result
         assert "user_data" not in result
 
-    def test_redactor_passes_allowlisted_fields_through(self) -> None:
+    def test_redactor_passes_allowlisted_fields_through_when_present(self) -> None:
         """All allowlisted fields must pass through unchanged."""
         redactor = PayloadRedactor()
         payload: JSONDict = {"adapter_name": "test", "pipeline_id": "abc"}
@@ -38,7 +38,7 @@ class TestPayloadRedactor:
         result = redactor.redact_payload(payload)
         assert result == {}
 
-    def test_redactor_constructor_accepts_no_arguments(self) -> None:
+    def test_redactor_constructor_accepts_no_arguments_when_called(self) -> None:
         """PayloadRedactor must be constructable with no arguments."""
         redactor = PayloadRedactor()
         assert isinstance(redactor, PayloadRedactor)
@@ -70,7 +70,7 @@ class TestPayloadRedactor:
         assert "agent_output" not in result
         assert "payload" not in result
 
-    def test_redact_envelope_strips_manifest_hash_and_signature(self) -> None:
+    def test_redact_envelope_strips_manifest_hash_and_signature_when_redacting(self) -> None:
         """Envelope fields like manifest_hash and signature must be stripped."""
         redactor = PayloadRedactor()
         from relay.envelope import ContextEnvelope
