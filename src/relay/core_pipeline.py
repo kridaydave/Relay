@@ -448,9 +448,25 @@ class CoreRelayPipeline:
         if isinstance(validation_result, Failure):
             return validation_result
 
+        self._emit_audit_event(
+            ValidationPassed(
+                pipeline_id=self._pipeline_id,
+                step=new_envelope.step,
+            )
+        )
+
         if self._handoff_validator.should_rollback(validation_result.value):
             # current_envelope was already snapshotted when committed — skip redundant save.
             self._state.push_current_to_history()
+            self._emit_audit_event(
+                ValidationContradiction(
+                    pipeline_id=self._pipeline_id,
+                    step=new_envelope.step,
+                    contradiction_type=validation_result.value.contradiction_details
+                    or "",
+                    diff_summary="",
+                )
+            )
             return RollbackSuccess(
                 value=current_envelope,
                 reason=validation_result.value.contradiction_details
@@ -460,6 +476,14 @@ class CoreRelayPipeline:
         save_result = self._snapshot_store.save_snapshot(new_envelope)
         if isinstance(save_result, Failure):
             return save_result
+        self._emit_audit_event(
+            SnapshotSaved(
+                pipeline_id=self._pipeline_id,
+                step=new_envelope.step,
+                snapshot_id=save_result.value,
+                snapshot_size_bytes=0,
+            )
+        )
         self._state.register_snapshot(new_envelope.step, save_result.value)
         self._state.archive_and_set(new_envelope)
 
@@ -517,6 +541,14 @@ class CoreRelayPipeline:
                 code=ErrorCode.INVALID_STATE,
             )
 
+        self._emit_audit_event(
+            RollbackTriggered(
+                pipeline_id=self._pipeline_id,
+                step=previous_envelope.step,
+                reason=reason,
+            )
+        )
+
         result = self._rollback_handler.restore_to_previous(
             previous_envelope,
             self._state.snapshot_ids,
@@ -526,6 +558,14 @@ class CoreRelayPipeline:
         if isinstance(result, Failure):
             return result
         # RollbackSuccess is the only non-Failure return from restore_to_previous.
+        self._emit_audit_event(
+            RollbackCompleted(
+                pipeline_id=self._pipeline_id,
+                step=previous_envelope.step,
+                restored_step=result.value.step,
+                snapshot_id="",
+            )
+        )
         if consume:
             self._state.consume_last()
         self._state.set_current(result.value)
