@@ -279,3 +279,33 @@ class TestAuditEvents:
         assert RollbackTriggered(pipeline_id="p", step=1).outcome == AuditOutcome.ROLLBACK
         assert RollbackCompleted(pipeline_id="p", step=1).outcome == AuditOutcome.ROLLBACK
         assert SignatureVerificationStale(pipeline_id="p", step=1).outcome == AuditOutcome.FAILURE
+
+
+class TestParallelAuditEvents:
+    """Verify ForkStarted, ForkCompleted, JoinCompleted carry correct metadata."""
+
+    def test_fork_started_event_has_fork_count(self) -> None:
+        """ForkStarted must carry fork_count metadata."""
+        event = ForkStarted(pipeline_id="p", step=1, fork_count=3)
+        assert event.event_type == "fork_started"
+        assert event.fork_count == 3
+
+    def test_fork_completed_event_has_forks_succeeded(self) -> None:
+        """ForkCompleted must carry forks_succeeded metadata."""
+        event = ForkCompleted(pipeline_id="p", step=1, forks_succeeded=2)
+        assert event.forks_succeeded == 2
+
+    def test_join_completed_event_has_join_strategy(self) -> None:
+        """JoinCompleted must carry join_strategy metadata."""
+        event = JoinCompleted(pipeline_id="p", step=1, join_strategy="first_wins")
+        assert event.join_strategy == "first_wins"
+
+    def test_parallel_events_are_frozen(self) -> None:
+        """All three parallel event types must be immutable frozen dataclasses."""
+        for event in (
+            ForkStarted(pipeline_id="p", step=1),
+            ForkCompleted(pipeline_id="p", step=1),
+            JoinCompleted(pipeline_id="p", step=1),
+        ):
+            with pytest.raises(AttributeError):
+                event.event_type = "mutated"  # type: ignore[misc]
