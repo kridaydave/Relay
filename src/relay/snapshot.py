@@ -13,12 +13,23 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import cast
 
-logger = logging.getLogger(__name__)
+from relay.envelope import (
+    PIPELINE_ID_PATTERN,
+    ContextEnvelope,
+    validate_pipeline_id,
+    verify_signature,
+)
+from relay.snapshot_protocol import (
+    SNAPSHOT_ID_PATTERN,
+    InvalidSnapshotIdError,
+    extract_step_from_snapshot_id,
+)
+from relay.snapshot_protocol import (
+    SnapshotStore as SnapshotStore,  # noqa: F811 — re-export Protocol
+)
+from relay.types import INITIAL_KEY_ID, ErrorCode, Failure, JSONDict, Result, Success
 
-from relay.envelope import PIPELINE_ID_PATTERN, ContextEnvelope, validate_pipeline_id, verify_signature
-from relay.snapshot_protocol import SNAPSHOT_ID_PATTERN, InvalidSnapshotIdError, extract_step_from_snapshot_id
-from relay.snapshot_protocol import SnapshotStore as SnapshotStore  # noqa: F811 — re-export Protocol
-from relay.types import ErrorCode, Failure, INITIAL_KEY_ID, JSONDict, Result, Success
+logger = logging.getLogger(__name__)
 
 MAX_SNAPSHOT_BYTES = 100 * 1024 * 1024  # 100 MB
 
@@ -41,17 +52,25 @@ class LocalFileSnapshotStore:
     CoreRelayPipeline's transaction lock).
     """
 
-    def __init__(self, storage_path: str = "./relay_data/snapshots", signing_secret: str | None = None) -> None:
+    def __init__(
+        self,
+        storage_path: str = "./relay_data/snapshots",
+        signing_secret: str | None = None,
+        max_signature_age: int = 86400,
+    ) -> None:
         """Initialize the snapshot store with the given storage path.
 
         Args:
             storage_path: Root directory for snapshot storage.
             signing_secret: Optional HMAC signing secret. If provided,
                 signatures are verified on every load_snapshot call.
+            max_signature_age: Maximum allowed age of a signature in seconds.
+                Defaults to 86400 (24 hours) as per default verify_signature behavior.
         """
         self._storage_path = Path(storage_path)
         self._storage_path.mkdir(parents=True, exist_ok=True)
         self._signing_secret: str | None = signing_secret
+        self._max_signature_age = max_signature_age
 
     def close(self) -> None:
         """Release any resources held by the snapshot store.
@@ -89,7 +108,9 @@ class LocalFileSnapshotStore:
 
         index_result = self._remove_from_index(pipeline_id, snapshot_id)
         if isinstance(index_result, Failure):
-            logger.warning("Snapshot file deleted but index update failed: %s", index_result.reason)
+            logger.warning(
+                "Snapshot file deleted but index update failed: %s", index_result.reason
+            )
         return Success(None)
 
     def _remove_from_index(self, pipeline_id: str, snapshot_id: str) -> Result[None]:
@@ -106,7 +127,9 @@ class LocalFileSnapshotStore:
                 else:
                     logger.warning(
                         "Index file %s has unexpected format (expected dict, got %s) — "
-                        "resetting to empty index", index_path, type(data).__name__,
+                        "resetting to empty index",
+                        index_path,
+                        type(data).__name__,
                     )
                     index_data = {}
         except json.JSONDecodeError as e:
@@ -141,7 +164,9 @@ class LocalFileSnapshotStore:
             try:
                 temp_index_path.unlink(missing_ok=True)
             except OSError as e:
-                logger.warning("Failed to clean up temp index file %s: %s", temp_index_path, e)
+                logger.warning(
+                    "Failed to clean up temp index file %s: %s", temp_index_path, e
+                )
         return Success(None)
 
     def save_snapshot(self, envelope: ContextEnvelope) -> Result[str]:
@@ -186,20 +211,30 @@ class LocalFileSnapshotStore:
                     reason=f"Snapshot exceeds maximum size of {MAX_SNAPSHOT_BYTES} bytes",
                     code=ErrorCode.SNAPSHOT_SAVE_FAILED,
                 )
-            _O_NOFOLLOW = cast(int, getattr(os, 'O_NOFOLLOW', 0))
-            if not hasattr(os, 'O_NOFOLLOW'):
-                try:
-                    st = os.lstat(temp_path)
-                    if stat.S_ISLNK(st.st_mode):
-                        return Failure(
-                            reason=f"Symlink detected via lstat: {temp_path}",
-                            code=ErrorCode.SNAPSHOT_SAVE_FAILED,
-                        )
-                except OSError:
-                    pass
-            fd = os.open(temp_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY | _O_NOFOLLOW, stat.S_IRUSR | stat.S_IWUSR)
-            with os.fdopen(fd, "w") as f:
-                f.write(json_str)
+            _O_NOFOLLOW = cast(int, getattr(os, "O_NOFOLLOW", 0))
+            fd = os.open(
+                temp_path,
+                os.O_CREAT | os.O_EXCL | os.O_WRONLY | _O_NOFOLLOW,
+                stat.S_IRUSR | stat.S_IWUSR,
+            )
+            try:
+                # Double-check that we didn't follow a symlink (Rule 4.1 defense-in-depth).
+                # On Windows <3.13, O_NOFOLLOW is 0, so os.open might follow a symlink
+                # to a non-existent target and create it. fstat vs lstat detects this.
+                st_fd = os.fstat(fd)
+                st_path = os.lstat(temp_path)
+                if st_fd.st_ino != st_path.st_ino or st_fd.st_dev != st_path.st_dev:
+                    os.close(fd)
+                    return Failure(
+                        reason=f"Symlink race detected during open: {temp_path}",
+                        code=ErrorCode.SNAPSHOT_SAVE_FAILED,
+                    )
+
+                with os.fdopen(fd, "w") as f:
+                    f.write(json_str)
+            except Exception:
+                os.close(fd)
+                raise
             os.replace(temp_path, snapshot_path)
         except (OSError, TypeError) as e:
             if temp_path.exists():
@@ -247,7 +282,10 @@ class LocalFileSnapshotStore:
                     )
                 data: object = json.load(f)
             if not isinstance(data, dict):
-                return Failure(reason="Invalid snapshot data format", code=ErrorCode.INVALID_SNAPSHOT)
+                return Failure(
+                    reason="Invalid snapshot data format",
+                    code=ErrorCode.INVALID_SNAPSHOT,
+                )
             envelope_result = self._dict_to_envelope(cast(JSONDict, data))
             if isinstance(envelope_result, Failure):
                 return envelope_result
@@ -273,12 +311,16 @@ class LocalFileSnapshotStore:
                 )
 
             if self._signing_secret is not None:
-                sig_result = verify_signature(envelope, self._signing_secret)
+                sig_result = verify_signature(
+                    envelope,
+                    self._signing_secret,
+                    max_age_seconds=self._max_signature_age,
+                )
                 if isinstance(sig_result, Failure):
                     return Failure(
                         reason=f"Invalid signature for snapshot: {snapshot_id}",
                         code=ErrorCode.INVALID_SNAPSHOT,
-                )
+                    )
 
             return Success(envelope)
         except FileNotFoundError:
@@ -538,7 +580,9 @@ class LocalFileSnapshotStore:
         fork_id_raw: object = data.get("fork_id")
         fork_id: str | None = fork_id_raw if isinstance(fork_id_raw, str) else None
         join_strategy_raw: object = data.get("join_strategy")
-        join_strategy: str | None = join_strategy_raw if isinstance(join_strategy_raw, str) else None
+        join_strategy: str | None = (
+            join_strategy_raw if isinstance(join_strategy_raw, str) else None
+        )
 
         fork_count: int | None = None
         if "fork_count" in data and data.get("fork_count") is not None:
@@ -557,7 +601,9 @@ class LocalFileSnapshotStore:
         key_id_raw: object = data.get("key_id")
         key_id: str = key_id_raw if isinstance(key_id_raw, str) else INITIAL_KEY_ID
         if "key_id" not in data or not isinstance(data.get("key_id"), str):
-            logger.warning("Snapshot missing key_id field — defaulting to %r", INITIAL_KEY_ID)
+            logger.warning(
+                "Snapshot missing key_id field — defaulting to %r", INITIAL_KEY_ID
+            )
 
         nonce_raw: object = data.get("nonce")
         nonce: str = nonce_raw if isinstance(nonce_raw, str) else ""

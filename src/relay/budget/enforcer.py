@@ -26,7 +26,7 @@ class HardCapEnforcer:
         budget_total: int,
         projected_slice: str,
         estimated_output_cost: int = 0,
-    ) -> Result[None]:
+    ) -> Result[int]:
         """Check if projected slice would exceed budget.
 
         Validates that the sum of budget consumed so far, projected input
@@ -43,9 +43,16 @@ class HardCapEnforcer:
                 provide a realistic estimate to make the cap a true hard cap.
 
         Returns:
-            Success(None) if within budget, Failure if exceeded or invalid counter.
+            Success(total_projected) if within budget, Failure if exceeded or counter error.
         """
-        projected_cost = self.counter.count(projected_slice)
+        try:
+            projected_cost = self.counter.count(projected_slice)
+        except Exception as e:
+            return Failure(
+                reason=f"Token counter failed: {e}",
+                code=ErrorCode.UNKNOWN_ERROR,
+            )
+
         total_projected = projected_cost + estimated_output_cost
         if budget_used + total_projected > budget_total:
             return Failure(
@@ -58,4 +65,4 @@ class HardCapEnforcer:
                 code=ErrorCode.BUDGET_EXCEEDED,
             )
 
-        return Success(None)
+        return Success(total_projected)

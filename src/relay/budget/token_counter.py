@@ -6,6 +6,7 @@ Does NOT: enforce budget limits, manage token tracking across steps, or validate
 
 from __future__ import annotations
 
+import threading
 from typing import Protocol, cast, runtime_checkable
 
 
@@ -28,7 +29,7 @@ class TokenCounter(Protocol):
         ...
 
 
-class HeuristicCounter:
+class HeuristicCounter(TokenCounter):
     """Fallback token counter using character-based estimation.
 
     Uses len(text) // 3 as a rough approximation of token count.
@@ -49,7 +50,7 @@ class HeuristicCounter:
 
 
 try:
-    import tiktoken
+    import tiktoken  # pyright: ignore[reportMissingImports]
 
     def _load_encoding(name: str) -> _Encoding:
         """Load a tiktoken encoding by name.
@@ -58,22 +59,26 @@ try:
         """
         return cast(_Encoding, tiktoken.get_encoding(name))
 
-    class _TiktokenCounter:
+    class _TiktokenCounter(TokenCounter):
         """Token counter using tiktoken library.
 
         Lazy imports tiktoken - must be installed separately:
             pip install relay[tiktoken]
 
+        Thread-safe: uses a lock for lazy encoder loading.
         Must call close() to release encoding resource.
         """
 
         def __init__(self, encoding: str = "cl100k_base") -> None:
             self._encoding = encoding
             self._enc: _Encoding | None = None
+            self._lock = threading.Lock()
 
         def _get_encoder(self) -> _Encoding:
             if self._enc is None:
-                self._enc = _load_encoding(self._encoding)
+                with self._lock:
+                    if self._enc is None:
+                        self._enc = _load_encoding(self._encoding)
             return self._enc
 
         def count(self, text: str) -> int:

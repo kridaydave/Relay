@@ -13,6 +13,7 @@ from contextlib import contextmanager
 from typing import Generator
 
 from relay.envelope import ContextEnvelope
+from relay.types import ErrorCode, Failure, Result, Success
 
 
 class PipelineState:
@@ -36,20 +37,17 @@ class PipelineState:
 
     @property
     def snapshot_ids(self) -> dict[int, str]:
-        self._assert_lock_held()
+        self.assert_lock_held()
         return dict(self._snapshot_ids)
 
     def register_snapshot(self, step: int, snapshot_id: str) -> None:
-        self._assert_lock_held()
+        self.assert_lock_held()
         self._snapshot_ids[step] = snapshot_id
 
     def current(self) -> ContextEnvelope | None:
         """Return the current envelope under lock."""
-        self._assert_lock_held()
-        return self._current_envelope
-
-    def _assert_lock_held(self) -> None:
         self.assert_lock_held()
+        return self._current_envelope
 
     def assert_lock_held(self) -> None:
         """Verify the transaction lock is held by the current thread.
@@ -57,9 +55,7 @@ class PipelineState:
         Raises RuntimeError if the caller does not hold the lock.
         """
         if threading.get_ident() != self._lock_owner:
-            raise RuntimeError(
-                "Lock must be held via transaction() context manager"
-            )
+            raise RuntimeError("Lock must be held via transaction() context manager")
 
     @contextmanager
     def transaction(self) -> Generator[ContextEnvelope | None, None, None]:
@@ -86,11 +82,11 @@ class PipelineState:
 
     def get_previous_envelopes(self) -> list[ContextEnvelope]:
         """Return a copy of the previous envelopes list under lock."""
-        self._assert_lock_held()
+        self.assert_lock_held()
         return list(self._previous_envelopes)
 
     def set_current(self, envelope: ContextEnvelope) -> None:
-        self._assert_lock_held()
+        self.assert_lock_held()
         self._current_envelope = envelope
 
     def push_current_to_history(self) -> None:
@@ -99,27 +95,35 @@ class PipelineState:
         Used by contradiction rollback to preserve the envelope for
         potential subsequent manual rollback.
         """
-        self._assert_lock_held()
+        self.assert_lock_held()
         if self._current_envelope is not None:
             self._previous_envelopes.append(self._current_envelope)
 
     def archive_and_set(self, new_envelope: ContextEnvelope) -> None:
-        self._assert_lock_held()
+        self.assert_lock_held()
         if self._current_envelope is not None:
             self._previous_envelopes.append(self._current_envelope)
         self._current_envelope = new_envelope
 
     def peek_last(self) -> ContextEnvelope | None:
-        self._assert_lock_held()
+        self.assert_lock_held()
         return self._previous_envelopes[-1] if self._previous_envelopes else None
 
-    def consume_last(self) -> ContextEnvelope:
-        self._assert_lock_held()
+    def consume_last(self) -> Result[ContextEnvelope]:
+        """Consume and return the last envelope from history.
+
+        Returns Success(envelope) if history is not empty, or Failure(NO_ROLLBACK_AVAILABLE).
+        Previously raised IndexError, violating Rule 3.1 (PH-08).
+        """
+        self.assert_lock_held()
         if not self._previous_envelopes:
-            raise IndexError("No previous envelopes to consume")
-        return self._previous_envelopes.pop()
+            return Failure(
+                reason="No previous envelopes to consume",
+                code=ErrorCode.NO_ROLLBACK_AVAILABLE,
+            )
+        return Success(self._previous_envelopes.pop())
 
     def has_history(self) -> bool:
         """Check if there are previous envelopes to rollback to under lock."""
-        self._assert_lock_held()
+        self.assert_lock_held()
         return len(self._previous_envelopes) > 0

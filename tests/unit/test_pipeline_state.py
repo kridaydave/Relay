@@ -7,7 +7,7 @@ import pytest
 
 from relay.envelope import RELAY_VERSION, ContextEnvelope
 from relay.pipeline_state import PipelineState
-from relay.types import JSONDict
+from relay.types import Failure, JSONDict, Success
 
 
 def create_mock_envelope(
@@ -40,7 +40,9 @@ class TestInitialization:
         with state.transaction() as _:
             assert state.current() is None
 
-    def test_initial_state_returns_no_history_when_checked(self, state: PipelineState) -> None:
+    def test_initial_state_returns_no_history_when_checked(
+        self, state: PipelineState
+    ) -> None:
         with state.transaction() as _:
             assert state.has_history() is False
 
@@ -67,7 +69,9 @@ class TestArchiveAndSet:
             assert len(history) == 1
             assert history[0] == env1
 
-    def test_first_envelope_has_no_archive_after_set(self, state: PipelineState) -> None:
+    def test_first_envelope_has_no_archive_after_set(
+        self, state: PipelineState
+    ) -> None:
         env1 = create_mock_envelope(1)
         with state.transaction() as _:
             state.archive_and_set(env1)
@@ -76,7 +80,9 @@ class TestArchiveAndSet:
 
 
 class TestSnapshotIds:
-    def test_snapshot_ids_dict_returns_empty_on_initialization(self, state: PipelineState) -> None:
+    def test_snapshot_ids_dict_returns_empty_on_initialization(
+        self, state: PipelineState
+    ) -> None:
         with state.transaction():
             assert state.snapshot_ids == {}
 
@@ -110,24 +116,29 @@ class TestConsumeLast:
         with state.transaction() as _:
             state.archive_and_set(env2)
         with state.transaction() as _:
-            consumed = state.consume_last()
-        assert consumed == env1
+            result = state.consume_last()
+        assert isinstance(result, Success)
+        assert result.value == env1
         with state.transaction() as _:
             history = state.get_previous_envelopes()
             assert len(history) == 0
 
-    def test_raises_index_error_when_history_empty(self, state: PipelineState) -> None:
+    def test_returns_failure_when_history_empty(self, state: PipelineState) -> None:
         with state.transaction() as _:
-            with pytest.raises(IndexError):
-                state.consume_last()
+            result = state.consume_last()
+            assert isinstance(result, Failure)
 
 
 class TestThreadSafety:
-    def test_transaction_lock_is_acquirable_when_called(self, state: PipelineState) -> None:
+    def test_transaction_lock_is_acquirable_when_called(
+        self, state: PipelineState
+    ) -> None:
         with state.transaction() as _:
             pass
 
-    def test_lock_prevents_concurrent_modification_when_held(self, state: PipelineState) -> None:
+    def test_lock_prevents_concurrent_modification_when_held(
+        self, state: PipelineState
+    ) -> None:
         env1 = create_mock_envelope(1)
         env2 = create_mock_envelope(2)
         errors: list[Exception] = []
@@ -161,7 +172,9 @@ class TestThreadSafety:
 
 
 class TestLockAssertions:
-    def test_set_current_outside_transaction_raises_runtime_error(self, state: PipelineState) -> None:
+    def test_set_current_outside_transaction_raises_runtime_error(
+        self, state: PipelineState
+    ) -> None:
         env = create_mock_envelope(1)
         with pytest.raises(RuntimeError, match="Lock must be held via transaction"):
             state.set_current(env)

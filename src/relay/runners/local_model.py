@@ -41,9 +41,7 @@ class _Client(Protocol):
     async def __aexit__(self, *_: object) -> None: ...
 
 
-_LOCALHOST_PATTERN = re.compile(
-    r"^(127\.\d{1,3}\.\d{1,3}\.\d{1,3}|localhost|::1)$"
-)
+_LOCALHOST_PATTERN = re.compile(r"^(127\.\d{1,3}\.\d{1,3}\.\d{1,3}|localhost|::1)$")
 _PRIVATE_IP_PATTERN = re.compile(
     r"^(10\.\d{1,3}\.\d{1,3}\.\d{1,3}|"
     r"172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|"
@@ -51,7 +49,7 @@ _PRIVATE_IP_PATTERN = re.compile(
 )
 
 
-@dataclass
+@dataclass(frozen=True)
 class LocalModelAdapter:
     """Adapter for OpenAI-compatible REST endpoints (Ollama, vLLM, etc.).
 
@@ -71,8 +69,9 @@ class LocalModelAdapter:
     timeout_seconds: float = 60.0
 
     def __post_init__(self) -> None:
-        self.base_url = self.base_url.rstrip("/")
-        _validate_base_url(self.base_url)
+        stripped = self.base_url.rstrip("/")
+        _validate_base_url(stripped)
+        object.__setattr__(self, "base_url", stripped)
 
     @classmethod
     def create(
@@ -82,11 +81,9 @@ class LocalModelAdapter:
         adapter_name: str = "local_model",
         timeout_seconds: float = 60.0,
     ) -> LocalModelAdapter:
-        """Factory method — validates and strips trailing slash from base_url."""
-        stripped = base_url.rstrip("/")
-        _validate_base_url(stripped)
+        """Factory method for creating and validating LocalModelAdapter."""
         return cls(
-            base_url=stripped,
+            base_url=base_url,
             model=model,
             adapter_name=adapter_name,
             timeout_seconds=timeout_seconds,
@@ -95,13 +92,15 @@ class LocalModelAdapter:
     def _build_payload(self, slice_: ContextSlice) -> JSONDict:
         return {
             "model": self.model,
-            "messages": [{"role": "user", "content": json.dumps(slice_.sections, indent=2)}],
+            "messages": [
+                {"role": "user", "content": json.dumps(slice_.sections, indent=2)}
+            ],
             "stream": False,
         }
 
     async def run(self, slice_: ContextSlice, manifest: AgentManifest) -> AgentOutput:
         try:
-            import httpx
+            import httpx  # pyright: ignore[reportMissingImports]
         except ImportError:
             raise ImportError(
                 "httpx is required for LocalModelAdapter. "
@@ -146,8 +145,11 @@ class LocalModelAdapter:
         else:
             token_count = slice_.token_count + len(text) // 3
         return AgentOutput(
-            text=text, structured=JSONDict(), tool_calls=[],
-            token_count=token_count, latency_ms=latency_ms,
+            text=text,
+            structured=JSONDict(),
+            tool_calls=[],
+            token_count=token_count,
+            latency_ms=latency_ms,
             adapter=self.adapter_name,
         )
 

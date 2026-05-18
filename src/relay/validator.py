@@ -42,12 +42,18 @@ class ValidationResult:
     confidence_score: float = 1.0
 
 
+@dataclass(frozen=True)
 class HandoffValidator:
     """Validates agent output and detects corruption.
 
     Owns: contradiction detection, diff computation, rollback triggering.
     Does NOT: sign envelopes, persist data, execute agents.
+
+    Stateless (frozen per Rule 2.4).
     """
+
+    hallucination_ratio_threshold: float | None = 2.0
+    hallucination_deletion_threshold: int | None = 3
 
     CRITICAL_KEYS: frozenset[str] = frozenset(
         {"entities", "actions", "facts", "constraints", "requirements"}
@@ -81,22 +87,6 @@ class HandoffValidator:
         }
     )
 
-    def __init__(
-        self,
-        hallucination_ratio_threshold: float | None = 2.0,
-        hallucination_deletion_threshold: int | None = 3,
-    ) -> None:
-        """Initialize the validator.
-
-        Args:
-            hallucination_ratio_threshold: Flag hallucination when new_entities / removed_entities
-                exceeds this ratio. None disables hallucination detection.
-            hallucination_deletion_threshold: Flag excessive deletion when more than this many
-                entities are removed with no additions. None disables this check.
-        """
-        self._hallucination_ratio_threshold = hallucination_ratio_threshold
-        self._hallucination_deletion_threshold = hallucination_deletion_threshold
-
     def validate_handoff(
         self, previous_envelope: ContextEnvelope, current_envelope: ContextEnvelope
     ) -> Result[ValidationResult]:
@@ -129,9 +119,7 @@ class HandoffValidator:
 
         REQUIRES: no lock — reads only immutable inputs.
         """
-        return self._validate_payloads(
-            previous_envelope.payload, new_payload
-        )
+        return self._validate_payloads(previous_envelope.payload, new_payload)
 
     def _validate_payloads(
         self,
@@ -149,9 +137,7 @@ class HandoffValidator:
         contradiction_details: str | None = None
         has_contradiction = False
 
-        hallucination_result = self._detect_hallucination(
-            previous_payload, new_payload
-        )
+        hallucination_result = self._detect_hallucination(previous_payload, new_payload)
         if hallucination_result:
             has_contradiction = True
             contradiction_details = hallucination_result
@@ -205,7 +191,7 @@ class HandoffValidator:
         outnumber removed ones, suggesting fabrication. Entity removal is valid and
         not flagged.
         """
-        if self._hallucination_ratio_threshold is None:
+        if self.hallucination_ratio_threshold is None:
             return None
 
         try:
@@ -223,13 +209,13 @@ class HandoffValidator:
         if new_count > 0:
             effective_removed = max(removed_count, 1)
             ratio = new_count / effective_removed
-            if ratio > self._hallucination_ratio_threshold:
+            if ratio > self.hallucination_ratio_threshold:
                 return f"Entity fabrication detected: {new_count} new, {removed_count} removed (ratio: {ratio:.1f}x)"
 
         if removed_count > 0 and new_count == 0:
             if (
-                self._hallucination_deletion_threshold is not None
-                and removed_count > self._hallucination_deletion_threshold
+                self.hallucination_deletion_threshold is not None
+                and removed_count > self.hallucination_deletion_threshold
             ):
                 return f"Excessive entity deletion detected: {removed_count} removed, 0 new"
 
@@ -316,7 +302,9 @@ class HandoffValidator:
 
         modified = sorted(modified)
 
-        return dict[str, object]({"added": added, "removed": removed, "modified": modified})
+        return dict[str, object](
+            {"added": added, "removed": removed, "modified": modified}
+        )
 
     def _check_critical_keys_missing(self, diff: JSONDict) -> str | None:
         """Flag if critical keys disappear."""
@@ -325,7 +313,9 @@ class HandoffValidator:
             removed: list[object] = removed_raw
         else:
             removed = []
-        missing_critical = [k for k in removed if isinstance(k, str) and k in self.CRITICAL_KEYS]
+        missing_critical = [
+            k for k in removed if isinstance(k, str) and k in self.CRITICAL_KEYS
+        ]
 
         if missing_critical:
             return f"Critical keys removed: {sorted(missing_critical)}"

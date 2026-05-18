@@ -152,7 +152,11 @@ class CoreRelayPipeline:
         if self.snapshot_store is not None:
             self._snapshot_store = self.snapshot_store
         else:
-            self._snapshot_store = LocalFileSnapshotStore(storage_path=self.storage_path)
+            self._snapshot_store = LocalFileSnapshotStore(
+                storage_path=self.storage_path,
+                signing_secret=self.signing_secret,
+                max_signature_age=self.max_signature_age,
+            )
         if self.audit_sink is not None:
             self._audit_sink = self.audit_sink
         else:
@@ -529,22 +533,26 @@ class CoreRelayPipeline:
         )
         if isinstance(sig_result, Failure):
             if sig_result.code == ErrorCode.STALE_SIGNATURE:
-                self._emit_audit_event(SignatureVerificationStale(
-                    pipeline_id=envelope.pipeline_id,
-                    step=envelope.step,
-                    envelope_age_seconds=(
-                        datetime.now(timezone.utc) - envelope.timestamp
-                    ).total_seconds(),
-                    max_age_seconds=self.max_signature_age,
-                ))
+                self._emit_audit_event(
+                    SignatureVerificationStale(
+                        pipeline_id=envelope.pipeline_id,
+                        step=envelope.step,
+                        envelope_age_seconds=(
+                            datetime.now(timezone.utc) - envelope.timestamp
+                        ).total_seconds(),
+                        max_age_seconds=self.max_signature_age,
+                    )
+                )
             return Failure(
                 reason="Cannot apply manifest to envelope with invalid or stale signature",
                 code=sig_result.code,
             )
-        self._emit_audit_event(SignatureVerificationPassed(
-            pipeline_id=envelope.pipeline_id,
-            step=envelope.step,
-        ))
+        self._emit_audit_event(
+            SignatureVerificationPassed(
+                pipeline_id=envelope.pipeline_id,
+                step=envelope.step,
+            )
+        )
         envelope_with_hash = envelope.with_manifest_hash(manifest_hash)
         signed = envelope_with_hash.with_signature(
             compute_signature(envelope_with_hash, self._context_broker.signing_secret)
@@ -604,7 +612,9 @@ class CoreRelayPipeline:
             )
         )
         if consume:
-            self._state.consume_last()
+            consume_result = self._state.consume_last()
+            if isinstance(consume_result, Failure):
+                return consume_result
         self._state.set_current(result.value)
         return result
 
@@ -769,11 +779,13 @@ class CoreRelayPipeline:
                 if isinstance(budget_result, Failure):
                     return budget_result
 
-            self._emit_audit_event(ForkStarted(
-                pipeline_id=self._pipeline_id,
-                step=pre_fork_envelope.step,
-                fork_count=len(fork_specs),
-            ))
+            self._emit_audit_event(
+                ForkStarted(
+                    pipeline_id=self._pipeline_id,
+                    step=pre_fork_envelope.step,
+                    fork_count=len(fork_specs),
+                )
+            )
 
         parallel_id = str(uuid.uuid4())
         fork_coros = [
@@ -788,7 +800,9 @@ class CoreRelayPipeline:
             for i, (spec, slice_) in enumerate(zip(fork_specs, fork_slices))
         ]
 
-        collected_fork_results: list[ForkResult] = list(await asyncio.gather(*fork_coros))
+        collected_fork_results: list[ForkResult] = list(
+            await asyncio.gather(*fork_coros)
+        )
 
         combined_hash = _combine_manifest_hashes([s.manifest for s in fork_specs])
 
@@ -798,16 +812,24 @@ class CoreRelayPipeline:
                 if result.agent_output is not None
                 else {}
             )
-            pre_scope = {k: v for k, v in pre_fork_envelope.payload.items()
-                          if k in (spec.manifest.reads | spec.manifest.writes)}
+            pre_scope = {
+                k: v
+                for k, v in pre_fork_envelope.payload.items()
+                if k in (spec.manifest.reads | spec.manifest.writes)
+            }
             keys_added = tuple(sorted(fork_payload.keys() - pre_scope.keys()))
             keys_removed = tuple(sorted(pre_scope.keys() - fork_payload.keys()))
 
             tools_used: tuple[str, ...] = ()
             if result.agent_output is not None and result.agent_output.tool_calls:
                 tools_used = tuple(
-                    sorted({str(t.get("name", "")) for t in result.agent_output.tool_calls
-                            if isinstance(t, dict)})
+                    sorted(
+                        {
+                            str(t.get("name", ""))
+                            for t in result.agent_output.tool_calls
+                            if isinstance(t, dict)
+                        }
+                    )
                 )
 
             branch_success = result.success
@@ -816,26 +838,30 @@ class CoreRelayPipeline:
             else:
                 merge_decision = "included"
 
-            self._emit_audit_event(BranchReceipt(
-                pipeline_id=self._pipeline_id,
-                step=pre_fork_envelope.step,
-                fork_index=i,
-                adapter_name=spec.adapter_name,
-                parent_snapshot_hash=pre_fork_envelope.manifest_hash or "",
-                final_snapshot_hash=combined_hash,
-                agent_id=spec.manifest.agent_id,
-                policy_hash=spec.manifest.compute_hash(),
-                tools_used=tools_used,
-                sections_read=tuple(sorted(spec.manifest.reads)),
-                sections_written=tuple(sorted(spec.manifest.writes)),
-                keys_added=keys_added,
-                keys_removed=keys_removed,
-                join_strategy=join_strategy.value,
-                merge_decision=merge_decision,
-                conflict_keys=(),
-                branch_success=branch_success,
-                branch_error=str(result.failure.code) if not branch_success and result.failure else "",
-            ))
+            self._emit_audit_event(
+                BranchReceipt(
+                    pipeline_id=self._pipeline_id,
+                    step=pre_fork_envelope.step,
+                    fork_index=i,
+                    adapter_name=spec.adapter_name,
+                    parent_snapshot_hash=pre_fork_envelope.manifest_hash or "",
+                    final_snapshot_hash=combined_hash,
+                    agent_id=spec.manifest.agent_id,
+                    policy_hash=spec.manifest.compute_hash(),
+                    tools_used=tools_used,
+                    sections_read=tuple(sorted(spec.manifest.reads)),
+                    sections_written=tuple(sorted(spec.manifest.writes)),
+                    keys_added=keys_added,
+                    keys_removed=keys_removed,
+                    join_strategy=join_strategy.value,
+                    merge_decision=merge_decision,
+                    conflict_keys=(),
+                    branch_success=branch_success,
+                    branch_error=str(result.failure.code)
+                    if not branch_success and result.failure
+                    else "",
+                )
+            )
 
         forks_succeeded = sum(1 for r in collected_fork_results if r.success)
 
@@ -855,22 +881,28 @@ class CoreRelayPipeline:
                     )
                 merged_result = Success(agent_output_to_payload(winner.agent_output))
         else:
-            merged_result = await apply_join_strategy(join_strategy, collected_fork_results, None)
+            merged_result = await apply_join_strategy(
+                join_strategy, collected_fork_results, None
+            )
 
-        self._emit_audit_event(ForkCompleted(
-            pipeline_id=self._pipeline_id,
-            step=pre_fork_envelope.step,
-            forks_succeeded=forks_succeeded,
-        ))
+        self._emit_audit_event(
+            ForkCompleted(
+                pipeline_id=self._pipeline_id,
+                step=pre_fork_envelope.step,
+                forks_succeeded=forks_succeeded,
+            )
+        )
 
         if isinstance(merged_result, Failure):
             return merged_result
 
-        self._emit_audit_event(JoinCompleted(
-            pipeline_id=self._pipeline_id,
-            step=pre_fork_envelope.step,
-            join_strategy=join_strategy.value,
-        ))
+        self._emit_audit_event(
+            JoinCompleted(
+                pipeline_id=self._pipeline_id,
+                step=pre_fork_envelope.step,
+                join_strategy=join_strategy.value,
+            )
+        )
 
         # Commit merged payload with fork metadata in a single transaction.
         # This avoids the race condition where another thread calling

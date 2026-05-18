@@ -1,13 +1,25 @@
 """Tests for LangChainAdapter."""
 
+import sys
+from typing import Generator, cast
 from unittest.mock import AsyncMock, MagicMock
-from typing import cast
 
 import pytest
 
 from relay.runners.langchain import LangChainAdapter
-from .conftest import make_test_manifest, make_test_slice
 from relay.types import JSONDict
+
+from .conftest import make_test_manifest, make_test_slice
+
+
+@pytest.fixture(autouse=True)
+def mock_langchain_core() -> Generator[None, None, None]:
+    """Mock langchain_core globally for these tests."""
+    mock = MagicMock()
+    sys.modules["langchain_core"] = mock
+    yield None
+    if "langchain_core" in sys.modules:
+        del sys.modules["langchain_core"]
 
 
 class TestLangChainAdapter:
@@ -25,8 +37,11 @@ class TestLangChainAdapter:
     @pytest.mark.asyncio
     async def test_falls_back_to_sync_invoke_when_ainvoke_absent(self) -> None:
         """Falls back to to_thread(invoke) when ainvoke not available."""
+
         class SyncRunnable:
-            def invoke(self, input_data: JSONDict) -> str: return "sync response"
+            def invoke(self, input_data: JSONDict) -> str:
+                return "sync response"
+
         output = await LangChainAdapter(runnable=SyncRunnable()).run(
             make_test_slice(), make_test_manifest()
         )
@@ -81,7 +96,9 @@ class TestLangChainAdapter:
         await LangChainAdapter(runnable=mock_runnable).run(
             make_test_slice(step=5, sections={"key": "val"}), make_test_manifest()
         )
-        call_args: dict[str, object] = cast(AsyncMock, mock_runnable.ainvoke).call_args[0][0]  # type: ignore[misc]
+        call_args: dict[str, object] = cast(AsyncMock, mock_runnable.ainvoke).call_args[
+            0
+        ][0]  # type: ignore[misc]
         assert isinstance(call_args, dict)
         assert "agent_id" in call_args
         assert "step" in call_args

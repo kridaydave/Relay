@@ -16,11 +16,19 @@ from relay.runners.protocol import AgentRunner
 from relay.types import ErrorCode, Failure, Result, Success
 
 
-@dataclass
+@dataclass(frozen=True)
 class AdapterRegistry:
-    """Registry of named AgentRunner instances."""
+    """Registry of named AgentRunner instances.
 
-    _adapters: dict[str, AgentRunner] = field(default_factory=dict, init=False, repr=False)
+    Note: This class is frozen per Rule 2.4, but its internal _adapters
+    mapping is intentionally mutable to allow registration after initialization.
+    Mutation of the mapping itself (the dict) is allowed in a frozen dataclass;
+    re-assignment of the _adapters attribute is forbidden.
+    """
+
+    _adapters: dict[str, AgentRunner] = field(
+        default_factory=dict, init=False, repr=False
+    )
 
     def register(self, name: str, adapter: AgentRunner) -> None:
         """Register an adapter under a given name.
@@ -58,7 +66,7 @@ class AdapterRegistry:
         if adapter is None:
             return Failure(
                 reason=f"No adapter registered under name '{name}'. "
-                       f"Registered: {self.list_names()}",
+                f"Registered: {self.list_names()}",
                 code=ErrorCode.ADAPTER_NOT_FOUND,
             )
         return Success(adapter)

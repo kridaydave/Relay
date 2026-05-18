@@ -24,11 +24,12 @@ from relay.types import JSONDict
 
 class _Runnable(Protocol):
     """Minimal Protocol for LangChain Runnables."""
+
     async def ainvoke(self, input: JSONDict) -> object: ...
     def invoke(self, input: JSONDict) -> object: ...
 
 
-@dataclass
+@dataclass(frozen=True)
 class LangChainAdapter:
     """Adapter wrapping a LangChain Runnable as an AgentRunner.
 
@@ -38,14 +39,16 @@ class LangChainAdapter:
         adapter_name: Name for this adapter in AgentOutput.
 
     Raises:
-        AttributeError at call time if langchain-core is not installed.
+        ImportError: If langchain-core is not installed (raised at call time).
     """
 
     runnable: object
     adapter_name: str = "langchain"
 
     def __post_init__(self) -> None:
-        if not hasattr(self.runnable, "ainvoke") and not hasattr(self.runnable, "invoke"):
+        if not hasattr(self.runnable, "ainvoke") and not hasattr(
+            self.runnable, "invoke"
+        ):
             raise ValueError(
                 "LangChainAdapter.runnable must satisfy the Runnable protocol "
                 "(require: ainvoke or invoke method)"
@@ -65,13 +68,22 @@ class LangChainAdapter:
         if isinstance(response, dict):
             response_dict = cast(JSONDict, response)
             text = response_dict.get("output", json.dumps(response))
-            structured: JSONDict = {k: v for k, v in response_dict.items() if k != "output"}
+            structured: JSONDict = {
+                k: v for k, v in response_dict.items() if k != "output"
+            }
             return str(text), structured
         content: object = getattr(response, "content", str(response))
         return str(content), JSONDict()
 
     async def run(self, slice_: ContextSlice, manifest: AgentManifest) -> AgentOutput:
         """Invoke the Runnable and return normalised output."""
+        try:
+            import langchain_core  # type: ignore[import-not-found]  # pyright: ignore[reportMissingImports]  # noqa: F401
+        except ImportError:
+            raise ImportError(
+                "langchain-core is required for LangChainAdapter. "
+                "Install with: pip install relay-middleware[langchain]"
+            )
         lc_input = self._build_input(slice_)
         runnable = cast(_Runnable, self.runnable)
         start = time.monotonic()
