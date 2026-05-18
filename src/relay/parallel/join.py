@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING, Coroutine, overload
 
 logger = logging.getLogger(__name__)
 
-from relay.envelope import ContextEnvelope
 from relay.parallel.types import ForkResult, ForkSpec, JoinStrategy, agent_output_to_payload
 from relay.types import ErrorCode, Failure, JSONDict, Result, Success
 

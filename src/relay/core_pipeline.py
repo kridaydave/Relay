@@ -15,7 +15,6 @@ from dataclasses import dataclass, field
 
 from relay.budget import HardCapEnforcer, TokenCounter
 from relay.context_broker import ContextBroker, create_context_broker
-from relay.types import create_signing_key
 from relay.envelope import (
     ContextEnvelope,
     compute_signature,
@@ -30,7 +29,7 @@ from relay.pipeline_rollback import RollbackHandler
 from relay.pipeline_state import PipelineState
 from relay.runners import AdapterRegistry
 from relay.runners.protocol import ContextSlice
-from relay.slicer import AgentManifest, SlicePacker
+from relay.slicer import AgentManifest
 from relay.snapshot import LocalFileSnapshotStore
 from relay.snapshot_protocol import SnapshotStore
 from relay.types import ErrorCode, Failure, JSONDict, Result, RollbackSuccess, Success
@@ -66,7 +65,6 @@ class CoreRelayPipeline:
     token_budget: int = 8000
     storage_path: str = "./relay_data/snapshots"
     token_counter: TokenCounter | None = None
-    slice_packer: SlicePacker | None = None
     registry: AdapterRegistry | None = None
     snapshot_store: SnapshotStore | None = None
 
@@ -85,7 +83,6 @@ class CoreRelayPipeline:
         token_budget: int = 8000,
         storage_path: str = "./relay_data/snapshots",
         token_counter: TokenCounter | None = None,
-        slice_packer: SlicePacker | None = None,
         registry: AdapterRegistry | None = None,
         snapshot_store: SnapshotStore | None = None,
     ) -> Result["CoreRelayPipeline"]:
@@ -106,7 +103,6 @@ class CoreRelayPipeline:
             token_budget=token_budget,
             storage_path=storage_path,
             token_counter=token_counter,
-            slice_packer=slice_packer,
             registry=registry,
             snapshot_store=snapshot_store,
         )
@@ -116,10 +112,13 @@ class CoreRelayPipeline:
     def __post_init__(self) -> None:
         self._pipeline_id = uuid.uuid4().hex
         self._state = PipelineState(pipeline_id=self._pipeline_id)
-        key = create_signing_key(self.signing_secret)
-        self._context_broker = ContextBroker(
-            keys={key.key_id: key}, token_budget_total=self.token_budget
+        broker_result = create_context_broker(
+            signing_secret=self.signing_secret,
+            token_budget_total=self.token_budget,
         )
+        if isinstance(broker_result, Failure):
+            raise ValueError(broker_result.reason)
+        self._context_broker = broker_result.value
         self._handoff_validator = HandoffValidator()
         if self.snapshot_store is not None:
             self._snapshot_store = self.snapshot_store
@@ -406,26 +405,6 @@ class CoreRelayPipeline:
         self._state.set_current(result.value)
         return result
 
-    def _slice_payload(
-        self, manifest: AgentManifest, current_envelope: ContextEnvelope | None
-    ) -> Result[str]:
-        """Slice the current payload based on the manifest and slice packer.
-
-        When no slice_packer is configured, serializes the full payload so budget
-        enforcement still has a realistic projection. When current_envelope is None
-        (initial step), returns the writes-based stub from _check_budget.
-        """
-        if self.slice_packer is None:
-            if current_envelope is None:
-                return Success("")
-            return Success(serialize_slice(current_envelope.payload))
-        if current_envelope is None:
-            return Success("")
-        pack_result = self.slice_packer.pack(current_envelope.payload, manifest)
-        if isinstance(pack_result, Failure):
-            return pack_result
-        return Success(serialize_slice(pack_result.value))
-
     def rollback(self) -> Result[ContextEnvelope]:
         """Rollback to the last clean state."""
         with self._state.transaction():
@@ -597,6 +576,11 @@ class CoreRelayPipeline:
                 return Failure(
                     reason="execute_parallel_step requires at least one prior sequential step",
                     code=ErrorCode.INVALID_STATE,
+                )
+            if current_envelope is not pre_fork_envelope:
+                return Failure(
+                    reason="Pipeline state changed during parallel execution — fork output invalidated",
+                    code=ErrorCode.MERGE_CONFLICT,
                 )
 
             result = self._context_broker.create_next_envelope(

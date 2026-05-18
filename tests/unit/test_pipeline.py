@@ -824,32 +824,6 @@ class TestPipelineBuildContextSlice:
         assert "z" not in slice_.sections
 
 
-class TestPipelineSlicePayload:
-    def test_slice_payload_returns_empty_when_no_packer(self, temp_storage: str) -> None:
-        pipeline = CoreRelayPipeline(
-            signing_secret="a" * 32, token_budget=8000, storage_path=temp_storage,
-        )
-        manifest = AgentManifest(
-            "a1", "task", frozenset(), frozenset(), max_tokens=100,
-        )
-        result = pipeline._slice_payload(manifest, None)
-        assert isinstance(result, Success)
-        assert result.value == ""
-
-    def test_slice_payload_returns_empty_when_no_envelope(self, temp_storage: str) -> None:
-        packer = MagicMock()
-        pipeline = CoreRelayPipeline(
-            signing_secret="a" * 32, token_budget=8000,
-            storage_path=temp_storage, slice_packer=packer,
-        )
-        manifest = AgentManifest(
-            "a1", "task", frozenset(), frozenset(), max_tokens=100,
-        )
-        result = pipeline._slice_payload(manifest, None)
-        assert isinstance(result, Success)
-        assert result.value == ""
-
-
 class TestPipelineExecuteStepWithRunner:
     @pytest.mark.asyncio
     async def test_fails_when_no_registry(self, temp_storage: str) -> None:

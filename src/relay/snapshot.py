@@ -183,6 +183,16 @@ class LocalFileSnapshotStore:
                     code=ErrorCode.SNAPSHOT_SAVE_FAILED,
                 )
             _O_NOFOLLOW = cast(int, getattr(os, 'O_NOFOLLOW', 0))
+            if not hasattr(os, 'O_NOFOLLOW'):
+                try:
+                    st = os.lstat(temp_path)
+                    if stat.S_ISLNK(st.st_mode):
+                        return Failure(
+                            reason=f"Symlink detected via lstat: {temp_path}",
+                            code=ErrorCode.SNAPSHOT_SAVE_FAILED,
+                        )
+                except OSError:
+                    pass
             fd = os.open(temp_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY | _O_NOFOLLOW, stat.S_IRUSR | stat.S_IWUSR)
             with os.fdopen(fd, "w") as f:
                 f.write(json_str)

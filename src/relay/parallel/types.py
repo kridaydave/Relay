@@ -10,7 +10,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 from relay.runners.protocol import AgentOutput
-from relay.types import Failure, JSONDict, Result
+from relay.types import Failure, JSONDict
 
 if TYPE_CHECKING:
     from relay.slicer.manifest import AgentManifest
