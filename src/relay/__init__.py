@@ -4,6 +4,7 @@ Owns: pipeline orchestration, snapshot management, budget enforcement.
 Does NOT: define agent behaviour, manage prompts, implement LLMs, or implement slicing.
 """
 
+from relay.audit import AuditEvent, AuditOutcome, AuditSink, JsonLogSink
 from relay.budget import HardCapEnforcer, TokenCounter
 from relay.context_broker import ContextBroker, create_context_broker
 from relay.core_pipeline import CoreRelayPipeline
@@ -20,6 +21,9 @@ from relay.validator import HandoffValidator
 
 __all__: list[str] = [
     "AgentManifest",
+    "AuditEvent",
+    "AuditOutcome",
+    "AuditSink",
     "ContextBroker",
     "ContextEnvelope",
     "CoreRelayPipeline",
@@ -30,6 +34,7 @@ __all__: list[str] = [
     "ForkSpec",
     "HandoffValidator",
     "HardCapEnforcer",
+    "JsonLogSink",
     "JoinStrategy",
     "PipelineState",
     "Result",

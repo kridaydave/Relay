@@ -13,6 +13,7 @@ import hashlib
 import uuid
 from dataclasses import dataclass, field
 
+from relay.audit import AuditEvent, AuditSink, JsonLogSink, PipelineClosed, PipelineCreated
 from relay.budget import HardCapEnforcer, TokenCounter
 from relay.context_broker import ContextBroker, create_context_broker
 from relay.envelope import (
@@ -67,12 +68,14 @@ class CoreRelayPipeline:
     token_counter: TokenCounter | None = None
     registry: AdapterRegistry | None = None
     snapshot_store: SnapshotStore | None = None
+    audit_sink: AuditSink | None = None
 
     _pipeline_id: str = field(init=False, repr=False)
     _state: PipelineState = field(init=False, repr=False)
     _context_broker: ContextBroker = field(init=False, repr=False)
     _handoff_validator: HandoffValidator = field(init=False, repr=False)
     _snapshot_store: SnapshotStore = field(init=False, repr=False)
+    _audit_sink: AuditSink = field(init=False, repr=False)
     _rollback_handler: RollbackHandler = field(init=False, repr=False)
     _enforcer: HardCapEnforcer | None = field(init=False, repr=False)
 
@@ -85,6 +88,7 @@ class CoreRelayPipeline:
         token_counter: TokenCounter | None = None,
         registry: AdapterRegistry | None = None,
         snapshot_store: SnapshotStore | None = None,
+        audit_sink: AuditSink | None = None,
     ) -> Result["CoreRelayPipeline"]:
         """Create a pipeline with Result-based error handling.
 
@@ -105,6 +109,7 @@ class CoreRelayPipeline:
             token_counter=token_counter,
             registry=registry,
             snapshot_store=snapshot_store,
+            audit_sink=audit_sink,
         )
         pipeline._context_broker = broker_result.value
         return Success(pipeline)
@@ -124,11 +129,17 @@ class CoreRelayPipeline:
             self._snapshot_store = self.snapshot_store
         else:
             self._snapshot_store = LocalFileSnapshotStore(storage_path=self.storage_path)
+        if self.audit_sink is not None:
+            self._audit_sink = self.audit_sink
+        else:
+            self._audit_sink = JsonLogSink()
         self._rollback_handler = RollbackHandler()
         if self.token_counter is not None:
             self._enforcer = HardCapEnforcer(self.token_counter)
         else:
             self._enforcer = None
+
+        self._emit_audit_event(PipelineCreated(pipeline_id=self._pipeline_id))
 
     @property
     def history(self) -> list[ContextEnvelope]:
@@ -152,8 +163,20 @@ class CoreRelayPipeline:
         """Release pipeline resources.
 
         Closes the snapshot store and releases token counter resources
-        if one was provided.
+        if one was provided. Emits pipeline_closed event before closing
+        the audit sink to ensure the event reaches the sink.
         """
+        current_step = 0
+        with self._state.transaction() as envelope:
+            if envelope is not None:
+                current_step = envelope.step
+        self._emit_audit_event(
+            PipelineClosed(
+                pipeline_id=self._pipeline_id,
+                step=current_step,
+            )
+        )
+        self._audit_sink.close()
         self._snapshot_store.close()
         if self.token_counter is not None:
             self.token_counter.close()
@@ -165,6 +188,14 @@ class CoreRelayPipeline:
     def __exit__(self, *_: object) -> None:
         """Exit the pipeline context and release resources."""
         self.close()
+
+    def _emit_audit_event(self, event: AuditEvent) -> None:
+        """Emit an audit event with fire-and-forget semantics.
+
+        Delegates to the configured audit sink. Errors are logged by
+        the sink implementation and never propagated per D-06.
+        """
+        self._audit_sink.emit(event)
 
     def execute_step(self, agent_output: JSONDict) -> Result[ContextEnvelope]:
         """Execute a pipeline step with agent output."""
