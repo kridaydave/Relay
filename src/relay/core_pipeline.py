@@ -18,6 +18,9 @@ from relay.audit import (
     AuditSink,
     BudgetCheckFailed,
     BudgetCheckPassed,
+    ForkCompleted,
+    ForkStarted,
+    JoinCompleted,
     JsonLogSink,
     PipelineClosed,
     PipelineCreated,
@@ -728,6 +731,12 @@ class CoreRelayPipeline:
                 if isinstance(budget_result, Failure):
                     return budget_result
 
+            self._emit_audit_event(ForkStarted(
+                pipeline_id=self._pipeline_id,
+                step=pre_fork_envelope.step,
+                fork_count=len(fork_specs),
+            ))
+
         parallel_id = str(uuid.uuid4())
         fork_coros = [
             run_single_fork(
@@ -751,13 +760,29 @@ class CoreRelayPipeline:
                 ],
             )
             forks_succeeded = 1 if isinstance(merged_result, Success) else 0
+            self._emit_audit_event(ForkCompleted(
+                pipeline_id=self._pipeline_id,
+                step=pre_fork_envelope.step,
+                forks_succeeded=forks_succeeded,
+            ))
         else:
             collected: list[ForkResult] = list(await asyncio.gather(*fork_coros))
             forks_succeeded = sum(1 for r in collected if r.success)
+            self._emit_audit_event(ForkCompleted(
+                pipeline_id=self._pipeline_id,
+                step=pre_fork_envelope.step,
+                forks_succeeded=forks_succeeded,
+            ))
             merged_result = await apply_join_strategy(join_strategy, collected, None)
 
         if isinstance(merged_result, Failure):
             return merged_result
+
+        self._emit_audit_event(JoinCompleted(
+            pipeline_id=self._pipeline_id,
+            step=pre_fork_envelope.step,
+            join_strategy=join_strategy.value,
+        ))
 
         combined_hash = _combine_manifest_hashes([s.manifest for s in fork_specs])
 
