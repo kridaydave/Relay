@@ -211,7 +211,7 @@ class TestCreateNextEnvelope:
 
 
 class TestVerifySignature:
-    def test_verify_signature_returns_true_for_valid_signature(
+    def test_verify_signature_returns_success_for_valid_signature(
         self, secret: str, initial_payload: JSONDict
     ) -> None:
         first = create_initial_envelope(
@@ -223,9 +223,10 @@ class TestVerifySignature:
         assert isinstance(first, Success)
         envelope = first.value
 
-        assert verify_signature(envelope, secret) is True
+        result = verify_signature(envelope, secret)
+        assert isinstance(result, Success)
 
-    def test_verify_signature_returns_false_for_invalid_signature(
+    def test_verify_signature_returns_failure_for_invalid_signature(
         self, secret: str, initial_payload: JSONDict
     ) -> None:
         first = create_initial_envelope(
@@ -237,7 +238,8 @@ class TestVerifySignature:
         assert isinstance(first, Success)
         envelope = first.value
 
-        assert verify_signature(envelope, "wrong-secret") is False
+        result = verify_signature(envelope, "wrong-secret")
+        assert isinstance(result, Failure)
 
     def test_verify_signature_fails_on_tampered_budget(self, secret: str, initial_payload: JSONDict) -> None:
         first = create_initial_envelope(
@@ -261,7 +263,8 @@ class TestVerifySignature:
             signature=envelope.signature,
         )
 
-        assert verify_signature(tampered, secret) is False
+        result = verify_signature(tampered, secret)
+        assert isinstance(result, Failure)
 
     def test_verify_signature_passes_when_envelope_is_fresh_and_within_max_age(
         self, secret: str, initial_payload: JSONDict
@@ -275,9 +278,10 @@ class TestVerifySignature:
         assert isinstance(first, Success)
         envelope = first.value
 
-        assert verify_signature(envelope, secret, max_age_seconds=3600) is True
+        result = verify_signature(envelope, secret, max_age_seconds=3600)
+        assert isinstance(result, Success)
 
-    def test_verify_signature_fails_when_envelope_is_stale_and_exceeds_max_age(
+    def test_verify_signature_returns_stale_signature_when_envelope_exceeds_max_age(
         self, secret: str, initial_payload: JSONDict
     ) -> None:
         old_ts = datetime(2020, 1, 1, tzinfo=timezone.utc)
@@ -305,7 +309,9 @@ class TestVerifySignature:
             signature=signed,
         )
 
-        assert verify_signature(stale, secret, max_age_seconds=1) is False
+        result = verify_signature(stale, secret, max_age_seconds=1)
+        assert isinstance(result, Failure)
+        assert result.code == ErrorCode.STALE_SIGNATURE
 
     def test_verify_signature_passes_when_max_age_is_none_regardless_of_age(
         self, secret: str, initial_payload: JSONDict
@@ -335,7 +341,8 @@ class TestVerifySignature:
             signature=signed,
         )
 
-        assert verify_signature(stale, secret, max_age_seconds=None) is True
+        result = verify_signature(stale, secret, max_age_seconds=None)
+        assert isinstance(result, Success)
 
 
 class TestTokenEstimation:

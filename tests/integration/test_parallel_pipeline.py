@@ -148,7 +148,7 @@ class TestParallelPipeline:
 
         assert isinstance(result, Success)
         envelope = result.value
-        assert verify_signature(envelope, "a" * 32)
+        assert isinstance(verify_signature(envelope, "a" * 32), Success)
 
     def test_sequential_step_after_parallel_step_advances_correctly(self, tmp_path: Path) -> None:
         """Sequential execute_step after execute_parallel_step works as normal."""
