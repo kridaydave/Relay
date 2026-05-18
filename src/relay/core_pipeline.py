@@ -630,6 +630,7 @@ class CoreRelayPipeline:
         adapter = adapter_result.value
 
         with self._state.transaction() as current_envelope:
+            assert current_envelope is not None
             step = current_envelope.step + 1
             self._emit_audit_event(
                 StepExecutionStarted(
