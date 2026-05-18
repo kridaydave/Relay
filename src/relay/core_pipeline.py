@@ -13,7 +13,23 @@ import hashlib
 import uuid
 from dataclasses import dataclass, field
 
-from relay.audit import AuditEvent, AuditSink, JsonLogSink, PipelineClosed, PipelineCreated
+from relay.audit import (
+    AuditEvent,
+    AuditSink,
+    BudgetCheckFailed,
+    BudgetCheckPassed,
+    JsonLogSink,
+    PipelineClosed,
+    PipelineCreated,
+    RollbackCompleted,
+    RollbackTriggered,
+    SnapshotSaved,
+    StepExecutionFailed,
+    StepExecutionStarted,
+    StepExecutionSucceeded,
+    ValidationContradiction,
+    ValidationPassed,
+)
 from relay.budget import HardCapEnforcer, TokenCounter
 from relay.context_broker import ContextBroker, create_context_broker
 from relay.envelope import (
@@ -207,13 +223,66 @@ class CoreRelayPipeline:
         manifest: AgentManifest | None = None,
     ) -> Result[ContextEnvelope]:
         """Execute a pipeline step with optional manifest for budget/boundary validation."""
+        step: int = 1
+        agent_name: str = ""
         with self._state.transaction() as current_envelope:
+            agent_name = manifest.agent_id if manifest else ""
             if current_envelope is None:
-                return self._handle_initial_step(agent_output, manifest)
+                step = 1
+                self._emit_audit_event(
+                    StepExecutionStarted(
+                        pipeline_id=self._pipeline_id,
+                        step=step,
+                        adapter_name="",
+                        agent_name=agent_name,
+                    )
+                )
+                result = self._handle_initial_step(agent_output, manifest)
+            else:
+                step = current_envelope.step + 1
+                self._emit_audit_event(
+                    StepExecutionStarted(
+                        pipeline_id=self._pipeline_id,
+                        step=step,
+                        adapter_name="",
+                        agent_name=agent_name,
+                    )
+                )
+                result = self._handle_subsequent_step(
+                    current_envelope, agent_output, manifest
+                )
 
-            return self._handle_subsequent_step(
-                current_envelope, agent_output, manifest
+        if isinstance(result, Success):
+            self._emit_audit_event(
+                StepExecutionSucceeded(
+                    pipeline_id=self._pipeline_id,
+                    step=step,
+                    adapter_name="",
+                    agent_name=agent_name,
+                )
             )
+        elif isinstance(result, RollbackSuccess):
+            self._emit_audit_event(
+                StepExecutionFailed(
+                    pipeline_id=self._pipeline_id,
+                    step=step,
+                    adapter_name="",
+                    agent_name=agent_name,
+                    error_code="ROLLBACK",
+                )
+            )
+        elif isinstance(result, Failure):
+            self._emit_audit_event(
+                StepExecutionFailed(
+                    pipeline_id=self._pipeline_id,
+                    step=step,
+                    adapter_name="",
+                    agent_name=agent_name,
+                    error_code=result.code.value,
+                )
+            )
+
+        return result
 
     def _handle_initial_step(
         self,
@@ -295,7 +364,13 @@ class CoreRelayPipeline:
         When current_envelope is None (initial step), token_budget_used is 0
         and projection is based on agent_output (the actual payload).
         """
+        _audit_budget_triggered = False
+        audit_step = (current_envelope.step + 1) if current_envelope is not None else 1
+        budget_used = (
+            current_envelope.token_budget_used if current_envelope is not None else 0
+        )
         if manifest is not None and self._enforcer is not None:
+            _audit_budget_triggered = True
             if current_envelope is not None:
                 projected = serialize_slice(
                     dict[str, object]({s: "<output>" for s in manifest.writes})
@@ -308,21 +383,32 @@ class CoreRelayPipeline:
                         dict[str, object]({s: "<slice>" for s in manifest.writes})
                     )
                 )
-            budget_used = (
-                current_envelope.token_budget_used
-                if current_envelope is not None
-                else 0
-            )
             enforcer_result = self._enforcer.check(
                 budget_used, self.token_budget, projected
             )
             if isinstance(enforcer_result, Failure):
+                self._emit_audit_event(
+                    BudgetCheckFailed(
+                        pipeline_id=self._pipeline_id,
+                        step=audit_step,
+                        budget_used=budget_used,
+                        budget_limit=self.token_budget,
+                    )
+                )
                 return enforcer_result
 
             # Per-agent max_tokens check (manifest.max_tokens).
             if manifest.max_tokens is not None:
                 projected_cost = self._enforcer.counter.count(projected)
                 if projected_cost > manifest.max_tokens:
+                    self._emit_audit_event(
+                        BudgetCheckFailed(
+                            pipeline_id=self._pipeline_id,
+                            step=audit_step,
+                            budget_used=budget_used,
+                            budget_limit=manifest.max_tokens,
+                        )
+                    )
                     return Failure(
                         reason=(
                             f"Agent budget exceeded: projected {projected_cost} tokens "
@@ -330,6 +416,15 @@ class CoreRelayPipeline:
                         ),
                         code=ErrorCode.TOKEN_BUDGET_EXCEEDED,
                     )
+        if _audit_budget_triggered:
+            self._emit_audit_event(
+                BudgetCheckPassed(
+                    pipeline_id=self._pipeline_id,
+                    step=audit_step,
+                    budget_used=budget_used,
+                    budget_limit=self.token_budget,
+                )
+            )
         return Success(None)
 
     def _finalize_step(
@@ -495,14 +590,41 @@ class CoreRelayPipeline:
         adapter = adapter_result.value
 
         with self._state.transaction() as current_envelope:
+            step = current_envelope.step + 1
+            self._emit_audit_event(
+                StepExecutionStarted(
+                    pipeline_id=self._pipeline_id,
+                    step=step,
+                    adapter_name=adapter_name,
+                    agent_name=manifest.agent_id,
+                )
+            )
             slice_ = self._build_context_slice(current_envelope, manifest)
             budget_result = self._check_budget(manifest, current_envelope)
             if isinstance(budget_result, Failure):
+                self._emit_audit_event(
+                    StepExecutionFailed(
+                        pipeline_id=self._pipeline_id,
+                        step=step,
+                        adapter_name=adapter_name,
+                        agent_name=manifest.agent_id,
+                        error_code=budget_result.code.value,
+                    )
+                )
                 return budget_result
 
         try:
             agent_output = await adapter.run(slice_, manifest)
         except Exception as e:
+            self._emit_audit_event(
+                StepExecutionFailed(
+                    pipeline_id=self._pipeline_id,
+                    step=step,
+                    adapter_name=adapter_name,
+                    agent_name=manifest.agent_id,
+                    error_code=ErrorCode.ADAPTER_EXECUTION_FAILED.value,
+                )
+            )
             return Failure(
                 reason=f"Adapter '{adapter_name}' failed: {type(e).__name__}: {e}",
                 code=ErrorCode.ADAPTER_EXECUTION_FAILED,
