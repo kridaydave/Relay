@@ -55,6 +55,17 @@ class TestAuditEvents:
         event = StepExecutionStarted(pipeline_id="test-123", step=1)
         assert event.event_type == "step_execution_started"
 
+    def test_step_execution_started_has_adapter_and_agent(self) -> None:
+        """StepExecutionStarted must carry adapter_name and agent_name."""
+        event = StepExecutionStarted(
+            pipeline_id="test-123",
+            step=1,
+            adapter_name="test-adapter",
+            agent_name="test-agent",
+        )
+        assert event.adapter_name == "test-adapter"
+        assert event.agent_name == "test-agent"
+
     def test_step_execution_succeeded_has_correct_event_type(self) -> None:
         """StepExecutionSucceeded must have event_type 'step_execution_succeeded'."""
         event = StepExecutionSucceeded(pipeline_id="test-123", step=1)
@@ -100,6 +111,17 @@ class TestAuditEvents:
         event = ValidationContradiction(pipeline_id="test-123", step=1)
         assert event.event_type == "validation_contradiction"
 
+    def test_validation_contradiction_has_diff_summary(self) -> None:
+        """ValidationContradiction must carry contradiction_type and diff_summary."""
+        event = ValidationContradiction(
+            pipeline_id="test-123",
+            step=1,
+            contradiction_type="entity_mismatch",
+            diff_summary="Agent output contradicts in 3 fields",
+        )
+        assert event.contradiction_type == "entity_mismatch"
+        assert event.diff_summary == "Agent output contradicts in 3 fields"
+
     def test_rollback_triggered_has_correct_event_type(self) -> None:
         """RollbackTriggered must have event_type 'rollback_triggered'."""
         event = RollbackTriggered(pipeline_id="test-123", step=1)
@@ -142,6 +164,17 @@ class TestAuditEvents:
         """SnapshotSaved must have event_type 'snapshot_saved'."""
         event = SnapshotSaved(pipeline_id="test-123", step=1)
         assert event.event_type == "snapshot_saved"
+
+    def test_snapshot_saved_has_snapshot_id(self) -> None:
+        """SnapshotSaved must carry snapshot_id and snapshot_size_bytes."""
+        event = SnapshotSaved(
+            pipeline_id="test-123",
+            step=1,
+            snapshot_id="snap_xyz",
+            snapshot_size_bytes=1024,
+        )
+        assert event.snapshot_id == "snap_xyz"
+        assert event.snapshot_size_bytes == 1024
 
     def test_signature_verification_passed_has_correct_event_type(self) -> None:
         """SignatureVerificationPassed must have event_type 'signature_verification_passed'."""
@@ -209,6 +242,30 @@ class TestAuditEvents:
         for e in events:
             assert e.timestamp, f"{e.event_type} has empty timestamp"
             datetime.fromisoformat(e.timestamp)
+
+    def test_all_events_have_event_type_string(self) -> None:
+        """Every event type must have event_type matching its class name in snake_case."""
+        cases: list[tuple[AuditEvent, str]] = [
+            (PipelineCreated(pipeline_id="p"), "pipeline_created"),
+            (PipelineClosed(pipeline_id="p"), "pipeline_closed"),
+            (StepExecutionStarted(pipeline_id="p", step=1), "step_execution_started"),
+            (StepExecutionSucceeded(pipeline_id="p", step=1), "step_execution_succeeded"),
+            (StepExecutionFailed(pipeline_id="p", step=1), "step_execution_failed"),
+            (BudgetCheckPassed(pipeline_id="p", step=1), "budget_check_passed"),
+            (BudgetCheckFailed(pipeline_id="p", step=1), "budget_check_failed"),
+            (ValidationPassed(pipeline_id="p", step=1), "validation_passed"),
+            (ValidationContradiction(pipeline_id="p", step=1), "validation_contradiction"),
+            (RollbackTriggered(pipeline_id="p", step=1), "rollback_triggered"),
+            (RollbackCompleted(pipeline_id="p", step=1), "rollback_completed"),
+            (ForkStarted(pipeline_id="p", step=1), "fork_started"),
+            (ForkCompleted(pipeline_id="p", step=1), "fork_completed"),
+            (JoinCompleted(pipeline_id="p", step=1), "join_completed"),
+            (SnapshotSaved(pipeline_id="p", step=1), "snapshot_saved"),
+            (SignatureVerificationPassed(pipeline_id="p", step=1), "signature_verification_passed"),
+            (SignatureVerificationStale(pipeline_id="p", step=1), "signature_verification_stale"),
+        ]
+        for event, expected in cases:
+            assert event.event_type == expected, f"{type(event).__name__}.event_type should be '{expected}', got '{event.event_type}'"
 
     def test_all_events_have_default_outcome(self) -> None:
         """Every event type must have a reasonable default outcome."""
