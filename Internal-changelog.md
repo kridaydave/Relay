@@ -47,14 +47,18 @@
 - Commit `96de10b` — `fix(tests): rename 50 tests to full sentences per Rule 7.1`
 - All 422 unit tests pass, mypy clean
 
-### BranchReceipt Audit Event — Design Phase
-- Identified gap: current fork-join audit (ForkStarted/ForkCompleted/JoinCompleted) provides aggregate counts but not per-branch audit trail
-- Designed new `BranchReceipt` frozen dataclass event — one per fork, capturing parent/final snapshot hashes, agent ID + policy, tools/files touched, claims delta, conflicts, join rule, merge decision, and outcome
-- Design doc written to `docs/superpowers/specs/2026-05-18-branch-receipt-event-design.md`
-- User approved design; pending implementation
+### BranchReceipt Audit Event — Implementation
+- **Design phase**: Identified gap, designed `BranchReceipt` frozen dataclass event, wrote design doc to `docs/superpowers/specs/2026-05-18-branch-receipt-event-design.md`, user approved
+- **Task 1** (commit `0260996`): Added `BranchReceipt` dataclass to `events.py` with 22 fields, added to `AuditEvent` union + `__all__`, 4 construction tests. Code review fix in `01557e6`.
+- **Task 2** (commit `d0841e1`): `_apply_first_wins` returns `tuple[Result[JSONDict], list[ForkResult]]`. `apply_join_strategy` public signature unchanged.
+- **Task 3** (commit `9628159`): `execute_parallel_step` emits one `BranchReceipt` per fork after all forks complete. FIRST_WINS runs all forks (no early cancellation). Added `BranchReceipt` export to `relay/audit/__init__.py`. All 426 tests pass, mypy clean.
+- **Task 4 fixes** (commit `734622c`): Added `isinstance(join_strategy, JoinStrategy)` early validation in `execute_parallel_step`. Fixed FIRST_WINS integration timing test for all-forks-run behavior. 454 tests pass, mypy clean.
+- Implementation plan at `docs/superpowers/plans/2026-05-18-branch-receipt-event.md`
+- Public changelog v0.5.1 updated with full implementation details
 
-### Changelog
-- Updated `CHANGELOG.md` with v0.5.1 section covering test name fixes and BranchReceipt design
+### Integration Test Fixes
+- `test_parallel_step_with_invalid_join_strategy_returns_failure` — added early validation in `execute_parallel_step` (before `.value` access) to return `Failure(INVALID_JOIN_STRATEGY)` for raw strings
+- `test_first_wins_commits_envelope_before_slow_fork_completes` → `test_first_wins_commits_envelope_after_all_forks_complete` — timing assertion changed from `< 1.0` to `>= 2.0`
 
 ## 2026-05-17 (Pre-Phase 01)
 

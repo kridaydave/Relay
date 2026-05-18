@@ -7,11 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.5.1] - 2026-05-18
 
-### Added (Design — not yet implemented)
-- **`BranchReceipt` audit event** — Per-branch audit receipt for fork-join steps, approved as new event type to make merge decisions auditable without replaying runs. Each receipt carries: parent/final snapshot hashes, agent_id + policy_hash, tools/files touched, claims delta, conflicts detected, join rule applied, merge decision, and branch outcome. Design doc written to `docs/superpowers/specs/`.
+### Added
+- **`BranchReceipt` audit event** — Per-branch audit receipt for fork-join steps, making merge decisions auditable without replaying runs. Each receipt carries: parent/final snapshot hashes, agent_id + policy_hash, tools/files touched, claims delta, conflicts detected, join rule applied, merge decision, and branch outcome. The `execute_parallel_step` method emits one `BranchReceipt` per fork after all forks complete. (4 commits: `0260996`, `01557e6`, `d0841e1`, `9628159`)
+- **`_apply_first_wins` returns collected `ForkResult` list** — Private API change to support BranchReceipt emission. `apply_join_strategy` public signature unchanged.
+
+### Changed
+- **FIRST_WINS runs all forks to completion** — No longer cancels remaining in-flight tasks. All branches are audited with a `BranchReceipt` regardless of which fork wins. Trade-off: adds latency for slow/cancelled branches but enables complete audit trail.
+- **join_strategy early validation** — `execute_parallel_step` validates `join_strategy` is a `JoinStrategy` enum before entering the transaction, returning `Failure(INVALID_JOIN_STRATEGY)` for raw strings or invalid values.
 
 ### Fixed
 - **50 test name violations** in `test_audit_events.py`, `test_audit_redactor.py`, `test_audit_sink.py` — renamed to full sentences per Rule 7.1 (heuristic: ≥4 segments + connecting word). All tests pass, mypy clean.
+- **Integration test for invalid join strategy** — `test_parallel_step_with_invalid_join_strategy_returns_failure` now passes because `execute_parallel_step` validates up front before reaching `join_strategy.value` attribute access.
+- **FIRST_WINS timing test** — `test_first_wins_commits_envelope_before_slow_fork_completes` renamed to `test_first_wins_commits_envelope_after_all_forks_complete` with `duration >= 2.0` assertion reflecting all-forks-run behavior.
 
 ## [0.5.0] - 2026-05-17
 
