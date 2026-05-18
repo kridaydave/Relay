@@ -164,19 +164,6 @@ The research strongly suggests a 7-phase structure with clear dependency orderin
 - **PITFALL-20:** Versioned snapshots with migration functions for schema evolution.
 - **PITFALL-21:** Retention policy (`KeepLastN`, `KeepByAge`), `purge_before()` API.
 
-### Research Flags
-
-Phases likely needing deeper research during planning:
-- **Phase 4 (OTEL):** RECOMMEND `/gsd-plan-phase --research-phase otel` — OTEL context propagation across thread boundaries (PITFALL-4) is subtle and needs specific testing with Relay's adapter architecture. Span overhead budgeting (PITFALL-3) needs microbenchmarks to validate <10ms overhead budget.
-- **Phase 7 (Pluggable backends):** RECOMMEND `/gsd-plan-phase --research-phase backends` — async/sync Protocol decision (PITFALL-9), consistency model design (PITFALL-10), and connection pooling strategy (PITFALL-11) need dedicated research before implementation. Each backend has unique failure modes.
-
-Phases with well-documented patterns (skip additional research-phase):
-- **Phase 1 (SnapshotStore Protocol):** Standard Protocol extraction. The ARCHITECTURE research provides complete implementation guidance.
-- **Phase 2 (Audit):** Standard callback/hook pattern. Research is comprehensive.
-- **Phase 3 (Pytest Plugin):** Standard pytest plugin patterns. Research covers all edge cases.
-- **Phase 5 (CLI):** Standard CLI patterns with `argparse`. Well-understood.
-- **Phase 6 (Performance gates):** Standard `pytest-benchmark` usage. No research needed.
-
 ---
 
 ## Confidence Assessment
@@ -192,7 +179,7 @@ Phases with well-documented patterns (skip additional research-phase):
 
 ### Gaps to Address
 
-1. **Async vs sync SnapshotStore Protocol (PITFALL-9):** ARCHITECTURE says sync (rationale: lock architecture, mature sync clients). PITFALLS says async (rationale: event loop contamination for Redis/Postgres/S3). **Resolution needed before v0.6.** Recommended approach: start sync (per ARCHITECTURE) since v0.6 is not imminent, but design the Protocol to allow an `AsyncSnapshotStore` subtype later. Flagged for `/gsd-plan-phase --research-phase backends`.
+1. **Async vs sync SnapshotStore Protocol (PITFALL-9):** ARCHITECTURE says sync (rationale: lock architecture, mature sync clients). PITFALLS says async (rationale: event loop contamination for Redis/Postgres/S3). **Resolution needed before v0.6.** Recommended approach: start sync (per ARCHITECTURE) since v0.6 is not imminent, but design the Protocol to allow an `AsyncSnapshotStore` subtype later.
 
 2. **CLI framework decision:** Both `argparse` and `click` work. The STACK researcher leans argparse for zero-dependency CLI. This needs confirmation during Phase 5 planning but is low-impact — either choice can be implemented in <50 lines.
 

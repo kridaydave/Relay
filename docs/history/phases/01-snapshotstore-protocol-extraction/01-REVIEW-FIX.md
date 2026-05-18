@@ -1,7 +1,7 @@
 ---
 phase: 01-snapshotstore-protocol-extraction
 fixed_at: 2026-05-17T22:00:00Z
-review_path: .planning/phases/01-snapshotstore-protocol-extraction/01-REVIEW.md
+review_path: docs/history/01-snapshotstore-protocol-extraction/01-REVIEW.md
 iteration: 1
 findings_in_scope: 4
 fixed: 4
@@ -12,7 +12,7 @@ status: all_fixed
 # Phase 01: SnapshotStore Protocol Extraction — Code Review Fix Report
 
 **Fixed at:** 2026-05-17T22:00:00Z
-**Source review:** `.planning/phases/01-snapshotstore-protocol-extraction/01-REVIEW.md`
+**Source review:** `docs/history/01-snapshotstore-protocol-extraction/01-REVIEW.md`
 **Iteration:** 1
 
 **Summary:**

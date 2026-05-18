@@ -109,7 +109,7 @@ None - no external service configuration required.
 
 - ✅ `src/relay/core_pipeline.py` exists and modified (snapshot_store field, __post_init__, create(), close())
 - ✅ `tests/unit/test_pipeline.py` exists and modified (5 new wiring tests)
-- ✅ `.planning/phases/01-snapshotstore-protocol-extraction/01-03-SUMMARY.md` exists (4756 bytes)
+- ✅ `docs/history/01-snapshotstore-protocol-extraction/01-03-SUMMARY.md` exists (4756 bytes)
 - ✅ Commit `6245450` exists (feat: add snapshot_store field injection)
 - ✅ Commit `1e0aa2e` exists (test: add pipeline snapshot_store wiring tests)
 - ✅ `mypy --strict src/relay` — Success: no issues found in 30 source files

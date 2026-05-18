@@ -117,4 +117,3 @@ Plans:
 ---
 
 *Created: 2026-05-17*
-*Next: `/gsd-discuss-phase 1` to gather context and clarify approach, or `/gsd-plan-phase 1` to plan directly.*

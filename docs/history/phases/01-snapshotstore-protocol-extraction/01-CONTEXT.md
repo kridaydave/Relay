@@ -54,7 +54,7 @@ Refactor the existing `SnapshotStore` class into a `@runtime_checkable` Protocol
 - `tests/conftest.py` — Existing test doubles pattern (`FixedCounter`, `FixedEmbeddingProvider`)
 
 ### Requirements
-- `.planning/REQUIREMENTS.md` — STO-01 through STO-04 with traceability
+- `docs/REQUIREMENTS.md` — STO-01 through STO-04 with traceability
 
 </canonical_refs>
 

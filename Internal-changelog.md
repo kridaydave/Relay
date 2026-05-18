@@ -17,7 +17,7 @@
 
 ### Full Codebase Review
 - Conducted comprehensive review of all 31 source modules + 24 test files
-- Full report at `.planning/FULL-CODEBASE-REVIEW.md`
+- Full report at `docs/audits/2026-05-17-full-codebase-review.md`
 
 ## 2026-05-17 (Phase 01 Fixes)
 

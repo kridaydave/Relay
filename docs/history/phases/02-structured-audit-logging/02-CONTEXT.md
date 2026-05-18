@@ -60,10 +60,10 @@ Emit structured, redacted audit events from pipeline lifecycle with a pluggable 
 **Downstream agents MUST read these before planning or implementing.**
 
 ### Requirements
-- `.planning/REQUIREMENTS.md` — AUD-01 through AUD-04, SEC-12 with full traceability
+- `docs/REQUIREMENTS.md` — AUD-01 through AUD-04, SEC-12 with full traceability
 
 ### Roadmap
-- `.planning/ROADMAP.md` — Phase 2 goal, success criteria, mode (mvp)
+- `docs/ROADMAP.md` — Phase 2 goal, success criteria, mode (mvp)
 
 ### Source files (pipeline lifecycle — audit integration points)
 - `src/relay/core_pipeline.py` — All lifecycle methods where audit events fire (create, execute_step, execute_step_with_manifest, execute_step_with_runner, execute_parallel_step, rollback)
@@ -81,7 +81,7 @@ Emit structured, redacted audit events from pipeline lifecycle with a pluggable 
 - `src/relay/types.py` — `ErrorCode` enum, `Result[T]` pattern, `Closeable` Protocol
 
 ### Prior phase context
-- `.planning/phases/01-snapshotstore-protocol-extraction/01-CONTEXT.md` — Protocol patterns, optional injection convention
+- `docs/history/01-snapshotstore-protocol-extraction/01-CONTEXT.md` — Protocol patterns, optional injection convention
 
 </canonical_refs>
 

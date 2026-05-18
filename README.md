@@ -335,5 +335,5 @@ MIT License - see LICENSE file
 
 ## Resources
 
-- [Design Document](docs/Relay%20Design%20Document.txt)
-- [Coding Rules](docs/Relay%20Coding%20Rules.txt)
+- [Design Document](docs/Relay%20Design%20Document.md)
+- [Coding Rules](docs/Relay%20Coding%20Rules.md)

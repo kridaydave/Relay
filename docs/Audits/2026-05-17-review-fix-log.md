@@ -1,14 +1,3 @@
----
-phase: code-review
-fixed_at: 2026-05-17T15:00:00Z
-review_path: REVIEW.md
-iteration: 2
-findings_in_scope: 12
-fixed: 9
-skipped: 2
-status: partial
----
-
 # Phase: Code Review Fix Report
 
 **Fixed at:** 2026-05-17T15:00:00Z

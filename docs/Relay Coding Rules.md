@@ -1,4 +1,4 @@
-﻿# Relay Engineering Standards
+# Relay Engineering Standards
 > Senior-engineer quality bar — every rule here is grounded in a real defect or pattern observed in the Relay codebase.
 
 ---
@@ -217,15 +217,21 @@ Document the known false-positive and false-negative cases in the test file.
 
 ---
 
-## Section 7 — Testing
+## Section 7 — Testing Practices
 
-### 7.1 Test names are sentences, not identifiers
+### 7.1 Test names are sentences, not identifiers (Rule 7.1)
+
+Test names are **full sentences** describing the behavior:
 
 ```python
 # CORRECT
 def test_hard_cap_enforcer_blocks_call_when_projected_cost_exceeds_remaining_budget():
-def test_snapshot_load_returns_failure_when_file_is_missing():
+def test_context_broker_rejects_signing_secret_shorter_than_32_characters():
+def test_envelope_signature_verification_fails_when_tampered():
+def test_pipeline_state_raises_on_reentrant_transaction():
 ```
+
+Pattern: `test_<subject>_<expected_behavior>_<condition>`
 
 ### 7.2 Every public function has a test — no exceptions
 
@@ -249,15 +255,91 @@ def test_concurrent_steps_final_envelope_is_consistent():
 
 ### 7.4 No network calls in unit tests (R7)
 
-All LLM calls, HTTP requests, and external embedding calls must be mocked. Use `FixedEmbeddingProvider` and `FixedCounter` from `conftest.py`. Never let a unit test fail because of network availability.
+All LLM calls, HTTP requests, and external embedding calls must be mocked. All external dependencies are mocked via test doubles defined in `tests/conftest.py` and module-specific `conftest.py` files. Never let a unit test fail because of network availability.
 
-### 7.5 Failure path tests are mandatory alongside happy-path tests
+### 7.5 Failure path tests are mandatory alongside happy-path tests (Rule 7.5)
 
-Every function that returns `Result[T]` must have at least one test for the `Success` path and at least one test for each distinct `Failure` code it can return. A function with three failure codes needs four tests minimum.
+Every function that returns `Result[T]` must have at least one test for the `Success` path and at least one test for each distinct `Failure` code it can return. A function with three failure codes needs four tests minimum. CI enforces this via `scripts/check_failure_coverage.py`.
+
+Example pattern:
+```python
+def test_create_context_broker_fails_with_invalid_secret():
+    result = create_context_broker(signing_secret="short")
+    assert isinstance(result, Failure)
+    assert result.code == ErrorCode.INVALID_SECRET
+```
 
 ### 7.6 Test doubles must satisfy the Protocol
 
 Use `isinstance(FixedCounter(5), TokenCounter)` as a sanity assertion in at least one test. If the protocol changes and the test double diverges, this catches it immediately.
+
+### 7.7 Test Framework & Organization
+
+| Tool | Version | Config |
+|------|---------|--------|
+| pytest | ≥8.0, <9 | `pyproject.toml:[tool.pytest.ini_options]` |
+| pytest-asyncio | ≥0.23, <0.25 | `asyncio_mode = "auto"` |
+| coverage | ≥7.0, <8 | Branch coverage, ≥80% threshold |
+
+**Directory Structure:**
+```
+tests/
+├── conftest.py              # Shared test doubles
+├── unit/                    # Unit tests (fast, isolated)
+│   ├── test_*.py            # One per source module
+│   ├── test_parallel/       # Parallel submodule tests
+│   └── test_runners/        # Runner submodule tests
+└── integration/             # Integration tests (end-to-end flows)
+    ├── test_pipeline_integration.py
+    ├── test_parallel_pipeline.py
+    └── test_runners_integration.py
+```
+
+### 7.8 Test Coverage & CI Enforcement
+
+- **Branch coverage** enabled (`branch = true`)
+- **Minimum threshold**: 80% (`coverage report --fail-under=80`)
+- **No `# type: ignore` in source** — hard error
+- **No `assert` in production code** — hard error (use explicit `Failure` returns)
+- **`py.typed` marker** must exist
+
+### 7.9 Quality Gate Scripts
+
+| Script | Purpose | CI Step |
+|--------|---------|---------|
+| `scripts/check_test_names.py` | Enforces Rule 7.1 naming | Yes |
+| `scripts/check_failure_coverage.py` | Ensures all ErrorCode variants tested | Yes |
+| `scripts/check_layer_violations.py` | Detects layer dependency violations | Yes |
+| `scripts/check_no_private_api_imports.py` | Warns on private API imports in tests | Yes (`--warn`) |
+
+### 7.10 Test Patterns
+
+**Testing Result Types:**
+```python
+def test_envelope_creation_returns_success():
+    result = create_initial_envelope(...)
+    assert isinstance(result, Success)
+    assert result.value.step == 1
+```
+
+**Testing with Test Doubles:**
+```python
+def test_budget_enforcer_blocks_when_exceeded():
+    counter = FixedCounter(value=1000)
+    enforcer = HardCapEnforcer(counter)
+    result = enforcer.check(budget_used=500, budget_total=1000, projected_slice="x" * 3000)
+    assert isinstance(result, Failure)
+    assert result.code == ErrorCode.BUDGET_EXCEEDED
+```
+
+**Async Testing:**
+```python
+async def test_execute_step_with_runner_calls_adapter():
+    # asyncio_mode = "auto" means no @pytest.mark.asyncio needed
+    pipeline = await setup_pipeline_with_adapter()
+    result = await pipeline.execute_step_with_runner("test", manifest)
+    assert isinstance(result, Success)
+```
 
 ---
 
@@ -323,6 +405,67 @@ All decisions from the v0.3 era have been resolved.
 | `manifest_hash` default `""` | ✅ **Resolved** — defaults removed from `ContextBroker` and envelope factories |
 | Error code registry | ✅ **Resolved** — `ErrorCode` Enum defined in `types.py` |
 | `_estimate_tokens` accuracy claim | ✅ **Resolved** — claim softened to "not benchmarked, heuristic only" |
+
+---
+
+## Section 11 — Technology Stack
+
+### 11.1 Languages & Runtime
+
+| Layer | Technology | Version |
+|-------|-----------|---------|
+| Language | Python | ≥3.12 (tested on 3.12, 3.13) |
+| Type hints | PEP 695 `type` syntax | Python 3.12+ (`type Result[T] = ...`) |
+| Package manager | pip / setuptools | setuptools ≥61.0 |
+
+### 11.2 Core Dependencies (Zero Runtime Deps)
+
+The core package has **zero required runtime dependencies**. All external libraries are optional extras. This is a deliberate design choice: Relay is a middleware library that doesn't force any specific LLM framework on consumers.
+
+### 11.3 Optional Dependencies
+
+| Extra | Packages | Purpose |
+|-------|----------|---------|
+| `dev` | `pytest`, `pytest-asyncio`, `anyio`, `mypy`, `coverage` | Development tooling |
+| `tiktoken` | `tiktoken` | Accurate BPE token counting (cl100k_base) |
+| `langchain` | `langchain-core` | LangChain adapter |
+| `crewai` | `crewai` | CrewAI adapter |
+| `autogen` | `pyautogen` | AutoGen adapter |
+| `local` | `httpx` | Local model runner (HTTP-based) |
+
+### 11.4 Type Checking
+
+- **Strictness:** `mypy --strict` with **zero `# type: ignore` suppressions** (enforced in CI)
+- **Coverage:** Both `src/` and `tests/` are type-checked
+- **Marker:** `src/relay/py.typed` present for PEP 561 compatibility
+
+### 11.5 Python Standard Library Usage
+
+Heavy use of stdlib modules: `dataclasses`, `typing` (Protocol, Generic), `enum`, `hmac`, `hashlib`, `json`, `uuid`, `datetime`, `threading` (Lock), `asyncio`, `pathlib`, `logging`.
+
+---
+
+## Section 12 — Known Constraints & Concerns
+
+### 12.1 Budget Enforcement is Advisory Under Concurrent Load
+
+The budget check is advisory under concurrent load. The lock is released before adapter execution to avoid holding it during I/O, so another thread may advance the envelope between the check and execution. The `RollbackSuccess` safety net handles post-hoc detection.
+
+### 12.2 Heuristic Token Counting
+
+Default token counting uses `len(json_str) // 3` as a coarse approximation (0.33 tokens/char). While suitable for budget estimation, it is NOT precise. For accurate BPE counting, the `tiktoken` optional dependency should be used.
+
+### 12.3 Non-Reentrant Lock
+
+`PipelineState` uses a non-reentrant `threading.Lock`. Nested `transaction()` calls will cause a `RuntimeError` (hard crash). This is a deliberate design choice to prevent subtle reentrancy bugs.
+
+### 12.4 Snapshot I/O Performance
+
+Every pipeline step writes a JSON file to disk (max 100 MB). Currently, there is no batching or async I/O for snapshot writes. While `InMemorySnapshotStore` is available for testing, production relies on synchronous filesystem I/O.
+
+### 12.5 Entity Extraction Heuristics
+
+`HandoffValidator` uses heuristic key-based entity detection which may have false positives/negatives. It traverses JSON iteratively with a depth limit (50) and entity limit (10,000).
 
 ---
 
