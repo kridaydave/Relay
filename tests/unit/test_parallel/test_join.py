@@ -145,9 +145,10 @@ class TestFirstWinsStrategy:
         coros: list[tuple[int, ForkSpec, Coroutine[None, None, ForkResult]]] = [
             (0, spec, fast_fork()), (1, spec, slow_fork()),
         ]
-        result = await _apply_first_wins(coros)
+        result, collected = await _apply_first_wins(coros)
         assert isinstance(result, Success)
         assert result.value.get("text") == "fast"
+        assert len(collected) > 0
 
     @pytest.mark.asyncio
     async def test_first_wins_skips_failing_forks(self) -> None:
@@ -163,9 +164,10 @@ class TestFirstWinsStrategy:
         coros: list[tuple[int, ForkSpec, Coroutine[None, None, ForkResult]]] = [
             (0, spec, fail_fork()), (1, spec, pass_fork()),
         ]
-        result = await _apply_first_wins(coros)
+        result, collected = await _apply_first_wins(coros)
         assert isinstance(result, Success)
         assert result.value.get("text") == "winner"
+        assert len(collected) > 0
 
     @pytest.mark.asyncio
     async def test_first_wins_cancels_remaining_tasks(self) -> None:
@@ -188,10 +190,11 @@ class TestFirstWinsStrategy:
         coros: list[tuple[int, ForkSpec, Coroutine[None, None, ForkResult]]] = [
             (0, spec, winning_fork()), (1, spec, slow_fork(1)),
         ]
-        result = await _apply_first_wins(coros)
+        result, collected = await _apply_first_wins(coros)
         assert isinstance(result, Success)
         assert result.value.get("text") == "winner"
         assert len(cancelled) > 0
+        assert len(collected) > 0
 
     @pytest.mark.asyncio
     async def test_first_wins_fails_when_all_forks_fail(self) -> None:
@@ -207,9 +210,10 @@ class TestFirstWinsStrategy:
         coros: list[tuple[int, ForkSpec, Coroutine[None, None, ForkResult]]] = [
             (0, spec, fail_fork_0()), (1, spec, fail_fork_1()),
         ]
-        result = await _apply_first_wins(coros)
+        result, collected = await _apply_first_wins(coros)
         assert isinstance(result, Failure)
         assert result.code == ErrorCode.ALL_FORKS_FAILED
+        assert len(collected) > 0
 
 
 class TestApplyJoinStrategy:
