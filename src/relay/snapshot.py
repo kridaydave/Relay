@@ -268,10 +268,12 @@ class LocalFileSnapshotStore:
                     code=ErrorCode.INVALID_SNAPSHOT,
                 )
 
-            if self._signing_secret is not None and not verify_signature(envelope, self._signing_secret):
-                return Failure(
-                    reason=f"Invalid signature for snapshot: {snapshot_id}",
-                    code=ErrorCode.INVALID_SNAPSHOT,
+            if self._signing_secret is not None:
+                sig_result = verify_signature(envelope, self._signing_secret)
+                if isinstance(sig_result, Failure):
+                    return Failure(
+                        reason=f"Invalid signature for snapshot: {snapshot_id}",
+                        code=ErrorCode.INVALID_SNAPSHOT,
                 )
 
             return Success(envelope)

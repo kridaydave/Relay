@@ -88,6 +88,7 @@ class CoreRelayPipeline:
     registry: AdapterRegistry | None = None
     snapshot_store: SnapshotStore | None = None
     audit_sink: AuditSink | None = None
+    max_signature_age: int = 86400
 
     _pipeline_id: str = field(init=False, repr=False)
     _state: PipelineState = field(init=False, repr=False)
@@ -513,10 +514,15 @@ class CoreRelayPipeline:
         if envelope.manifest_hash == manifest_hash:
             return Success(envelope)
         # Verify before re-signing: prevents overwriting a tampered signature.
-        if not verify_signature(envelope, self._context_broker.signing_secret):
+        sig_result = verify_signature(
+            envelope,
+            self._context_broker.signing_secret,
+            self.max_signature_age,
+        )
+        if isinstance(sig_result, Failure):
             return Failure(
-                reason="Cannot apply manifest to envelope with invalid signature",
-                code=ErrorCode.INVALID_SNAPSHOT,
+                reason="Cannot apply manifest to envelope with invalid or stale signature",
+                code=sig_result.code,  # preserves STALE_SIGNATURE or INVALID_SNAPSHOT
             )
         envelope_with_hash = envelope.with_manifest_hash(manifest_hash)
         signed = envelope_with_hash.with_signature(

@@ -185,7 +185,7 @@ def verify_signature(
     envelope: ContextEnvelope,
     secret: str,
     max_age_seconds: int | None = 86400,
-) -> bool:
+) -> Result[None]:
     """Verify the signature of an envelope.
 
     Args:
@@ -195,14 +195,24 @@ def verify_signature(
             Defaults to 86400 (24 hours). Pass None to disable age checking.
 
     Returns:
-        True if the signature is valid and the envelope is not stale. False otherwise.
+        Success(None) if the signature is valid and envelope is not stale.
+        Failure(code=STALE_SIGNATURE) if the envelope exceeds max_age_seconds.
+        Failure(code=INVALID_SNAPSHOT) if the signature doesn't match.
     """
     if max_age_seconds is not None:
         age = (datetime.now(timezone.utc) - envelope.timestamp).total_seconds()
         if age > max_age_seconds:
-            return False
+            return Failure(
+                reason=f"Envelope age {age:.0f}s exceeds max_age_seconds={max_age_seconds}",
+                code=ErrorCode.STALE_SIGNATURE,
+            )
     expected_sig = compute_signature(envelope, secret)
-    return hmac.compare_digest(envelope.signature, expected_sig)
+    if not hmac.compare_digest(envelope.signature, expected_sig):
+        return Failure(
+            reason="Envelope signature does not match computed signature",
+            code=ErrorCode.INVALID_SNAPSHOT,
+        )
+    return Success(None)
 
 
 def create_initial_envelope(
