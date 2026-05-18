@@ -103,8 +103,8 @@ class TestParallelPipeline:
         assert result.value.join_strategy == "VOTE"
         assert result.value.forks_succeeded == 2
 
-    def test_first_wins_commits_envelope_before_slow_fork_completes(self, tmp_path: Path) -> None:
-        """FIRST_WINS: fast adapter wins; slow adapter is cancelled."""
+    def test_first_wins_commits_envelope_after_all_forks_complete(self, tmp_path: Path) -> None:
+        """FIRST_WINS: fast wins but all forks run to completion for audit."""
         registry = AdapterRegistry()
         registry.register("fast", FixedForkRunner(output_text="fast", delay=0.01))
         registry.register("slow", FixedForkRunner(output_text="slow", delay=2.0))
@@ -129,7 +129,7 @@ class TestParallelPipeline:
         text = result.value.payload.get("text", "")
         assert isinstance(text, str)
         assert text == "fast"
-        assert duration < 1.0
+        assert duration >= 2.0
 
     def test_envelope_fork_metadata_is_signed_when_forking(self, tmp_path: Path) -> None:
         """Fork metadata fields are covered by the envelope signature."""

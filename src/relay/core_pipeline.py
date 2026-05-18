@@ -732,6 +732,11 @@ class CoreRelayPipeline:
                 reason="fork_specs must be non-empty",
                 code=ErrorCode.INVALID_STATE,
             )
+        if not isinstance(join_strategy, JoinStrategy):
+            return Failure(
+                reason=f"Unknown join strategy: {join_strategy!r}",
+                code=ErrorCode.INVALID_JOIN_STRATEGY,
+            )
         if self.registry is None:
             return Failure(
                 reason="No AdapterRegistry configured on this pipeline",
