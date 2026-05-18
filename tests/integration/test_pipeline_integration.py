@@ -145,5 +145,4 @@ class TestEdgeCases:
         assert envelope.signature != ""
 
         from relay.envelope import verify_signature
-        from relay.types import Success
         assert isinstance(verify_signature(envelope, "a" * 32), Success)

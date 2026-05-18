@@ -12,6 +12,7 @@ import asyncio
 import hashlib
 import uuid
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 
 from relay.audit import (
     AuditEvent,
@@ -26,6 +27,8 @@ from relay.audit import (
     PipelineCreated,
     RollbackCompleted,
     RollbackTriggered,
+    SignatureVerificationPassed,
+    SignatureVerificationStale,
     SnapshotSaved,
     StepExecutionFailed,
     StepExecutionStarted,
@@ -520,10 +523,23 @@ class CoreRelayPipeline:
             self.max_signature_age,
         )
         if isinstance(sig_result, Failure):
+            if sig_result.code == ErrorCode.STALE_SIGNATURE:
+                self._emit_audit_event(SignatureVerificationStale(
+                    pipeline_id=envelope.pipeline_id,
+                    step=envelope.step,
+                    envelope_age_seconds=(
+                        datetime.now(timezone.utc) - envelope.timestamp
+                    ).total_seconds(),
+                    max_age_seconds=self.max_signature_age,
+                ))
             return Failure(
                 reason="Cannot apply manifest to envelope with invalid or stale signature",
-                code=sig_result.code,  # preserves STALE_SIGNATURE or INVALID_SNAPSHOT
+                code=sig_result.code,
             )
+        self._emit_audit_event(SignatureVerificationPassed(
+            pipeline_id=envelope.pipeline_id,
+            step=envelope.step,
+        ))
         envelope_with_hash = envelope.with_manifest_hash(manifest_hash)
         signed = envelope_with_hash.with_signature(
             compute_signature(envelope_with_hash, self._context_broker.signing_secret)
@@ -639,8 +655,7 @@ class CoreRelayPipeline:
         adapter = adapter_result.value
 
         with self._state.transaction() as current_envelope:
-            assert current_envelope is not None
-            step = current_envelope.step + 1
+            step = (current_envelope.step + 1) if current_envelope is not None else 1
             self._emit_audit_event(
                 StepExecutionStarted(
                     pipeline_id=self._pipeline_id,
