@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from relay.audit import (
     AuditEvent,
     AuditSink,
+    BranchReceipt,
     BudgetCheckFailed,
     BudgetCheckPassed,
     ForkCompleted,
@@ -771,30 +772,76 @@ class CoreRelayPipeline:
             for i, (spec, slice_) in enumerate(zip(fork_specs, fork_slices))
         ]
 
-        if join_strategy == JoinStrategy.FIRST_WINS:
-            merged_result = await apply_join_strategy(
-                join_strategy,
-                fork_results=[],
-                first_wins_coros=[
-                    (i, spec, coro)
-                    for i, (spec, coro) in enumerate(zip(fork_specs, fork_coros))
-                ],
+        collected_fork_results: list[ForkResult] = list(await asyncio.gather(*fork_coros))
+
+        combined_hash = _combine_manifest_hashes([s.manifest for s in fork_specs])
+
+        for i, (spec, result) in enumerate(zip(fork_specs, collected_fork_results)):
+            fork_payload = (
+                agent_output_to_payload(result.agent_output)
+                if result.agent_output is not None
+                else {}
             )
-            forks_succeeded = 1 if isinstance(merged_result, Success) else 0
-            self._emit_audit_event(ForkCompleted(
+            pre_scope = {k: v for k, v in pre_fork_envelope.payload.items()
+                          if k in (spec.manifest.reads | spec.manifest.writes)}
+            keys_added = tuple(sorted(fork_payload.keys() - pre_scope.keys()))
+            keys_removed = tuple(sorted(pre_scope.keys() - fork_payload.keys()))
+
+            tools_used: tuple[str, ...] = ()
+            if result.agent_output is not None and result.agent_output.tool_calls:
+                tools_used = tuple(
+                    sorted({str(t.get("name", "")) for t in result.agent_output.tool_calls
+                            if isinstance(t, dict)})
+                )
+
+            branch_success = result.success
+            if not branch_success:
+                merge_decision = "failed"
+            else:
+                merge_decision = "included"
+
+            self._emit_audit_event(BranchReceipt(
                 pipeline_id=self._pipeline_id,
                 step=pre_fork_envelope.step,
-                forks_succeeded=forks_succeeded,
+                fork_index=i,
+                adapter_name=spec.adapter_name,
+                parent_snapshot_hash=pre_fork_envelope.manifest_hash or "",
+                final_snapshot_hash=combined_hash,
+                agent_id=spec.manifest.agent_id,
+                policy_hash=spec.manifest.compute_hash(),
+                tools_used=tools_used,
+                sections_read=tuple(sorted(spec.manifest.reads)),
+                sections_written=tuple(sorted(spec.manifest.writes)),
+                keys_added=keys_added,
+                keys_removed=keys_removed,
+                join_strategy=join_strategy.value,
+                merge_decision=merge_decision,
+                conflict_keys=(),
+                branch_success=branch_success,
+                branch_error=str(result.failure.code) if not branch_success and result.failure else "",
             ))
+
+        forks_succeeded = sum(1 for r in collected_fork_results if r.success)
+
+        merged_result: Result[JSONDict]
+        if join_strategy == JoinStrategy.FIRST_WINS:
+            winner = next((r for r in collected_fork_results if r.success), None)
+            if winner is None:
+                merged_result = Failure(
+                    reason=f"FIRST_WINS: all {len(collected_fork_results)} forks failed",
+                    code=ErrorCode.ALL_FORKS_FAILED,
+                )
+            else:
+                assert winner.agent_output is not None
+                merged_result = Success(agent_output_to_payload(winner.agent_output))
         else:
-            collected: list[ForkResult] = list(await asyncio.gather(*fork_coros))
-            forks_succeeded = sum(1 for r in collected if r.success)
-            self._emit_audit_event(ForkCompleted(
-                pipeline_id=self._pipeline_id,
-                step=pre_fork_envelope.step,
-                forks_succeeded=forks_succeeded,
-            ))
-            merged_result = await apply_join_strategy(join_strategy, collected, None)
+            merged_result = await apply_join_strategy(join_strategy, collected_fork_results, None)
+
+        self._emit_audit_event(ForkCompleted(
+            pipeline_id=self._pipeline_id,
+            step=pre_fork_envelope.step,
+            forks_succeeded=forks_succeeded,
+        ))
 
         if isinstance(merged_result, Failure):
             return merged_result
@@ -804,8 +851,6 @@ class CoreRelayPipeline:
             step=pre_fork_envelope.step,
             join_strategy=join_strategy.value,
         ))
-
-        combined_hash = _combine_manifest_hashes([s.manifest for s in fork_specs])
 
         # Commit merged payload with fork metadata in a single transaction.
         # This avoids the race condition where another thread calling
@@ -823,14 +868,14 @@ class CoreRelayPipeline:
                     code=ErrorCode.MERGE_CONFLICT,
                 )
 
-            result = self._context_broker.create_next_envelope(
+            next_result = self._context_broker.create_next_envelope(
                 previous_envelope=current_envelope,
                 agent_output=merged_result.value,
                 manifest_hash=combined_hash,
             )
-            if isinstance(result, Failure):
-                return result
-            new_envelope = result.value
+            if isinstance(next_result, Failure):
+                return next_result
+            new_envelope = next_result.value
 
             envelope_with_meta = new_envelope.with_fork_metadata(
                 fork_id=parallel_id,

@@ -1,6 +1,6 @@
 """Structured audit logging for Relay pipeline lifecycle.
 
-Owns: AuditSink Protocol, 17 typed event types, default JSON logging sink, payload redactor.
+Owns: AuditSink Protocol, 18 typed event types, default JSON logging sink, payload redactor.
 Does NOT: perform any pipeline logic, capture timing separately from ISO timestamps, or
          handle sink failures (fire-and-forget per D-06).
 """
@@ -8,6 +8,7 @@ Does NOT: perform any pipeline logic, capture timing separately from ISO timesta
 from relay.audit.events import (
     AuditEvent,
     AuditOutcome,
+    BranchReceipt,
     BudgetCheckFailed,
     BudgetCheckPassed,
     ForkCompleted,
@@ -33,6 +34,7 @@ __all__ = [
     "AuditEvent",
     "AuditOutcome",
     "AuditSink",
+    "BranchReceipt",
     "JsonLogSink",
     "PayloadRedactor",
     "PipelineCreated",
