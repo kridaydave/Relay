@@ -21,14 +21,14 @@ from relay.slicer import AgentManifest
 from relay.types import ErrorCode, Failure, Success, RollbackSuccess, JSONDict, Result
 
 
-@pytest.fixture
+@pytest.fixture  # type: ignore[misc]
 def temp_storage() -> Generator[str, None, None]:
     temp_dir = tempfile.mkdtemp()
     yield temp_dir
     shutil.rmtree(temp_dir, ignore_errors=True)
 
 
-@pytest.fixture
+@pytest.fixture  # type: ignore[misc]
 def pipeline(temp_storage: str) -> CoreRelayPipeline:
     return CoreRelayPipeline(
         signing_secret="a" * 32, token_budget=8000, storage_path=temp_storage
@@ -353,8 +353,8 @@ class TestConcurrentPipeline:
              patch("relay.core_pipeline.LocalFileSnapshotStore") as mock_store_cls:
 
             mock_store = MagicMock()
-            mock_store.save_snapshot.return_value = Success[str]("snapshot-id")
-            mock_store.load_snapshot.return_value = Success[ContextEnvelope](
+            mock_store.save_snapshot.return_value = Success[str]("snapshot-id")  # type: ignore[misc]
+            mock_store.load_snapshot.return_value = Success[ContextEnvelope](  # type: ignore[misc]
                 create_mock_envelope(1, "test-pipeline-id", {"data": "restored"})
             )
             mock_store_cls.return_value = mock_store
@@ -522,7 +522,7 @@ class TestPipelineClose:
             storage_path=temp_storage, token_counter=counter,
         )
         pipeline.close()
-        counter.close.assert_called_once()
+        counter.close.assert_called_once()  # type: ignore[misc]
 
     def test_close_without_token_counter_succeeds_and_does_not_raise(self, temp_storage: str) -> None:
         pipeline = CoreRelayPipeline(
@@ -584,7 +584,7 @@ class TestPipelineSnapshotStoreWiring:
             storage_path=temp_storage, snapshot_store=custom_store,
         )
         pipeline.close()
-        custom_store.close.assert_called_once()
+        custom_store.close.assert_called_once()  # type: ignore[misc]
 
 
 class TestPipelineInitialStepErrors:
@@ -592,7 +592,7 @@ class TestPipelineInitialStepErrors:
         with patch("relay.core_pipeline.HardCapEnforcer") as mock_enforcer_cls:
             counter = MagicMock()
             enforcer = MagicMock()
-            enforcer.check.return_value = Failure(
+            enforcer.check.return_value = Failure(  # type: ignore[misc]
                 reason="Budget exceeded", code=ErrorCode.BUDGET_EXCEEDED,
             )
             mock_enforcer_cls.return_value = enforcer
@@ -672,9 +672,9 @@ class TestPipelineBudgetEnforcement:
     def test_budget_failure_in_subsequent_step_returns_error(self, temp_storage: str) -> None:
         with patch("relay.core_pipeline.HardCapEnforcer") as mock_enforcer_cls:
             counter = MagicMock()
-            counter.count.return_value = 10
+            counter.count.return_value = 10  # type: ignore[misc]
             enforcer = MagicMock()
-            enforcer.check.side_effect = [
+            enforcer.check.side_effect = [  # type: ignore[misc]
                 Success[None](None),
                 Failure(reason="Budget exceeded", code=ErrorCode.BUDGET_EXCEEDED),
             ]
@@ -704,9 +704,9 @@ class TestPipelineBudgetEnforcement:
     def test_per_agent_max_tokens_exceeded_fails_validation(self, temp_storage: str) -> None:
         with patch("relay.core_pipeline.HardCapEnforcer") as mock_enforcer_cls:
             counter = MagicMock()
-            counter.count.return_value = 9999
+            counter.count.return_value = 9999  # type: ignore[misc]
             enforcer = MagicMock()
-            enforcer.check.return_value = Success[None](None)
+            enforcer.check.return_value = Success[None](None)  # type: ignore[misc]
             enforcer.counter = counter
             mock_enforcer_cls.return_value = enforcer
 

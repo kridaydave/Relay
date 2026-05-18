@@ -9,13 +9,17 @@ on:
 jobs:
   quality:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
+    strategy:
+      matrix:
+        python-version: ["3.12", "3.13"]
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
         run: |
@@ -29,11 +33,54 @@ jobs:
             exit 1
           fi
 
-      - name: Type check (mypy --strict)
+      - name: Type check source (mypy --strict)
         run: mypy --strict src/
+
+      - name: Type check tests (mypy --strict)
+        run: mypy --strict tests/
+
+      - name: Check no assert in production code
+        run: |
+          if grep -rn '^\s*assert\b' src/relay/ --include='*.py' | grep -v '__pycache__'; then
+            echo "Error: production assert statements found (see above). Use explicit Failure returns."
+            exit 1
+          fi
+
+      - name: Check version consistency
+        run: |
+          PV=$(grep '^version' pyproject.toml | sed 's/.*"\(.*\)".*/\1/')
+          TV=$(grep '__version__' src/relay/types.py | sed 's/.*"\(.*\)".*/\1/')
+          if [ "$PV" != "$TV" ]; then
+            echo "Error: version mismatch pyproject.toml='$PV' vs types.py='$TV'"
+            exit 1
+          fi
 
       - name: Enforce test naming convention (Rule 7.1)
         run: python scripts/check_test_names.py
 
-      - name: Run test suite (pytest)
-        run: pytest tests/ -v
+      - name: Run test suite with coverage
+        run: |
+          coverage run -m pytest tests/ -v
+          coverage report --fail-under=80
+
+      - name: Enforce no # type: ignore in source
+        run: |
+          if grep -rn '# type: ignore' src/relay/ --include='*.py' | grep -v '__pycache__'; then
+            echo "Error: # type: ignore found in source code. Rule 2.1 forbids this."
+            exit 1
+          fi
+
+      - name: Enforce no # type: ignore in tests
+        run: |
+          if grep -rn '# type: ignore' tests/ --include='*.py' | grep -v '__pycache__'; then
+            echo "Warning: # type: ignore found in test code."
+          fi
+
+      - name: Check layer violations
+        run: python scripts/check_layer_violations.py
+
+      - name: Check no private API imports in tests
+        run: python scripts/check_no_private_api_imports.py --warn
+
+      - name: Check Failure code test coverage
+        run: python scripts/check_failure_coverage.py

@@ -50,11 +50,13 @@ class TestPayloadRedactor:
         from relay.envelope import ContextEnvelope
         from relay.types import JSONDict
 
+        from datetime import datetime, timezone
+
         envelope = ContextEnvelope(
             relay_version="1.0",
             pipeline_id="test-pipeline",
             step=3,
-            timestamp=__import__("datetime").datetime.now(__import__("datetime").timezone.utc),
+            timestamp=datetime.now(timezone.utc),
             token_budget_used=500,
             token_budget_total=8000,
             payload={"agent_output": "sensitive content"},
@@ -75,11 +77,13 @@ class TestPayloadRedactor:
         redactor = PayloadRedactor()
         from relay.envelope import ContextEnvelope
 
+        from datetime import datetime, timezone
+
         envelope = ContextEnvelope(
             relay_version="1.0",
             pipeline_id="p",
             step=1,
-            timestamp=__import__("datetime").datetime.now(__import__("datetime").timezone.utc),
+            timestamp=datetime.now(timezone.utc),
             token_budget_used=0,
             token_budget_total=8000,
             payload={},

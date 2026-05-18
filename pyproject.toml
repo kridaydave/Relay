@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "relay-middleware"
-version = "0.5.0"
+version = "0.5.1"
 description = "Context-driven data pipeline with budget enforcement and pluggable context slicing"
 readme = "README.md"
 authors = [
@@ -28,7 +28,7 @@ dependencies = []
 "Bug Tracker" = "https://github.com/kridaydave/relay/issues"
 
 [project.optional-dependencies]
-dev = ["pytest", "pytest-asyncio", "anyio", "mypy"]
+dev = ["pytest>=8.0,<9", "pytest-asyncio>=0.23,<0.25", "anyio>=4.0,<5", "mypy>=1.10,<2", "coverage>=7.0,<8"]
 tiktoken = ["tiktoken"]
 langchain = ["langchain-core>=0.1"]
 crewai    = ["crewai>=0.30"]

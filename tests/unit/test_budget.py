@@ -99,7 +99,7 @@ class TestHeuristicCounter:
             import tiktoken
         except ImportError:
             pytest.skip("tiktoken not installed — skipping BPE benchmark")
-        enc = tiktoken.get_encoding("cl100k_base")
+        enc = tiktoken.get_encoding("cl100k_base")  # type: ignore[misc]
         samples = [
             "hello world",
             "The quick brown fox jumps over the lazy dog",
@@ -108,7 +108,7 @@ class TestHeuristicCounter:
             "1 2 3 4 5 6 7 8 9 10 " * 10,
         ]
         for text in samples:
-            bpe_count = len(enc.encode(text))
+            bpe_count = len(enc.encode(text))  # type: ignore[misc]
             heuristic_count = HeuristicCounter().count(text)
             ratio = heuristic_count / bpe_count if bpe_count > 0 else 1.0
             assert 0.2 <= ratio <= 4.0, (

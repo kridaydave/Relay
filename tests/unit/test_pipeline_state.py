@@ -27,7 +27,7 @@ def create_mock_envelope(
     )
 
 
-@pytest.fixture
+@pytest.fixture  # type: ignore[misc]
 def state() -> PipelineState:
     return PipelineState(pipeline_id="test-pipeline-id")
 

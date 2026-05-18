@@ -20,17 +20,17 @@ from relay.envelope import (
 from relay.types import ErrorCode, Failure, JSONDict, Success
 
 
-@pytest.fixture
+@pytest.fixture  # type: ignore[misc]
 def secret() -> str:
     return "a" * 32
 
 
-@pytest.fixture
+@pytest.fixture  # type: ignore[misc]
 def initial_payload() -> "JSONDict":
     return {"data": "initial"}
 
 
-@pytest.fixture
+@pytest.fixture  # type: ignore[misc]
 def next_payload() -> "JSONDict":
     return {"result": "output"}
 
@@ -411,8 +411,8 @@ class TestContextEnvelope:
             signature="sig",
         )
 
-        with pytest.raises(Exception):
-            envelope.step = 2  # type: ignore[misc]
+        with pytest.raises(AttributeError):
+            setattr(envelope, "step", 2)
 
 
 class TestContextEnvelopeWithManifestHash:
@@ -735,7 +735,8 @@ class TestForkFields:
             forks_succeeded=2,
         )
         signed = meta.with_signature(compute_signature(meta, "a" * 32))
-        assert verify_signature(signed, "a" * 32)
+        result = verify_signature(signed, "a" * 32)
+        assert isinstance(result, Success), f"Expected Success, got {type(result).__name__}: {result}"
 
 
 class TestContextEnvelopeFieldConstraints:

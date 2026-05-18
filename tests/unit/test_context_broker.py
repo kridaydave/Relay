@@ -25,7 +25,7 @@ class TestCreateInitialEnvelope:
         assert "32 characters" in result.reason
 
     @patch("relay.context_broker.create_initial_envelope")
-    def test_broker_creates_initial_envelope_with_valid_inputs(self, mock_create: MagicMock) -> None:
+    def test_broker_creates_initial_envelope_with_valid_inputs(self, mock_create: MagicMock) -> None:  # type: ignore[misc]
         mock_create.return_value = Success[ContextEnvelope](
             ContextEnvelope(
                 relay_version=RELAY_VERSION,
@@ -81,7 +81,7 @@ class TestCreateInitialEnvelope:
 
 class TestCreateNextEnvelope:
     @patch("relay.context_broker.create_next_envelope")
-    def test_broker_creates_next_envelope_with_valid_inputs(self, mock_create: MagicMock) -> None:
+    def test_broker_creates_next_envelope_with_valid_inputs(self, mock_create: MagicMock) -> None:  # type: ignore[misc]
         mock_create.return_value = Success[ContextEnvelope](
             ContextEnvelope(
                 relay_version=RELAY_VERSION,
@@ -120,7 +120,7 @@ class TestCreateNextEnvelope:
         mock_create.assert_called_once()
 
     @patch("relay.context_broker.create_next_envelope")
-    def test_broker_next_envelope_increments_step_when_created_from_previous(self, mock_create: MagicMock) -> None:
+    def test_broker_next_envelope_increments_step_when_created_from_previous(self, mock_create: MagicMock) -> None:  # type: ignore[misc]
         mock_create.return_value = Success[ContextEnvelope](
             ContextEnvelope(
                 relay_version=RELAY_VERSION,
@@ -158,7 +158,7 @@ class TestCreateNextEnvelope:
         assert result.value.step == 2
 
     @patch("relay.context_broker.create_next_envelope")
-    def test_broker_next_envelope_updates_token_budget(self, mock_create: MagicMock) -> None:
+    def test_broker_next_envelope_updates_token_budget(self, mock_create: MagicMock) -> None:  # type: ignore[misc]
         mock_create.return_value = Success[ContextEnvelope](
             ContextEnvelope(
                 relay_version=RELAY_VERSION,

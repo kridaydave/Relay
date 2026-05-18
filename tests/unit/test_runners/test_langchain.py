@@ -81,8 +81,7 @@ class TestLangChainAdapter:
         await LangChainAdapter(runnable=mock_runnable).run(
             make_test_slice(step=5, sections={"key": "val"}), make_test_manifest()
         )
-        # Use type: ignore for mock call inspection which is inherently dynamic
-        call_args = cast(AsyncMock, mock_runnable.ainvoke).call_args[0][0]
+        call_args: dict[str, object] = cast(AsyncMock, mock_runnable.ainvoke).call_args[0][0]  # type: ignore[misc]
         assert isinstance(call_args, dict)
         assert "agent_id" in call_args
         assert "step" in call_args

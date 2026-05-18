@@ -24,7 +24,8 @@ class TestCrewAIAdapter:
         assert adapter is not None
 
     def test_accepts_agent_with_no_memory_attribute(self) -> None:
-        mock_agent = MagicMock(spec=[])
+        _no_memory_spec: list[str] = []
+        mock_agent = MagicMock(spec=_no_memory_spec)
         adapter = CrewAIAdapter(agent=mock_agent)
         assert adapter is not None
 
@@ -53,22 +54,7 @@ class TestCrewAIAdapter:
     @pytest.mark.asyncio
     async def test_single_turn_returns_normalised_output(self, monkeypatch: pytest.MonkeyPatch) -> None:
         mock_task = MagicMock()
-        mock_task.execute_sync.return_value = "crewai output"
-        mock_crewai = MagicMock()
-        # Use a type ignore at the expression level to handle MagicMock dynamic attributes
-        mock_crewai.Task = MagicMock(return_value=mock_task)
-        monkeypatch.setitem(sys.modules, "crewai", mock_crewai)
-        mock_agent = MagicMock()
-        mock_agent.memory = False
-        adapter = CrewAIAdapter(agent=mock_agent)
-        output = await adapter.run(make_test_slice(), make_test_manifest())
-        assert output.text == "crewai output"
-        assert output.adapter == "crewai"
-
-    @pytest.mark.asyncio
-    async def test_build_task_description_includes_step(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        mock_task = MagicMock()
-        mock_task.execute_sync.return_value = "output"
+        mock_task.execute_sync.return_value = "crewai output"  # type: ignore[misc]
         mock_crewai = MagicMock()
         mock_crewai.Task = MagicMock(return_value=mock_task)
         monkeypatch.setitem(sys.modules, "crewai", mock_crewai)

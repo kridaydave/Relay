@@ -735,11 +735,10 @@ class TestSnapshotStoreProtocol:
             "list_snapshots",
             "close",
         }
-        protocol_methods = {
-            name
-            for name, member in inspect.getmembers(SnapshotStore)
-            if not name.startswith("_") and callable(member)
-        }
+        protocol_methods = set()
+        for name, member in inspect.getmembers(SnapshotStore):  # type: ignore[misc]
+            if not name.startswith("_") and callable(member):  # type: ignore[misc]
+                protocol_methods.add(name)
         assert expected_methods.issubset(protocol_methods), (
             f"Missing methods: {expected_methods - protocol_methods}"
         )

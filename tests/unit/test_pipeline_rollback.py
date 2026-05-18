@@ -27,8 +27,7 @@ def create_mock_envelope(step: int, pipeline_id: str = "test-pipeline") -> Conte
     )
 
 
-@pytest.fixture
-
+@pytest.fixture  # type: ignore[misc]
 def rollback_handler() -> RollbackHandler:
     return RollbackHandler()
 
@@ -37,7 +36,7 @@ class TestRestoreToPrevious:
     def test_restore_succeeds_when_envelope_is_in_snapshot(self, rollback_handler: RollbackHandler) -> None:
         mock_store = MagicMock()
         env1 = create_mock_envelope(1)
-        mock_store.load_snapshot.return_value = Success[ContextEnvelope](env1)
+        mock_store.load_snapshot.return_value = Success[ContextEnvelope](env1)  # type: ignore[misc]
 
         snapshot_ids: dict[int, str] = {1: "snapshot-1"}
         result = rollback_handler.restore_to_previous(env1, snapshot_ids, cast(SnapshotStore, mock_store), "Test rollback")
@@ -60,7 +59,7 @@ class TestRestoreToPrevious:
 
     def test_fails_when_snapshot_load_fails(self, rollback_handler: RollbackHandler) -> None:
         mock_store = MagicMock()
-        mock_store.load_snapshot.return_value = Failure(reason="Disk error", code=ErrorCode.UNKNOWN_ERROR)
+        mock_store.load_snapshot.return_value = Failure(reason="Disk error", code=ErrorCode.UNKNOWN_ERROR)  # type: ignore[misc]
         env1 = create_mock_envelope(1)
 
         snapshot_ids: dict[int, str] = {1: "snapshot-1"}
@@ -73,7 +72,7 @@ class TestRestoreToPrevious:
     def test_rollback_result_contains_reason_when_restored(self, rollback_handler: RollbackHandler) -> None:
         mock_store = MagicMock()
         env1 = create_mock_envelope(1)
-        mock_store.load_snapshot.return_value = Success[ContextEnvelope](env1)
+        mock_store.load_snapshot.return_value = Success[ContextEnvelope](env1)  # type: ignore[misc]
 
         snapshot_ids: dict[int, str] = {1: "snapshot-1"}
         result = rollback_handler.restore_to_previous(

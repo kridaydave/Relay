@@ -4,10 +4,15 @@ Owns: TokenCounter protocol, TiktokenCounter implementation, character-based est
 Does NOT: enforce budget limits, manage token tracking across steps, or validate token counts.
 """
 
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from __future__ import annotations
 
-if TYPE_CHECKING:
-    from tiktoken import Encoding
+from typing import Protocol, cast, runtime_checkable
+
+
+class _Encoding(Protocol):
+    """Minimal protocol for tiktoken Encoding — avoids depending on tiktoken type stubs."""
+
+    def encode(self, text: str) -> list[int]: ...
 
 
 @runtime_checkable
@@ -36,7 +41,7 @@ class HeuristicCounter:
     def close(self) -> None:
         pass
 
-    def __enter__(self) -> "HeuristicCounter":
+    def __enter__(self) -> HeuristicCounter:
         return self
 
     def __exit__(self, *_: object) -> None:
@@ -45,6 +50,13 @@ class HeuristicCounter:
 
 try:
     import tiktoken
+
+    def _load_encoding(name: str) -> _Encoding:
+        """Load a tiktoken encoding by name.
+
+        Casts from Any because tiktoken types may not have stubs installed.
+        """
+        return cast(_Encoding, tiktoken.get_encoding(name))
 
     class _TiktokenCounter:
         """Token counter using tiktoken library.
@@ -57,11 +69,11 @@ try:
 
         def __init__(self, encoding: str = "cl100k_base") -> None:
             self._encoding = encoding
-            self._enc: "Encoding | None" = None
+            self._enc: _Encoding | None = None
 
-        def _get_encoder(self) -> "Encoding":
+        def _get_encoder(self) -> _Encoding:
             if self._enc is None:
-                self._enc = tiktoken.get_encoding(self._encoding)
+                self._enc = _load_encoding(self._encoding)
             return self._enc
 
         def count(self, text: str) -> int:
@@ -72,7 +84,7 @@ try:
             """Release the encoding resource."""
             self._enc = None
 
-        def __enter__(self) -> "_TiktokenCounter":
+        def __enter__(self) -> _TiktokenCounter:
             """Enter the context manager."""
             return self
 

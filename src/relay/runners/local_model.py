@@ -16,12 +16,30 @@ import json
 import re
 import time
 from dataclasses import dataclass
-from typing import cast
+from typing import Protocol, cast
 from urllib.parse import urlparse
 
 from relay.runners.protocol import AgentOutput, ContextSlice
 from relay.slicer.manifest import AgentManifest
 from relay.types import JSONDict
+
+
+class _Response(Protocol):
+    """Minimal protocol for httpx.Response — avoids depending on httpx type stubs."""
+
+    def raise_for_status(self) -> None: ...
+    @property
+    def text(self) -> str: ...
+    def json(self) -> object: ...
+
+
+class _Client(Protocol):
+    """Minimal protocol for httpx.AsyncClient — avoids depending on httpx type stubs."""
+
+    async def post(self, url: str, json: object) -> _Response: ...
+    async def __aenter__(self) -> _Client: ...
+    async def __aexit__(self, *_: object) -> None: ...
+
 
 _LOCALHOST_PATTERN = re.compile(
     r"^(127\.\d{1,3}\.\d{1,3}\.\d{1,3}|localhost|::1)$"
@@ -63,7 +81,7 @@ class LocalModelAdapter:
         model: str,
         adapter_name: str = "local_model",
         timeout_seconds: float = 60.0,
-    ) -> "LocalModelAdapter":
+    ) -> LocalModelAdapter:
         """Factory method — validates and strips trailing slash from base_url."""
         stripped = base_url.rstrip("/")
         _validate_base_url(stripped)
@@ -92,7 +110,8 @@ class LocalModelAdapter:
         payload = self._build_payload(slice_)
         url = f"{self.base_url}/v1/chat/completions"
         start = time.monotonic()
-        async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+        client = cast(_Client, httpx.AsyncClient(timeout=self.timeout_seconds))
+        async with client:
             response = await client.post(url, json=payload)
             response.raise_for_status()
             data_raw: object = response.json()

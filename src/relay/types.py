@@ -29,7 +29,7 @@ __all__ = [
 JSONDict = dict[str, object]
 """A JSON-serializable dictionary with string keys and object values."""
 
-__version__ = "0.5.0"
+__version__ = "0.5.1"
 
 T = TypeVar("T")
 

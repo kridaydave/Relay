@@ -23,9 +23,11 @@ wheels/
 # Testing
 .pytest_cache/
 .coverage
+.coverage.*
 htmlcov/
 .tox/
 .mypy_cache/
+.dmypy.json
 
 # IDEs
 .vscode/
@@ -36,6 +38,7 @@ htmlcov/
 
 # Project specific
 relay_data/
+prof/
 
 # Environment
 .env
@@ -43,7 +46,11 @@ relay_data/
 env/
 venv/
 ENV/
+
 # AI
 .claude/
 .gemini/
 docs/codename.md
+
+# Temp
+tmp_pycache/
